@@ -4,6 +4,8 @@
 
 const COLLECTION = 'gomoku_rooms';
 const SIZE = 15; // 15x15 棋盘
+const C = require('../../utils/constants.js');
+const log = require('../../utils/log.js');
 
 const AVATARS = ['/assets/avatar_a.gif', '/assets/avatar_b.gif'];
 
@@ -13,10 +15,9 @@ function emptyBoard() {
   return b;
 }
 
-function pad4(n) {
-  n = String(n);
-  while (n.length < 4) n = '0' + n;
-  return n;
+// 棋盘字符串序列化/反序列化：只在棋盘真的变了时才重绘
+function boardKeyOf(room) {
+  return room && room.boardStr ? room.boardStr : '';
 }
 
 Page({
@@ -28,7 +29,6 @@ Page({
     myColorText: '',
     myAvatar: '',
     oppAvatar: '',
-    oppJoined: false,
     turn: 1,
     isMyTurn: false,
     statusText: '',
@@ -36,7 +36,7 @@ Page({
     winText: '',
     lastMove: {},
     moveCount: 0,
-    moving: false,           // 防连点锁
+    round: 1,                // 第几局（由云文档回读）
     // 悔棋
     undoState: null,         // null | 'iRequested' | 'oppRequested'
     // 戳一戳
@@ -78,18 +78,22 @@ Page({
     const boardW = Math.floor(w - 88 * rpx2px); // 24*2 + 20*2 = 88rpx
     this._boardW = boardW;
     this.setData({ boardW });
-    console.log('[gomoku] onReady boardW=' + boardW + ' screenW=' + w + ' rpx2px=' + rpx2px);
-    if (this._autoJoin) {      this._autoJoin = null;
-      this.joinRoom();
+    log.d('[gomoku] onReady boardW=' + boardW + ' screenW=' + w);
+    if (this._autoJoin) {
+      const no = this._autoJoin;
+      this._autoJoin = null;
+      this.joinRoom(no);   // 显式传参，避免依赖 setData 异步 flush 后的 this.data
     }
   },
 
   onUnload() {
+    this._destroyed = true;
     this._closeWatcher();
-  },
-
-  onHide() {
-    // 不切后台就不管；切后台保持 watch（回来还能收到）
+    // 统一清理所有定时器，避免回调对已卸载页面 setData
+    ['_waitPollTimer', '_pokeTimer', '_emojiFlyTimer', '_canvasRetryTimer', '_undoTimeoutTimer'].forEach(k => {
+      if (this[k]) { clearTimeout(this[k]); this[k] = null; }
+    });
+    if (this._waitPollInterval) { clearInterval(this._waitPollInterval); this._waitPollInterval = null; }
   },
 
   /* ========== 大厅操作 ========== */
@@ -104,13 +108,18 @@ Page({
     wx.showLoading({ title: '创建中…', mask: true });
     try {
       const db = wx.cloud.database();
-      const roomNo = pad4(Math.floor(Math.random() * 10000));
+      // 房间号查重：撞号时重试，避免加入者进错房间
+      let roomNo = '', tries = 0;
+      while (tries++ < 5) {
+        roomNo = String(Math.floor(Math.random() * (C.ROOM_NO_MAX + 1))).padStart(4, '0');
+        const dup = await db.collection(COLLECTION).where({ roomNo }).limit(1).get();
+        if (!dup.data || !dup.data.length) break;
+      }
       // 随机双方形象：房主拿一个，对方拿另一个
       const myAvatarIdx = Math.random() < 0.5 ? 0 : 1;
       const doc = {
         roomNo,
         status: 'waiting',
-        players: { black: true, white: false }, // 占位标记，身份由创建者/加入者角色决定
         avatars: { black: AVATARS[myAvatarIdx], white: AVATARS[1 - myAvatarIdx] },
         boardStr: JSON.stringify(emptyBoard()),
         history: [],           // 落子历史 [{r,c,color}]，支持连续悔棋
@@ -136,14 +145,14 @@ Page({
         myColorText: '⚫ 黑棋（先手）',
         myAvatar: AVATARS[myAvatarIdx],
         oppAvatar: AVATARS[1 - myAvatarIdx],
-        oppJoined: false,
         statusText: '等待好友加入…'
       });
       this._startWatch();
       // 轮询兜底：防止 watch 延迟导致创建者卡在等待页
-      this._waitPollTimer = setInterval(() => this._pollRoomStatus(), 2000);
+      if (this._waitPollInterval) clearInterval(this._waitPollInterval);
+      this._waitPollInterval = setInterval(() => this._pollRoomStatus(), 2000);
     } catch (err) {
-      console.error('createRoom fail', err);
+      log.e('createRoom fail', err);
       wx.showToast({ title: '创建失败，请检查云环境', icon: 'none' });
     } finally {
       wx.hideLoading();
@@ -151,8 +160,8 @@ Page({
     }
   },
 
-  async joinRoom() {
-    const roomNo = this.data.roomNoInput;
+  async joinRoom(roomNoArg) {
+    const roomNo = roomNoArg || this.data.roomNoInput;
     if (!roomNo || roomNo.length !== 4) {
       wx.showToast({ title: '请输入4位房间号', icon: 'none' });
       return;
@@ -162,7 +171,11 @@ Page({
     wx.showLoading({ title: '加入中…', mask: true });
     try {
       const db = wx.cloud.database();
-      const q = await db.collection(COLLECTION).where({ roomNo }).orderBy('createdAt', 'desc').limit(1).get();
+      // 只取最近 24 小时内的同名房间，避免加入早已作废的孤儿房间
+      const since = new Date(Date.now() - C.ROOM_EXPIRE_MS);
+      const q = await db.collection(COLLECTION)
+        .where({ roomNo, createdAt: db.command.gte(since) })
+        .orderBy('createdAt', 'desc').limit(1).get();
       if (!q.data || !q.data.length) {
         wx.showToast({ title: '房间不存在', icon: 'none' });
         return;
@@ -188,11 +201,11 @@ Page({
         myColorText: '⚪ 白棋（后手）',
         myAvatar: room.avatars.white,
         oppAvatar: room.avatars.black,
-        oppJoined: true,
         turn: 1,
         isMyTurn: false,
         statusText: '等待对方落子…',
         moveCount: room.moveCount || 0,
+        round: room.round || 1,
         lastMove: room.lastMove || {}
       }, () => {
         this._board = room.boardStr ? JSON.parse(room.boardStr) : emptyBoard();
@@ -214,14 +227,29 @@ Page({
   _startWatch() {
     this._closeWatcher();
     const db = wx.cloud.database();
+    this._watchRetry = 0;
     this._watcher = db.collection(COLLECTION).doc(this._roomId).watch({
       onChange: (snapshot) => {
+        this._watchRetry = 0;
         const docs = snapshot.docs;
         if (!docs || !docs.length) return;
         this._onRoomUpdate(docs[0]);
       },
       onError: (err) => {
-        console.error('watch error', err);
+        log.e('watch error', err);
+        this._watcher = null;
+        // 指数退避重连；对局中断链时降级为轮询，避免界面永久卡住
+        if (this._watchRetry < 3) {
+          this._watchRetry += 1;
+          const delay = Math.pow(2, this._watchRetry) * 1000;
+          setTimeout(() => {
+            if (this._destroyed || !this._roomId) return;
+            this._startWatch();
+          }, delay);
+        } else if (this.data.stage === 'playing' && !this._watchPollInterval) {
+          wx.showToast({ title: '网络不稳定，已切换轮询', icon: 'none' });
+          this._watchPollInterval = setInterval(() => this._pollRoomStatus(), 2000);
+        }
       }
     });
   },
@@ -231,26 +259,27 @@ Page({
       try { this._watcher.close(); } catch (e) {}
       this._watcher = null;
     }
-    if (this._waitPollTimer) {
-      clearInterval(this._waitPollTimer);
-      this._waitPollTimer = null;
-    }
+    ['_waitPollInterval', '_watchPollInterval'].forEach(k => {
+      if (this[k]) { clearInterval(this[k]); this[k] = null; }
+    });
   },
 
-  // 创建者等待页轮询兜底：watch 延迟时也能及时进入对局
+  // 轮询兜底：watch 延迟/断链时也能及时同步（等待页与对局中都可用）
   async _pollRoomStatus() {
-    if (this.data.stage !== 'waiting' || !this._roomId) {
-      if (this._waitPollTimer) { clearInterval(this._waitPollTimer); this._waitPollTimer = null; }
-      return;
-    }
+    if (this._destroyed || !this._roomId) return;
     try {
       const db = wx.cloud.database();
       const res = await db.collection(COLLECTION).doc(this._roomId).get();
       const room = res.data;
-      if (room && room.status === 'playing' && this.data.stage === 'waiting') {
+      if (!room) return;
+      if (room.status === 'playing' && this.data.stage === 'waiting') {
+        this._onRoomUpdate(room);
+      } else if (this.data.stage === 'playing' && this._watchPollInterval) {
         this._onRoomUpdate(room);
       }
-    } catch (e) {}
+    } catch (e) {
+      log.e('poll fail', e);
+    }
   },
 
   _onRoomUpdate(room) {
@@ -279,13 +308,13 @@ Page({
     // 首次收到完整房间数据（房主在 waiting 阶段）
     if (this.data.stage === 'waiting') {
       if (room.status === 'playing') {
-        if (this._waitPollTimer) { clearInterval(this._waitPollTimer); this._waitPollTimer = null; }
+        this._closeWatcher();
         const turnNow = room.turn || 1;
         this.setData({
           stage: 'playing',
-          oppJoined: true,
           turn: turnNow,
           isMyTurn: turnNow === me,
+          round: room.round || 1,
           statusText: turnNow === me ? '轮到你落子' : '等待对方落子…'
         }, () => {
           this._board = room.boardStr ? JSON.parse(room.boardStr) : emptyBoard();
@@ -302,46 +331,58 @@ Page({
       lastMove: room.lastMove,
       winner: room.winner,
       moveCount: room.moveCount || 0,
+      round: room.round || this.data.round,
       isMyTurn: room.turn === me
     };
 
-    // 棋盘变化：boardStr 反序列化
-    this._board = room.boardStr ? JSON.parse(room.boardStr) : (room.board ? room.board : emptyBoard());
-    this._history = room.history || [];
+    // 棋盘变化：boardStr 反序列化。只有棋盘真的变了才重绘，
+    // 否则一条聊天消息/戳一戳都会触发全画布重绘（渐变底 + 225 个棋子）
+    const newBoardKey = boardKeyOf(room);
+    const boardChanged = newBoardKey !== (this._boardKey || '');
+    if (boardChanged) {
+      this._board = room.boardStr ? JSON.parse(room.boardStr) : (room.board ? room.board : emptyBoard());
+      this._boardKey = newBoardKey;
+      this._history = room.history || [];
+    }
     if (!this._canvas) {
       // canvas 首次渲染完成后再画
       this.setData(patch, () => this._ensureCanvas());
-    } else {
+    } else if (boardChanged) {
       this._drawBoard();
     }
 
     // 戳一戳
     if (room.poke && room.poke.from && room.poke.from !== me) {
       const ts = room.poke.ts || 0;
-      if (ts > (this._lastPokeTs || 0)) {
+      // 留出容差：双方设备时钟偏差时避免漏判/重复触发
+      if (ts > (this._lastPokeTs || 0) - 3000) {
         this._lastPokeTs = ts;
         this._showPoke(room.poke.from);
       }
     }
 
     // 聊天 & 表情
+    // 本地可能有 pending 乐观消息，不能简单用长度比较；按 from+ts 去重
     const chat = room.chat || [];
-    if (chat.length > (this.data.chatList || []).length) {
-      const newMsgs = chat.slice((this.data.chatList || []).length);
-      const me2 = this.data.myColor;
-      const mapped = chat.map(m => ({
-        from: m.from,
-        type: m.type,
-        content: m.content,
-        ts: m.ts,
-        mine: m.from === me2
-      }));
-      patch.chatList = mapped;
-      // 新消息是表情且来自对方 → 播放飞行动画
-      const lastNew = newMsgs[newMsgs.length - 1];
-      if (lastNew && lastNew.type === 'emoji' && lastNew.from !== me2) {
-        this._playEmojiFly(lastNew.content);
-      }
+    const existing = this.data.chatList || [];
+    const seen = new Set(existing.map(m => m.from + '_' + m.ts));
+    const merged = existing.filter(m => !m.pending);   // 丢掉已被确认/已失败的 pending
+    let addedNew = null;
+    for (const m of chat) {
+      const key = m.from + '_' + m.ts;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push({
+        from: m.from, type: m.type, content: m.content, ts: m.ts,
+        // 用局部变量 me（可能已被翻转为新颜色）
+        mine: m.from === me
+      });
+      if (!addedNew) addedNew = m;
+    }
+    patch.chatList = merged;
+    // 新消息是表情且来自对方 → 播放飞行动画
+    if (addedNew && addedNew.type === 'emoji' && addedNew.from !== me) {
+      this._playEmojiFly(addedNew.content);
     }
 
     // 悔棋请求
@@ -388,11 +429,13 @@ Page({
       patch.statusText = room.turn === me ? '轮到你落子' : '等待对方落子…';
     }
 
-    // 对方离开
-    if (room.status === 'ended' && room.leaver && room.leaver !== me) {
+    // 对方离开：加「已处理」标记，否则房间文档后续任何写入都会重复弹窗
+    if (room.status === 'ended' && room.leaver && room.leaver !== me && !this._leaverHandled) {
+      this._leaverHandled = true;
       patch.stage = 'ended';
       patch.statusText = '对方已离开';
       patch.winText = '对方已离开房间，对局结束';
+      this._closeWatcher();
       wx.showModal({
         title: '提示',
         content: '对方已离开房间，对局结束',
@@ -417,38 +460,68 @@ Page({
     const W = this._boardW;
     const cell = W / (SIZE - 1);
 
-    ctx.clearRect(0, 0, W, W);
-    // 木纹底
-    const grad = ctx.createLinearGradient(0, 0, W, W);
-    grad.addColorStop(0, '#F5DEB3');
-    grad.addColorStop(1, '#E8C999');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, W);
-
-    // 网格
-    ctx.strokeStyle = '#8B6F47';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < SIZE; i++) {
-      ctx.beginPath();
-      ctx.moveTo(0, i * cell);
-      ctx.lineTo(W, i * cell);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(i * cell, 0);
-      ctx.lineTo(i * cell, W);
-      ctx.stroke();
+    // 木纹底与网格只依赖 W，缓存起来避免每次重绘都重建渐变对象
+    if (!this._bgCanvas || this._bgW !== W) {
+      const bg = wx.createOffscreenCanvas
+        ? wx.createOffscreenCanvas({ type: '2d' })
+        : null;
+      if (bg) {
+        bg.width = W * dpr;
+        bg.height = W * dpr;
+        const bctx = bg.getContext('2d');
+        bctx.scale(dpr, dpr);
+        const grad = bctx.createLinearGradient(0, 0, W, W);
+        grad.addColorStop(0, '#F5DEB3');
+        grad.addColorStop(1, '#E8C999');
+        bctx.fillStyle = grad;
+        bctx.fillRect(0, 0, W, W);
+        bctx.strokeStyle = '#8B6F47';
+        bctx.lineWidth = 1;
+        for (let i = 0; i < SIZE; i++) {
+          bctx.beginPath(); bctx.moveTo(0, i * cell); bctx.lineTo(W, i * cell); bctx.stroke();
+          bctx.beginPath(); bctx.moveTo(i * cell, 0); bctx.lineTo(i * cell, W); bctx.stroke();
+        }
+        const stars = [3, 7, 11];
+        bctx.fillStyle = '#8B6F47';
+        stars.forEach(r => stars.forEach(c => {
+          bctx.beginPath(); bctx.arc(c * cell, r * cell, 3, 0, Math.PI * 2); bctx.fill();
+        }));
+        this._bgCanvas = bg;
+        this._bgW = W;
+      } else {
+        this._bgCanvas = null;
+      }
     }
 
-    // 星位
-    const stars = [3, 7, 11];
-    ctx.fillStyle = '#8B6F47';
-    stars.forEach(r => stars.forEach(c => {
-      ctx.beginPath();
-      ctx.arc(c * cell, r * cell, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }));
+    ctx.clearRect(0, 0, W, W);
+    if (this._bgCanvas) {
+      ctx.drawImage(this._bgCanvas, 0, 0, W, W);
+    } else {
+      // 离屏 canvas 不可用时的降级：直接画
+      const grad = ctx.createLinearGradient(0, 0, W, W);
+      grad.addColorStop(0, '#F5DEB3');
+      grad.addColorStop(1, '#E8C999');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, W);
+      ctx.strokeStyle = '#8B6F47';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < SIZE; i++) {
+        ctx.beginPath(); ctx.moveTo(0, i * cell); ctx.lineTo(W, i * cell); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(i * cell, 0); ctx.lineTo(i * cell, W); ctx.stroke();
+      }
+    }
 
-    // 棋子
+    // 棋子渐变按颜色缓存：只有黑白两种，不要每颗都 new
+    if (!this._pieceGrads) {
+      this._pieceGrads = {};
+      [1, 2].forEach(v => {
+        const g = ctx.createRadialGradient(-cell * 0.15, -cell * 0.15, cell * 0.08, 0, 0, cell * 0.45);
+        if (v === 1) { g.addColorStop(0, '#666'); g.addColorStop(1, '#111'); }
+        else { g.addColorStop(0, '#FFF'); g.addColorStop(1, '#CCC'); }
+        this._pieceGrads[v] = g;
+      });
+    }
+
     for (let r = 0; r < SIZE; r++) {
       for (let c = 0; c < SIZE; c++) {
         const v = this._board[r][c];
@@ -459,24 +532,20 @@ Page({
         ctx.arc(x + 1, y + 2, cell * 0.42, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(0,0,0,0.18)';
         ctx.fill();
-        // 本体
-        const pg = ctx.createRadialGradient(x - cell * 0.15, y - cell * 0.15, cell * 0.08, x, y, cell * 0.45);
-        if (v === 1) {
-          pg.addColorStop(0, '#666');
-          pg.addColorStop(1, '#111');
-        } else {
-          pg.addColorStop(0, '#FFF');
-          pg.addColorStop(1, '#CCC');
-        }
+        // 本体（复用缓存渐变，平移到当前坐标）
+        const pg = this._pieceGrads[v];
+        ctx.save();
+        ctx.translate(x, y);
         ctx.beginPath();
-        ctx.arc(x, y, cell * 0.42, 0, Math.PI * 2);
+        ctx.arc(0, 0, cell * 0.42, 0, Math.PI * 2);
         ctx.fillStyle = pg;
         ctx.fill();
+        ctx.restore();
       }
     }
 
     // 最后一手标记
-    const lm = this.data.lastMove;
+    const lm = this._lastMove;
     if (lm && lm.r !== undefined && lm.c !== undefined) {
       ctx.beginPath();
       ctx.arc(lm.c * cell, lm.r * cell, cell * 0.14, 0, Math.PI * 2);
@@ -491,26 +560,28 @@ Page({
       wx.showToast({ title: '还没轮到你哦', icon: 'none' });
       return;
     }
-    if (this.data.moving) return;
+    if (this._moving) return;
 
-    // touchstart 事件：e.touches[0].x/y 是相对 canvas 左上角的坐标
-    const t = e.touches && e.touches[0];
+    // touchend 事件：坐标在 changedTouches 里（手指抬起前最后位置）
+    const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
     if (!t) return;
     const x = t.x, y = t.y;
     if (x == null || y == null) return;
     const cell = this._boardW / (SIZE - 1);
     const c = Math.round(x / cell);
     const r = Math.round(y / cell);
-    console.log('[gomoku] tap x=' + x + ' y=' + y + ' -> r=' + r + ' c=' + c + ' boardW=' + this._boardW);    if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return;
+    if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return;
     if (this._board[r][c]) {
       wx.showToast({ title: '这里已经有棋子了', icon: 'none' });
       return;
     }
+    // 落子轻震动反馈
+    wx.vibrateShort({ type: 'light' });
     this._placeStone(r, c);
   },
 
   async _placeStone(r, c) {
-    this.setData({ moving: true });
+    this._moving = true;   // 实例字段，不走 setData 数据桥
     const me = this.data.myColor;
     this._board[r][c] = me;
     this._drawBoard();
@@ -518,6 +589,7 @@ Page({
     const win = this._checkWin(r, c, me);
     const db = wx.cloud.database();
     const history = (this._history || []).concat([{ r, c, color: me }]);
+    const prevHistory = this._history;
     this._history = history;
     // 云数据库不支持嵌套数组直接 update，board 序列化为字符串
     const update = {
@@ -532,23 +604,27 @@ Page({
 
     try {
       await db.collection(COLLECTION).doc(this._roomId).update({ data: update });
+      this._lastMove = { r, c };
+      this._boardKey = update.boardStr;
       if (win) {
         this.setData({
           stage: 'ended',
           winner: me,
           winText: '🎉 你赢了！',
-          statusText: '对局结束',
-          moving: false
+          statusText: '对局结束'
         });
       } else {
-        this.setData({ isMyTurn: false, statusText: '等待对方落子…', moving: false });
+        this.setData({ isMyTurn: false, statusText: '等待对方落子…' });
       }
     } catch (err) {
-      console.error('[gomoku] place fail err=', err, 'errMsg=', err && err.errMsg, 'code=', err && err.errCode);
+      log.e('[gomoku] place fail', err && err.errMsg, err && err.errCode);
+      // 乐观更新回滚：棋盘与历史必须同进同退，否则双方历史分叉、对局永久损坏
       this._board[r][c] = 0;
+      this._history = prevHistory;
       this._drawBoard();
-      this.setData({ moving: false });
-      wx.showToast({ title: '落子失败:' + (err && err.errMsg || '未知'), icon: 'none' });
+      wx.showToast({ title: '落子失败，请重试', icon: 'none' });
+    } finally {
+      this._moving = false;
     }
   },
 
@@ -590,12 +666,15 @@ Page({
         data: { undoRequest: this.data.myColor, updatedAt: db.serverDate() }
       });
       this.setData({ undoState: 'iRequested' });
+      this._armRequestTimeout('undoState');
     } catch (e) {
       wx.showToast({ title: '请求失败', icon: 'none' });
     }
   },
 
   async respondUndo(e) {
+    if (this._respondingUndo) return;   // 防连点：双击「同意」会执行两次悔棋
+    this._respondingUndo = true;
     const agree = e.currentTarget.dataset.agree === '1';
     const db = wx.cloud.database();
     try {
@@ -607,6 +686,7 @@ Page({
           this._board[last.r][last.c] = 0;
         }
         this._history = history;
+        this._boardKey = '';
         const prevLast = history.length ? history[history.length - 1] : null;
         await db.collection(COLLECTION).doc(this._roomId).update({
           data: {
@@ -627,9 +707,31 @@ Page({
         wx.showToast({ title: '已拒绝', icon: 'none' });
       }
       this.setData({ undoState: null });
+      this._clearRequestTimeout();
     } catch (e) {
       wx.showToast({ title: '操作失败', icon: 'none' });
+    } finally {
+      this._respondingUndo = false;
     }
+  },
+
+  // 申请类操作统一超时：对方不响应时自动关闭弹层，避免永远卡在「等待对方同意」
+  _armRequestTimeout(stateKey) {
+    this._clearRequestTimeout();
+    this._requestTimeoutKey = stateKey;
+    this._undoTimeoutTimer = setTimeout(() => {
+      if (this._destroyed) return;
+      this.setData({ [stateKey]: null });
+      wx.showToast({ title: '对方未响应', icon: 'none' });
+    }, C.UNDO_TIMEOUT_MS);
+  },
+
+  _clearRequestTimeout() {
+    if (this._undoTimeoutTimer) {
+      clearTimeout(this._undoTimeoutTimer);
+      this._undoTimeoutTimer = null;
+    }
+    this._requestTimeoutKey = null;
   },
 
   /* ========== 戳一戳 ========== */
@@ -637,7 +739,7 @@ Page({
   async poke() {
     if (this.data.stage !== 'playing') return;
     const now = Date.now();
-    if (this._lastPokeSent && now - this._lastPokeSent < 10000) {
+    if (this._lastPokeSent && now - this._lastPokeSent < C.POKE_COOLDOWN) {
       wx.showToast({ title: '戳得太频繁啦', icon: 'none' });
       return;
     }
@@ -648,13 +750,17 @@ Page({
         data: { poke: { from: this.data.myColor, ts: now }, updatedAt: db.serverDate() }
       });
       wx.showToast({ title: '已戳了对方一下 👉', icon: 'none' });
-    } catch (e) {}
+    } catch (e) {
+      log.e('poke fail', e);
+    }
   },
 
   _showPoke(fromColor) {
+    if (this._destroyed) return;
     this.setData({ pokeVisible: true, pokeText: '👉 对方戳了戳你：快落子！' });
     clearTimeout(this._pokeTimer);
     this._pokeTimer = setTimeout(() => {
+      if (this._destroyed) return;
       this.setData({ pokeVisible: false });
     }, 2500);
   },
@@ -669,10 +775,16 @@ Page({
         data: { rematchRequest: this.data.myColor, updatedAt: db.serverDate() }
       });
       this.setData({ rematchState: 'iRequested' });
-    } catch (e) {}
+      this._armRequestTimeout('rematchState');
+    } catch (e) {
+      log.e('requestRematch fail', e);
+      wx.showToast({ title: '请求失败', icon: 'none' });
+    }
   },
 
   async respondRematch(e) {
+    if (this._respondingRematch) return;
+    this._respondingRematch = true;
     const agree = e.currentTarget.dataset.agree === '1';
     const db = wx.cloud.database();
     try {
@@ -680,6 +792,8 @@ Page({
         // 重置棋盘与历史
         this._board = emptyBoard();
         this._history = [];
+        this._boardKey = '';
+        this._lastMove = null;
         await db.collection(COLLECTION).doc(this._roomId).update({
           data: {
             boardStr: JSON.stringify(this._board),
@@ -702,7 +816,13 @@ Page({
         });
       }
       this.setData({ rematchState: null });
-    } catch (e) {}
+      this._clearRequestTimeout();
+    } catch (e) {
+      log.e('respondRematch fail', e);
+      wx.showToast({ title: '操作失败', icon: 'none' });
+    } finally {
+      this._respondingRematch = false;
+    }
   },
 
   /* ========== 申请先手（随时可申请，同意后立刻重新开局） ========== */
@@ -715,10 +835,16 @@ Page({
         data: { firstRequest: this.data.myColor, updatedAt: db.serverDate() }
       });
       this.setData({ firstState: 'iRequested' });
-    } catch (e) {}
+      this._armRequestTimeout('firstState');
+    } catch (e) {
+      log.e('requestFirst fail', e);
+      wx.showToast({ title: '请求失败', icon: 'none' });
+    }
   },
 
   async respondFirst(e) {
+    if (this._respondingFirst) return;
+    this._respondingFirst = true;
     const agree = e.currentTarget.dataset.agree === '1';
     const db = wx.cloud.database();
     try {
@@ -730,6 +856,8 @@ Page({
         };
         this._board = emptyBoard();
         this._history = [];
+        this._boardKey = '';
+        this._lastMove = null;
         await db.collection(COLLECTION).doc(this._roomId).update({
           data: {
             avatars: newAvatars,
@@ -756,7 +884,13 @@ Page({
         });
       }
       this.setData({ firstState: null });
-    } catch (e) {}
+      this._clearRequestTimeout();
+    } catch (e) {
+      log.e('respondFirst fail', e);
+      wx.showToast({ title: '操作失败', icon: 'none' });
+    } finally {
+      this._respondingFirst = false;
+    }
   },
 
   /* ========== 聊天 & 表情互动 ========== */
@@ -772,8 +906,11 @@ Page({
       wx.showToast({ title: '消息太长了', icon: 'none' });
       return;
     }
-    await this._pushChat({ from: this.data.myColor, type: 'text', content: text, ts: Date.now() });
+    if (this._sendingChat) return;   // 防连点：弱网下连点会真的发出多条
+    this._sendingChat = true;
     this.setData({ chatInput: '' });
+    await this._pushChat({ from: this.data.myColor, type: 'text', content: text, ts: Date.now() });
+    this._sendingChat = false;
   },
 
   toggleEmojiPanel() {
@@ -783,13 +920,21 @@ Page({
   async sendEmoji(e) {
     const icon = e.currentTarget.dataset.icon;
     if (!icon) return;
+    if (this._sendingChat) return;
+    this._sendingChat = true;
     this.setData({ showEmojiPanel: false });
     await this._pushChat({ from: this.data.myColor, type: 'emoji', content: icon, ts: Date.now() });
     // 本地也播一次动画（对方那边由 watch 触发）
     this._playEmojiFly(icon);
+    this._sendingChat = false;
   },
 
   async _pushChat(msg) {
+    // 乐观更新：本地先插一条 pending 气泡，不等云端往返
+    const local = Object.assign({}, msg, { pending: true });
+    const optimistic = (this.data.chatList || []).concat([local]);
+    this.setData({ chatList: optimistic });
+
     const db = wx.cloud.database();
     const _ = db.command;
     try {
@@ -800,16 +945,20 @@ Page({
         }
       });
     } catch (e) {
+      // 发送失败：移除乐观插入的那条
+      this.setData({ chatList: (this.data.chatList || []).filter(m => m !== local) });
       wx.showToast({ title: '发送失败', icon: 'none' });
     }
   },
 
   _playEmojiFly(icon) {
+    if (this._destroyed) return;
     this.setData({ emojiFlying: { icon } });
     clearTimeout(this._emojiFlyTimer);
     this._emojiFlyTimer = setTimeout(() => {
+      if (this._destroyed) return;
       this.setData({ emojiFlying: null });
-    }, 1800);
+    }, C.POKE_COOLDOWN * 2);
   },
 
   /* ========== 离开房间 ========== */
@@ -820,7 +969,7 @@ Page({
       content: '离开后当前对局将结束，确定吗？',
       success: async (res) => {
         if (!res.confirm) return;
-        // 通知对方离开
+        // 通知对方离开（失败也照样退出，不要把用户困在房间里）
         const db = wx.cloud.database();
         try {
           await db.collection(COLLECTION).doc(this._roomId).update({
@@ -830,7 +979,9 @@ Page({
               updatedAt: db.serverDate()
             }
           });
-        } catch (e) {}
+        } catch (e) {
+          log.e('leaveRoom notify fail', e);
+        }
         this._closeWatcher();
         wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/games/games' }) });
       }
@@ -851,16 +1002,23 @@ Page({
 
   _ensureCanvas() {
     if (this._canvas) { this._drawBoard(); return; }
+    if (this._destroyed) return;
     const q = wx.createSelectorQuery().in(this);
     q.select('#gboard').fields({ node: true, size: true }).exec((res) => {
+      if (this._destroyed) return;
       const info = res && res[0];
       if (!info || !info.node) {
-        // canvas 尚未挂载（wx:if 未渲染）——稍后重试
-        setTimeout(() => this._ensureCanvas(), 60);
+        // canvas 尚未挂载（wx:if 未渲染）——带上限重试，避免无限循环
+        this._canvasRetry = (this._canvasRetry || 0) + 1;
+        if (this._canvasRetry > C.CANVAS_RETRY_MAX) {
+          wx.showToast({ title: '棋盘加载失败，请重进房间', icon: 'none' });
+          return;
+        }
+        this._canvasRetryTimer = setTimeout(() => this._ensureCanvas(), C.CANVAS_RETRY_DELAY);
         return;
       }
       const canvas = info.node;
-      const dpr = (wx.getWindowInfo ? wx.getWindowInfo().pixelRatio : 2) || 2;
+      const dpr = Math.min((wx.getWindowInfo ? wx.getWindowInfo().pixelRatio : 2) || 2, 2);
       // 用 onReady 计算的 boardW 作为 canvas 实际尺寸，确保坐标基准一致
       const boardW = this.data.boardW;
       canvas.width = boardW * dpr;
@@ -871,7 +1029,10 @@ Page({
       this._ctx = ctx;
       this._dpr = dpr;
       this._boardW = boardW;
-      console.log('[gomoku] canvas ready boardW=' + boardW + ' dpr=' + dpr + ' info.width=' + info.width);
+      // 尺寸变了要重建缓存的背景
+      this._bgCanvas = null;
+      this._pieceGrads = null;
+      log.d('[gomoku] canvas ready boardW=' + boardW + ' dpr=' + dpr);
       if (!this._board) this._board = emptyBoard();
       this._drawBoard();
     });

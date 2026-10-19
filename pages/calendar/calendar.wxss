@@ -1,5 +1,16 @@
 .page { padding: 24rpx 24rpx 40rpx; }
 
+.cloud-warn {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #FFF4E5; border: 2rpx solid #FFD9A8; border-radius: 16rpx;
+  padding: 16rpx 20rpx; margin-bottom: 20rpx;
+}
+.cw-text { font-size: 24rpx; color: #B26A00; font-weight: 600; }
+.cw-retry {
+  font-size: 24rpx; color: #FF5A5F; font-weight: 700;
+  padding: 6rpx 20rpx; background: #fff; border-radius: 999rpx;
+}
+
 .mode-switch {
   display: flex; background: #FFF0F3; border-radius: 999rpx; padding: 8rpx; margin-bottom: 24rpx;
 }

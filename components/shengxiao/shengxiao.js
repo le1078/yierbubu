@@ -62,9 +62,13 @@ const STICKERS = ['0003', '0004', '0063', '0070', '0071', '0072', '0074', '0077'
 const pairKey = (a, b) => [Math.min(a, b), Math.max(a, b)].join('-');
 const fmt = (i) => Z[i].e + ' ' + Z[i].n;
 
+// 12 个生肖按钮是静态数据，提为模块级常量：
+// 原来每次 attached 都重新 map 一遍并 setData，切 tab 重建组件就多一次无谓渲染
+const ZODIAC_BUTTONS = Z.map((z, i) => ({ i, n: z.n, e: z.e, cls: '' }));
+
 Component({
   data: {
-    zodiacs: [],
+    zodiacs: ZODIAC_BUTTONS,
     rows: [],
     hasResult: false,
     sticker: '/assets/shengxiao/yierbubu_nobg_0004.gif',
@@ -80,9 +84,6 @@ Component({
   lifetimes: {
     attached() {
       this._lastSticker = -1;
-      this.setData({
-        zodiacs: Z.map((z, i) => ({ i, n: z.n, e: z.e, cls: '' }))
-      });
     }
   },
 
@@ -160,9 +161,12 @@ Component({
         });
       }
 
-      // 随机换贴纸，避免与上一张相同
-      let s;
-      do { s = Math.floor(Math.random() * STICKERS.length); } while (s === this._lastSticker);
+      // 随机换贴纸，避免与上一张相同。
+      // 池长度 <=1 时没有「不重复」可选，直接取第一张，否则 do...while 会死循环
+      let s = 0;
+      if (STICKERS.length > 1) {
+        do { s = Math.floor(Math.random() * STICKERS.length); } while (s === this._lastSticker);
+      }
       this._lastSticker = s;
 
       this.setData({

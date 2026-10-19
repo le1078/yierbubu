@@ -1,30 +1,38 @@
 // 小笨生活：购物清单 + 小笨餐厅
 // 购物记录存云文档 shared_shopping（与全站共享数据一致），失败时回落本地缓存。
 const cloud = require('../../utils/cloudstore.js');
+const dt = require('../../utils/datetime.js');
+const { PLATFORMS, platOf: platNameOf } = require('../../utils/platforms.js');
+const { MENU_CACHE_TTL, TITLE_MAX, URL_MAX, RECENT_MAX } = require('../../utils/constants.js');
 
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const TAGS = ['生活', '服饰', '零食', '美妆', '数码', '家居'];
 
-// 平台识别表：按域名匹配，顺序即优先级
-const PLATFORMS = [
-  { key: 'taobao', name: '淘宝', emoji: '🛒', color: '#FF6A00', domains: ['taobao.com', 'tmall.com', 'tb.cn'] },
-  { key: 'jd', name: '京东', emoji: '🐶', color: '#E1251B', domains: ['jd.com', 'jd.hk', '3.cn'] },
-  { key: 'pdd', name: '拼多多', emoji: '🍑', color: '#E02E24', domains: ['pinduoduo.com', 'yangkeduo.com'] },
-  { key: 'xhs', name: '小红书', emoji: '📕', color: '#FF2442', domains: ['xiaohongshu.com', 'xhslink.com'] },
-  { key: 'douyin', name: '抖音', emoji: '🎵', color: '#161823', domains: ['douyin.com', 'iesdouyin.com'] },
-  { key: 'vip', name: '唯品会', emoji: '💎', color: '#E4007F', domains: ['vip.com'] },
-  { key: '1688', name: '1688', emoji: '🏭', color: '#FF7300', domains: ['1688.com'] },
-  { key: 'amazon', name: '亚马逊', emoji: '📦', color: '#FF9900', domains: ['amazon.cn', 'amazon.com'] },
-  { key: 'other', name: '链接', emoji: '🔗', color: '#FF8FAB', domains: [] }
-];
-const OTHER_PLAT = PLATFORMS[PLATFORMS.length - 1];
+// 平台识别：域名表用 utils/platforms.js 单一来源，emoji/color 为此页展示元数据
+const PLAT_STYLE = {
+  '淘宝': '🛒', '京东': '🐶', '拼多多': '🍑', '小红书': '📕', '抖音': '🎵',
+  '唯品会': '💎', 'B站': '📕', '得物': '👟', '网易': '📮', '亚马逊': '📦'
+};
+const PLAT_COLOR = {
+  '淘宝': '#FF6A00', '京东': '#E1251B', '拼多多': '#E02E24', '小红书': '#FF2442',
+  '抖音': '#161823', '唯品会': '#E4007F', 'B站': '#FB7299', '得物': '#2B2B2B',
+  '网易': '#E60012', '亚马逊': '#FF9900'
+};
+const OTHER_PLAT = { key: 'other', name: '链接', emoji: '🔗', color: '#FF8FAB' };
 
-function pad(n) { return n < 10 ? '0' + n : '' + n; }
-
-function todayStr(d) {
-  const t = d || new Date();
-  return t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate());
+function platOf(link) {
+  const name = platNameOf(link);
+  if (!name) return OTHER_PLAT;
+  return {
+    key: name,
+    name,
+    emoji: PLAT_STYLE[name] || '🔗',
+    color: PLAT_COLOR[name] || '#FF8FAB'
+  };
 }
+
+const pad = dt.pad;
+const todayStr = dt.todayStr;
 
 // 金额统一两位小数 + 千分位（¥59.00 / ¥1,280.00）
 function money(n) {
@@ -38,16 +46,10 @@ function monthLabelOf(key) {
   return p[0] + '年' + Number(p[1]) + '月';
 }
 
-function platOf(link) {
-  if (!link) return OTHER_PLAT;
-  const l = String(link).toLowerCase();
-  return PLATFORMS.find(p => p.domains.some(d => l.indexOf(d) !== -1)) || OTHER_PLAT;
-}
-
 function shortUrl(link) {
   if (!link) return '';
   const s = String(link).replace(/^https?:\/\//i, '').replace(/\/$/, '');
-  return s.length > 28 ? s.slice(0, 26) + '…' : s;
+  return s.length > URL_MAX ? s.slice(0, URL_MAX - 2) + '…' : s;
 }
 
 // 从分享文案里抽链接 / 价格 / 商品名
@@ -195,16 +197,19 @@ Page({
   /* ================= 数据 ================= */
 
   async _load() {
-    let list = [];
     let local = [];
     try { local = wx.getStorageSync('yb_shopping') || []; } catch (e) { local = []; }
 
+    let list = [];
     try {
       const remote = await cloud.loadShopping();
-      list = (remote && remote.length) ? remote : (local.length ? local : []);
+      // 云端成功返回（哪怕是空数组）就以云端为准，不用本地旧数据「复活」。
+      // 只有云端拉取失败才回落本地缓存。
+      list = Array.isArray(remote) ? remote : local;
     } catch (e) {
       console.error('购物记录加载失败', e);
       list = local;
+      wx.showToast({ title: '云端同步失败，显示本地数据', icon: 'none' });
     }
 
     this._items = Array.isArray(list) ? list : [];
@@ -213,7 +218,31 @@ Page({
   },
 
   async _persist(list) {
-    wx.setStorageSync('yb_shopping', list);
+    // setStorageSync 可能抛异常（超限/禁用存储），不能让它把后续 UI 更新全打断
+    try {
+      wx.setStorageSync('yb_shopping', list);
+    } catch (e) {
+      console.error('本地存储失败', e);
+    }
+    // 写入串行化：避免 toggleBought 连点产生并发全量写互相覆盖
+    if (this._persisting) {
+      this._pendingPersist = list;
+      return;
+    }
+    this._persisting = true;
+    try {
+      while (this._pendingPersist !== undefined) {
+        const next = this._pendingPersist;
+        this._pendingPersist = undefined;
+        await this._persistNow(next);
+      }
+      await this._persistNow(list);
+    } finally {
+      this._persisting = false;
+    }
+  },
+
+  async _persistNow(list) {
     try {
       await cloud.saveShopping(list);
     } catch (e) {
@@ -223,17 +252,21 @@ Page({
   },
 
   async _loadMenuMeta() {
+    // 30s 缓存：restaurant 组件自己也会拉一次，避免同一文档被读 3 次
+    if (this._menuMetaAt && Date.now() - this._menuMetaAt < MENU_CACHE_TTL) return;
     try {
       const menu = await cloud.loadMenu();
       if (menu && menu.length) {
         let n = 0;
         menu.forEach(c => { n += (c.items || []).length; });
+        this._menuMetaAt = Date.now();
         this.setData({ dishCount: n, menuCats: menu.length });
       } else {
-        this.setData({ dishCount: 19, menuCats: 5 });
+        this.setData({ dishCount: 0, menuCats: 0 });
       }
     } catch (e) {
-      this.setData({ dishCount: 19, menuCats: 5 });
+      console.error('菜单信息加载失败', e);
+      this.setData({ dishCount: 0, menuCats: 0 });
     }
   },
 
@@ -383,9 +416,14 @@ Page({
   onDraftInput(e) {
     const v = e.detail.value;
     this.setData({ draft: v });
-    // 粘贴了链接且名称还空着时，自动识别一次
+    // 粘贴了链接且名称还空着时自动识别。parsePaste 含多组全局正则，
+    // 每次按键都跑会卡顿，这里防抖 300ms
     if (/https?:\/\//i.test(v) && !this.data.form.title) {
-      this._applyParse(parsePaste(v), false);
+      clearTimeout(this._parseTimer);
+      this._parseTimer = setTimeout(() => {
+        if (this._destroyed) return;
+        this._applyParse(parsePaste(v), false);
+      }, 300);
     }
   },
 
@@ -455,6 +493,8 @@ Page({
   },
 
   async quickSave() {
+    // 防重：网络慢时连点会产生重复记录
+    if (this._saving) return;
     const f = this.data.form;
     const title = String(f.title || '').trim();
     const price = String(f.price || '').trim();
@@ -472,6 +512,7 @@ Page({
       return;
     }
 
+    this._saving = true;
     const plat = platOf(f.link);
     const item = {
       id: Date.now() + '_' + Math.random().toString(36).slice(2, 7),
@@ -506,6 +547,7 @@ Page({
       }
     });
     wx.showToast({ title: '记好啦', icon: 'none' });
+    this._saving = false;
   },
 
   /* ================= 列表操作 ================= */
@@ -516,8 +558,9 @@ Page({
     if (!raw) return;
     raw.bought = !raw.bought;
     this._items = (this._items || []).slice();
-    await this._persist(this._items);
     this._render();
+    // _persist 内部已串行化，连点不会产生并发覆盖
+    await this._persist(this._items);
   },
 
   copyLink(e) {
@@ -572,6 +615,7 @@ Page({
   },
 
   async saveEdit() {
+    if (this._saving) return;
     const f = this.data.editForm;
     if (!String(f.title || '').trim()) {
       wx.showToast({ title: '商品名称不能为空', icon: 'none' });
@@ -584,6 +628,7 @@ Page({
     const raw = (this._items || []).find(it => String(it.id) === String(f.id));
     if (!raw) return;
 
+    this._saving = true;
     raw.title = String(f.title).trim();
     raw.price = parseFloat(f.price);
     raw.link = String(f.link || '').trim();
@@ -597,6 +642,12 @@ Page({
     this._render();
     this.setData({ showEdit: false });
     wx.showToast({ title: '已保存', icon: 'none' });
+    this._saving = false;
+  },
+
+  onUnload() {
+    this._destroyed = true;
+    clearTimeout(this._parseTimer);
   },
 
   deleteEdit() {

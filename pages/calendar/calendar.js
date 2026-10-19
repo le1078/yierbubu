@@ -4,8 +4,10 @@ const {
   buildMapping
 } = require('../../utils/zodiac.js');
 const cloud = require('../../utils/cloudstore.js');
+const dt = require('../../utils/datetime.js');
+const { sanitizeAmount } = require('../../utils/amount.js');
 
-function pad(n) { return n < 10 ? '0' + n : '' + n; }
+const pad = dt.pad;
 
 const WIN_MULTIPLIER = 47; // 特码固定赔率：1 赔 47
 
@@ -26,6 +28,7 @@ function clone(o) { return JSON.parse(JSON.stringify(o)); }
 Page({
   data: {
     mode: 'memo',
+    cloudReady: false,       // 云端数据是否就绪；false 时禁止编辑（只读态）
     calY: 2026,
     calM: 0,
     monthLabel: '',
@@ -73,23 +76,36 @@ Page({
   },
 
   async _loadCloud() {
+    // 加载期间置为不可编辑：避免失败后用户基于空数据编辑，把共享数据冲掉
+    this.setData({ cloudReady: false });
     try {
       const { memo, buy } = await cloud.loadCalendar();
       this._memoCal = memo;
       this._buyCal = buy;
+      this.setData({ cloudReady: true });
     } catch (e) {
       console.error('日历云端加载失败', e);
-      this._memoCal = this._memoCal || {};
-      this._buyCal = this._buyCal || {};
-      wx.showToast({ title: '云端数据加载失败', icon: 'none' });
+      // 不初始化空对象：保持 cloudReady=false 进入只读态，所有写操作被拦截
+      wx.showToast({ title: '云端加载失败，请下拉重试', icon: 'none' });
     }
     this.renderCalendar();
   },
 
-  clone,
+  // 写操作前置检查：云端未就绪时禁止编辑并提示
+  _ensureWritable() {
+    if (this.data.cloudReady) return true;
+    wx.showToast({ title: '云端未就绪，暂不能编辑', icon: 'none' });
+    return false;
+  },
+
+  // 只读态下的手动重试入口
+  reloadCloud() {
+    this._loadCloud();
+  },
 
   setMode(e) {
     const mode = e.currentTarget.dataset.mode;
+    this._clearEditState();
     this.setData({ mode, sheetDate: '' });
     this.renderCalendar();
   },
@@ -97,6 +113,7 @@ Page({
   prevM() {
     let y = this.data.calY, m = this.data.calM - 1;
     if (m < 0) { m = 11; y--; }
+    this._clearEditState();
     this.setData({ calY: y, calM: m, mapping: buildMapping(y), sheetDate: '' });
     this.renderCalendar();
   },
@@ -104,6 +121,7 @@ Page({
   nextM() {
     let y = this.data.calY, m = this.data.calM + 1;
     if (m > 11) { m = 0; y++; }
+    this._clearEditState();
     this.setData({ calY: y, calM: m, mapping: buildMapping(y), sheetDate: '' });
     this.renderCalendar();
   },
@@ -118,7 +136,7 @@ Page({
     const t = new Date();
     const today = (t.getFullYear() === y && t.getMonth() === m) ? t.getDate() : -1;
     const grid = [];
-    for (let i = 0; i < first; i++) grid.push({ empty: true });
+    for (let i = 0; i < first; i++) grid.push({ empty: true, key: 'empty-' + i });
     for (let d = 1; d <= days; d++) {
       const ds = y + '-' + pad(m + 1) + '-' + pad(d);
       const hasMemo = !!(memoCal[ds] && memoCal[ds].memo);
@@ -126,7 +144,8 @@ Page({
       const dots = [];
       if (hasMemo) dots.push('memo');
       if (hasBuy) dots.push('buy');
-      grid.push({ empty: false, day: d, ds, isToday: d === today, isSel: ds === this.data.sheetDate, dots });
+      // 用日期串作 key：空白天原本没有 ds 字段，wx:key 会全部退化成 undefined
+      grid.push({ empty: false, day: d, ds, key: ds, isToday: d === today, isSel: ds === this.data.sheetDate, dots });
     }
     this.setData({ monthLabel: y + '年 ' + (m + 1) + '月', grid });
   },
@@ -146,15 +165,25 @@ Page({
     return false;
   },
 
+  // 清理编辑快照与待执行定时器：切换日期/模式前必须调用，
+  // 否则残留的 _memoSnapshot/_buySnapshotRec 会在下次 cancelEdit 时覆盖新日期的数据
+  _clearEditState() {
+    clearTimeout(this._memoSaveTimer);
+    clearTimeout(this._buySaveTimer);
+    delete this._memoSnapshot;
+    delete this._buySnapshotRec;
+    this.setData({ memoEditing: false, buyEditing: false });
+  },
+
   openDate(e) {
     const ds = e.currentTarget.dataset.ds;
     if (!ds) return;
+    this._clearEditState();
     if (this.data.mode === 'memo') {
       const memoCal = this._memoCal;
       this.setData({
         sheetDate: ds,
-        memoText: (memoCal[ds] && memoCal[ds].memo) || '',
-        memoEditing: false
+        memoText: (memoCal[ds] && memoCal[ds].memo) || ''
       });
     } else {
       this.setData({ sheetDate: ds });
@@ -164,6 +193,7 @@ Page({
 
   // 编辑门控
   toggleMemoEdit() {
+    if (!this._ensureWritable()) return;
     const entering = !this.data.memoEditing;
     if (entering) {
       this._memoSnapshot = (this._memoCal[this.data.sheetDate] && this._memoCal[this.data.sheetDate].memo) || '';
@@ -173,6 +203,7 @@ Page({
     this.setData({ memoEditing: entering });
   },
   toggleBuyEdit() {
+    if (!this._ensureWritable()) return;
     const entering = !this.data.buyEditing;
     if (entering) {
       const buyCal = this._buyCal;
@@ -191,7 +222,7 @@ Page({
       const snap = this._memoSnapshot || '';
       if (snap) memoCal[ds] = { memo: snap };
       else delete memoCal[ds];
-      cloud.saveCalendarMemo(memoCal).catch(() => {});
+      this._saveMemo(memoCal);
       delete this._memoSnapshot;
       this.setData({ memoText: snap, memoEditing: false });
       this.renderCalendar();
@@ -200,7 +231,7 @@ Page({
         const buyCal = this._buyCal;
         if (this.hasBuyData(this._buySnapshotRec)) buyCal[ds] = clone(this._buySnapshotRec);
         else delete buyCal[ds];
-        cloud.saveCalendarBuy(buyCal).catch(() => {});
+        this._saveBuy(buyCal);
         delete this._buySnapshotRec;
       }
       this.initBuyPanel(ds);
@@ -218,11 +249,27 @@ Page({
   persistMemo() {
     const ds = this.data.sheetDate;
     if (!ds) return;
+    if (!this._ensureWritable()) return;
     const memoCal = this._memoCal;
     if (this.data.memoText) memoCal[ds] = { memo: this.data.memoText };
     else delete memoCal[ds];
-    cloud.saveCalendarMemo(memoCal).catch(() => {});
+    this._saveMemo(memoCal);
     this.renderCalendar();
+  },
+
+  // 统一保存入口：失败时明确提示，不再静默吞掉
+  _saveMemo(memoCal) {
+    cloud.saveCalendarMemo(memoCal).catch((e) => {
+      console.error('备忘保存失败', e);
+      wx.showToast({ title: '保存失败，请重试', icon: 'none' });
+    });
+  },
+
+  _saveBuy(buyCal) {
+    cloud.saveCalendarBuy(buyCal).catch((e) => {
+      console.error('买码保存失败', e);
+      wx.showToast({ title: '保存失败，请重试', icon: 'none' });
+    });
   },
 
   saveMemo() {
@@ -236,8 +283,6 @@ Page({
   initBuyPanel(ds) {
     const buyCal = this._buyCal;
     let rec = buyCal[ds] || { kai: {}, mai: {}, extra: 0 };
-    // 兼容旧数据结构
-    if (rec.win !== undefined) { rec.extra = rec.win; delete rec.win; }
 
     const mapping = this.data.mapping;
     const kZIdx = [0, 0, 0], kNums = [['--'], ['--'], ['--']], kNIdx = [0, 0, 0];
@@ -419,10 +464,14 @@ Page({
   onBuyAmount(e) {
     const ri = +e.currentTarget.dataset.ri;
     const idx = +e.currentTarget.dataset.idx;
-    const val = String(e.detail.value).replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1');
-    if (this.data.buyItems[ri][idx]) this.data.buyItems[ri][idx].amount = val;
-    this.updateTotals();
-    this.persistBuy();
+    const val = sanitizeAmount(e.detail.value);
+    // 不可变写法：clone 后修改再 setData，不要直接改 this.data
+    const buyItems = clone(this.data.buyItems);
+    if (buyItems[ri][idx]) buyItems[ri][idx].amount = val;
+    this.setData({ buyItems }, () => {
+      this.updateTotals();
+      this.persistBuy();
+    });
   },
 
   deleteBuyItem(e) {
@@ -451,7 +500,7 @@ Page({
   },
 
   onExtraAmount(e) {
-    const val = String(e.detail.value).replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1');
+    const val = sanitizeAmount(e.detail.value);
     this.setData({ extraAmount: val }, () => {
       this.updateTotals();
       this.persistBuy();
@@ -460,6 +509,8 @@ Page({
 
   saveBuy() {
     const ds = this.data.sheetDate;
+    // 立即落库：先取消待执行的防抖保存，避免关面板后定时器又跑一次
+    clearTimeout(this._buySaveTimer);
     const buyCal = this._buyCal;
     if (!buyCal[ds]) buyCal[ds] = { kai: {}, mai: {}, extra: 0 };
     const rec = buyCal[ds];
@@ -482,16 +533,26 @@ Page({
 
     rec.extra = parseFloat(this.data.extraAmount) || 0;
     if (!this.hasBuyData(rec)) delete buyCal[ds];
-    cloud.saveCalendarBuy(buyCal).catch(() => {});
+    this._saveBuy(buyCal);
     delete this._buySnapshotRec;
     this.setData({ buyEditing: false });
     this.renderCalendar();
   },
 
   // 自动保存：任何改动后写入本地，关闭面板不再丢数据
+  // 防抖 400ms：输入金额时每敲一个字符都会触发，合并成一次云端写
   persistBuy() {
     const ds = this.data.sheetDate;
     if (!ds) return;
+    if (!this._ensureWritable()) return;
+    clearTimeout(this._buySaveTimer);
+    this._buySaveTimer = setTimeout(() => this._persistBuyNow(), 400);
+  },
+
+  _persistBuyNow() {
+    const ds = this.data.sheetDate;
+    if (!ds) return;
+    if (!this._ensureWritable()) return;
     const buyCal = this._buyCal;
     if (!buyCal[ds]) buyCal[ds] = { kai: {}, mai: {}, extra: 0 };
     const rec = buyCal[ds];
@@ -507,7 +568,7 @@ Page({
     });
     rec.extra = parseFloat(this.data.extraAmount) || 0;
     if (!this.hasBuyData(rec)) delete buyCal[ds];
-    cloud.saveCalendarBuy(buyCal).catch(() => {});
+    this._saveBuy(buyCal);
   },
 
   closePanel() {

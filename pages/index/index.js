@@ -4,15 +4,19 @@ const {
   randomDraw
 } = require('../../utils/zodiac.js');
 const cloud = require('../../utils/cloudstore.js');
+const C = require('../../utils/constants.js');
 
 const COVER_TEXTS = ['刮开有惊喜', '财运亨通', '手气不错', '好运连连', '福气满满', '刮出大运'];
+const DEFAULT_COVER = COVER_TEXTS[0];
 
-// 写云端记录：读最新 → unshift → 截断 200 → 写回
+// 写云端记录：读最新 → unshift → 截断上限 → 写回（cloudstore 内部已串行化）
+const RECORD_CAP = 200;
+
 async function pushRecord(item) {
   try {
     const records = await cloud.loadRecords();
     records.unshift(item);
-    await cloud.saveRecords(records.slice(0, 200));
+    await cloud.saveRecords(records.slice(0, RECORD_CAP));
   } catch (e) {
     console.error('记录云端写入失败', e);
   }
@@ -23,7 +27,9 @@ async function removeRecordById(id) {
     const records = await cloud.loadRecords();
     const next = records.filter(r => r.id !== id);
     if (next.length !== records.length) await cloud.saveRecords(next);
-  } catch (e) {}
+  } catch (e) {
+    console.error('记录删除失败', e);
+  }
 }
 
 Page({
@@ -84,7 +90,7 @@ Page({
       for (let i = 0; i < total; i++) out.push(randomDraw(this.data.year));
       this.setData({ results: out });
       ticks += 1;
-      if (ticks >= 10) {
+      if (ticks >= C.SHAKE_TICKS) {
         clearInterval(this._timer);
         this._timer = null;
         // 一次抽取 N 个 → 合并为 1 条记录（items 数组），写入云端共享
@@ -95,17 +101,36 @@ Page({
           kind: 'shake',
           items: out
         });
-        this.setData({ rolling: false, results: out });
+        // 合并为一次 setData：原来这里重复写了一遍同一个 results 数组
+        this.setData({ rolling: false });
       }
     }, 60);
   },
 
   onHide() {
+    // 注意：首页是 tab 页，切 tab 也会触发 onHide，所以这里不能置 _destroyed，
+    // 否则切回来 initScratch 会被 _destroyed 拦掉，卡片再也画不上涂层。
+    // 只清理定时器（避免后台空跑），canvas 引用保留到 onUnload 再释放。
+    this._clearScratchTimers();
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
   },
 
   onUnload() {
+    this._destroyed = true;
+    this._clearScratchTimers();
     if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    // canvas 节点与 2d context 引用：页面销毁后必须释放，否则持有已销毁节点造成泄漏
+    this._scratch = null;
+  },
+
+  // 统一清理刮刮卡相关的定时器（canvas 重试链 + 每张卡的节流帧）
+  _clearScratchTimers() {
+    if (this._scratchRetryTimer) { clearTimeout(this._scratchRetryTimer); this._scratchRetryTimer = null; }
+    if (this._scratch) {
+      this._scratch.forEach((s) => {
+        if (s && s._throttleTimer) { clearTimeout(s._throttleTimer); s._throttleTimer = null; }
+      });
+    }
   },
 
   /* ===== 刮一刮玩法 ===== */
@@ -158,12 +183,16 @@ Page({
       const expected = this.data.scratchCards.filter(c => !c.revealed && !c.coated).length;
       // 画布尚未布局完成（查到尺寸为 0）或尚未渲染出来：延迟重试。
       // 只要还没成功画上涂层，对应卡片的 coated 就保持 false → CSS 覆盖层一直挡着答案，绝不露底。
-      if (retry < 10 && (list.length !== expected || list.some(c => !c.width || !c.height))) {
-        setTimeout(() => this.initScratch(retry + 1), 40);
+      if (retry < C.SCRATCH_INIT_RETRY && (list.length !== expected || list.some(c => !c.width || !c.height))) {
+        // 重试 timer 句柄存起来，onUnload 时统一清理，避免对已卸载页面 setData
+        this._scratchRetryTimer = setTimeout(() => {
+          if (this._destroyed) return;
+          this.initScratch(retry + 1);
+        }, C.SCRATCH_RETRY_DELAY);
         return;
       }
-      let dpr = 2;
-      try { dpr = wx.getWindowInfo().pixelRatio || 2; } catch (err) { dpr = 2; }
+      if (this._destroyed) return;
+      let dpr = Math.min(C.SCRATCH_MAX_DPR, (wx.getWindowInfo && wx.getWindowInfo().pixelRatio) || 2);
       const cards = this.data.scratchCards.slice();
       this._scratch = [];
       let drewAny = false;
@@ -216,7 +245,7 @@ Page({
         ctx.font = 'bold 16px sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(cover || '刮开有惊喜', w / 2, h / 2);
+        ctx.fillText(cover || DEFAULT_COVER, w / 2, h / 2);
         this._scratch[i] = { canvas, ctx, w, h, lastX: null, lastY: null };
         if (cards[i]) cards[i].coated = true; // 涂层已真正画上 → 才允许移除 CSS 覆盖层
         drewAny = true;
@@ -243,6 +272,30 @@ Page({
     const t = e.touches[0];
     if (t.x == null || t.y == null) return;
     const x = t.x, y = t.y;
+
+    // 时间节流：touchmove 可达 60~120Hz，每事件都直接画会占满主线程。
+    // 16ms 一帧（约 60fps）足够顺滑，且能保证线段的连续性
+    const now = Date.now();
+    if (s._lastDrawAt && now - s._lastDrawAt < 16) {
+      // 缓存最新坐标，下一个帧用线段补上，避免快速滑动出现断点
+      s._pendingX = x; s._pendingY = y;
+      if (!s._throttleTimer) {
+        s._throttleTimer = setTimeout(() => {
+          s._throttleTimer = null;
+          if (this._destroyed) return;
+          this._drawScratchStroke(idx, s._pendingX, s._pendingY);
+        }, 16);
+      }
+      return;
+    }
+    s._lastDrawAt = now;
+    this._drawScratchStroke(idx, x, y);
+  },
+
+  // 单次擦除笔画：从上一坐标画线到当前坐标（首次为圆点）
+  _drawScratchStroke(idx, x, y) {
+    const s = this._scratch && this._scratch[idx];
+    if (!s) return;
     const ctx = s.ctx;
     ctx.globalCompositeOperation = 'destination-out';
     ctx.lineWidth = Math.max(18, s.w * 0.18);
@@ -258,9 +311,9 @@ Page({
       ctx.stroke();
     }
     s.lastX = x; s.lastY = y;
-    // 实时检测刮开比例：每 6 次 move 检测一次，避免每帧读像素造成卡顿
+    // 实时检测刮开比例：每 N 次 move 检测一次，避免每帧读像素造成卡顿
     s._tick = (s._tick || 0) + 1;
-    if (s._tick % 6 === 0) this._checkReveal(idx);
+    if (s._tick % C.SCRATCH_CHECK_EVERY === 0) this._checkReveal(idx);
   },
 
   onScratchEnd(e) {
@@ -269,7 +322,7 @@ Page({
     this._checkReveal(idx);
   },
 
-  // 计算某张卡的刮开比例，超过 70% 自动完全翻开
+  // 计算某张卡的刮开比例，超过阈值自动完全翻开
   _checkReveal(idx) {
     const s = this._scratch && this._scratch[idx];
     if (!s) return;
@@ -277,16 +330,23 @@ Page({
     if (card && card.revealed) return;
     let clear = 0, total = 0;
     try {
-      const img = s.ctx.getImageData(0, 0, s.canvas.width, s.canvas.height).data;
-      const step = 4 * 12; // 采样加密，更接近真实视觉比例
+      // 只读画布中心区域（边缘留 10% 边距）：getImageData 是全量拷贝，
+      // 卡片尺寸 200x220 * dpr2 ≈ 700KB/次，缩窄范围能显著降低开销
+      const cw = s.canvas.width, ch = s.canvas.height;
+      const mx = Math.floor(cw * 0.1), my = Math.floor(ch * 0.1);
+      const rw = cw - mx * 2, rh = ch - my * 2;
+      const img = s.ctx.getImageData(mx, my, rw, rh).data;
+      const step = 4 * C.SCRATCH_SAMPLE_STEP; // 采样加密，更接近真实视觉比例
       // alpha < 50 就算已刮开：微信小程序 canvas 擦除边缘会残留半透明像素，人眼已看不见
       for (let i = 3; i < img.length; i += step) { total++; if (img[i] < 50) clear++; }
     } catch (err) { return; }
     const ratio = total > 0 ? clear / total : 0;
-    if (ratio > 0.7) {
+    if (ratio > C.SCRATCH_REVEAL_RATIO) {
       const cards = this.data.scratchCards.slice();
       if (cards[idx]) cards[idx].revealed = true;
       this.setData({ scratchCards: cards });
+      // 清掉该卡的节流定时器并释放 canvas 引用（已翻开的卡不再需要）
+      if (s._throttleTimer) { clearTimeout(s._throttleTimer); s._throttleTimer = null; }
       this._scratch[idx] = null;
       // 全部刮完才写一条合并记录
       if (cards.every(c => c.revealed)) this.flushScratchRecord();

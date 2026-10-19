@@ -57,7 +57,7 @@
       </view>
       <view class="p-mid">
         <view class="p-status">{{statusText}}</view>
-        <view class="p-room">房间 {{roomNo}} · 第 {{moveCount}} 手</view>
+        <view class="p-room">房间 {{roomNo}} · 第 {{round}} 局 · {{moveCount}} 手</view>
       </view>
       <view class="p-item {{!isMyTurn && stage === 'playing' ? 'active' : ''}}">
         <image class="p-avatar" src="{{oppAvatar}}" mode="aspectFit"/>
@@ -73,8 +73,7 @@
     <view class="board-wrap">
       <canvas type="2d" id="gboard" class="board"
         style="width: {{boardW}}px; height: {{boardW}}px;"
-        bindtouchstart="onCanvasTap"
-        canvas-id="gboard"
+        bindtouchend="onCanvasTap"
         disable-scroll="true"></canvas>
     </view>
 

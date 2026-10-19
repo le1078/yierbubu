@@ -16,6 +16,13 @@
       ]
     }
   ],
+  "lazyCodeLoading": "requiredComponents",
+  "preloadRule": {
+    "pages/games/games": {
+      "network": "all",
+      "packages": ["games"]
+    }
+  },
   "window": {
     "navigationBarBackgroundColor": "#FF8FAB",
     "navigationBarTitleText": "小笨日历",
