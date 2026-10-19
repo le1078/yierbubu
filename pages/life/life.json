@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "小笨生活",
+  "usingComponents": {
+    "restaurant": "/components/restaurant/restaurant"
+  }
+}

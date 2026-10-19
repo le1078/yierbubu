@@ -1,0 +1,5 @@
+/* 独立餐厅页只承载组件，样式由组件自带 */
+.page {
+  min-height: 100vh;
+  background: #FFFDF8;
+}

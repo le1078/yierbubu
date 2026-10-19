@@ -1,0 +1,167 @@
+.page { padding: 24rpx 24rpx 40rpx; }
+
+.mode-switch {
+  display: flex; background: #FFF0F3; border-radius: 999rpx; padding: 8rpx; margin-bottom: 24rpx;
+}
+.mode {
+  flex: 1; text-align: center; font-size: 26rpx; font-weight: 700; color: #A9743F;
+  padding: 18rpx 0; border-radius: 999rpx;
+}
+.mode.on { background: #fff; color: #FF5A5F; box-shadow: 0 4rpx 10rpx rgba(255, 138, 171, 0.18); }
+
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20rpx; }
+.mn { font-size: 32rpx; font-weight: 800; color: #2B2B2B; }
+.cal-nav { display: flex; gap: 16rpx; }
+.navbtn {
+  width: 64rpx; height: 64rpx; border-radius: 50%;
+  border: 3rpx solid #FFD9E3; background: #fff; color: #A9743F; font-size: 32rpx;
+  display: flex; align-items: center; justify-content: center;
+}
+
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12rpx; margin-bottom: 12rpx; }
+.week text { text-align: center; font-size: 24rpx; color: #8A7E78; }
+
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12rpx; }
+.day {
+  aspect-ratio: 1; border-radius: 20rpx; background: #FFF9FA;
+  border: 3rpx solid #FFE0E9; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 28rpx; color: #4A3F3A; overflow: hidden;
+}
+.day.empty { background: transparent; border: none; }
+.day.today { border-color: #FF5A5F; font-weight: 800; }
+.day.sel { box-shadow: 0 0 0 2rpx #FF5A5F inset; }
+/* 圆点叠加：同一天有备忘+买码时显示两个 */
+.day .dots { position: absolute; bottom: 4rpx; left: 50%; transform: translateX(-50%); display: flex; gap: 6rpx; flex: none; }
+.day .dots .pd { width: 12rpx; height: 12rpx; border-radius: 50%; border: 2rpx solid #fff; box-sizing: border-box; flex: none; box-shadow: 0 1rpx 4rpx rgba(0,0,0,0.12); }
+.day .dots .pd.memo { background: #FF5A5F; }
+.day .dots .pd.buy { background: #F7C948; }
+
+.tip { margin-top: 28rpx; font-size: 21rpx; color: #BCA89C; text-align: center; line-height: 1.6; }
+
+/* 选中日期：底部内联面板（只用透明度动画，避免原生 textarea 在 transform 下定位错位） */
+.date-panel {
+  margin-top: 28rpx; background: #FFF5F7; border: 4rpx solid #FFD9E3; border-radius: 32rpx;
+  padding: 28rpx; box-shadow: 0 10rpx 24rpx rgba(255, 138, 171, 0.14);
+  animation: panelIn .25s ease;
+}
+@keyframes panelIn { from { opacity: 0; } to { opacity: 1; } }
+.dp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24rpx; }
+.dp-head .dh-t { font-size: 32rpx; font-weight: 800; color: #2B2B2B; font-family: 'Yuanti SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+.dp-head .dp-close { width: 48rpx; height: 48rpx; border-radius: 50%; background: #FFF0F3; color: #8A7E78; font-size: 40rpx; text-align: center; line-height: 46rpx; }
+
+.field { margin-bottom: 20rpx; background: #fff; border: 3rpx solid #FFD9E3; border-radius: 24rpx; padding: 20rpx; }
+.flabel { display: block; font-size: 32rpx; font-weight: 900; color: #FF5A5F; margin-bottom: 18rpx; font-family: 'Yuanti SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; letter-spacing: 2rpx; text-shadow: 0 1rpx 0 #fff, 0 3rpx 6rpx rgba(255, 90, 95, 0.12); }
+.row2 { display: flex; gap: 12rpx; align-items: center; }
+.pk { flex: none; width: 180rpx; }
+.pk.num { width: 120rpx; }
+.pk-text {
+  padding: 18rpx 12rpx; border-radius: 16rpx; border: 3rpx solid #FFD9E3; background: #fff;
+  font-size: 26rpx; color: #4A3F3A; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.amt { flex: 1; padding: 0 24rpx; border-radius: 16rpx; border: 3rpx solid #FFD9E3; background: #fff; font-size: 28rpx; color: #4A3F3A; box-sizing: border-box; height: 58rpx; min-height: 0; line-height: 52rpx; }
+.amt.sm { width: 140rpx; flex: none; height: 56rpx; min-height: 0; line-height: 50rpx; padding: 0 12rpx; text-align: center; font-size: 24rpx; box-sizing: border-box; }
+.memo-area { width: 100%; box-sizing: border-box; min-height: 240rpx; padding: 24rpx 28rpx; border-radius: 24rpx; border: 3rpx solid #FFD9E3; background: #FFF9FA; font-size: 28rpx; color: #4A3F3A; line-height: 1.7; }
+.amt.full { width: 100%; box-sizing: border-box; padding: 0 28rpx; height: 92rpx; min-height: 0; line-height: 86rpx; }
+.value-box { padding: 18rpx 24rpx; border-radius: 16rpx; border: 3rpx solid #FFE7B0; background: linear-gradient(135deg, #FFF3D6, #FFE7B0); font-size: 44rpx; font-weight: 800; color: #C9881F; text-align: right; font-variant-numeric: tabular-nums; }
+.value-box.dim { color: #BCA89C; }
+
+.region-row { background: #FFF9FA; border-radius: 18rpx; padding: 16rpx; margin-bottom: 16rpx; }
+.region-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12rpx; }
+.rg-label { display: inline-block; font-size: 24rpx; font-weight: 700; color: #8A7E78; background: #FFE0E9; padding: 4rpx 14rpx; border-radius: 999rpx; margin-bottom: 12rpx; }
+.clear-txt { font-size: 24rpx; color: #E75480; font-weight: 800; padding: 6rpx 16rpx; white-space: nowrap; background: linear-gradient(135deg, #FFF0F3, #FFE0E9); border: 2rpx solid #FFB6C9; border-radius: 999rpx; box-shadow: 0 3rpx 8rpx rgba(255, 143, 171, 0.22); display: inline-flex; align-items: center; justify-content: center; }
+
+/* 生肖/号码 chip */
+.chip-row { display: flex; flex-wrap: wrap; gap: 10rpx; margin-bottom: 10rpx; }
+.chip {
+  padding: 10rpx 16rpx; border-radius: 999rpx; background: #fff; border: 3rpx solid #FFD9E3;
+  font-size: 24rpx; color: #4A3F3A; font-weight: 600;
+}
+.chip.on { background: linear-gradient(135deg, #FFB6C9, #FF8FAB); color: #fff; border-color: #FF8FAB; }
+
+.num-chip-row { display: flex; flex-wrap: wrap; gap: 10rpx; margin-bottom: 14rpx; padding-left: 6rpx; }
+.num-chip {
+  min-width: 56rpx; padding: 8rpx 12rpx; border-radius: 14rpx; background: #fff; border: 3rpx solid #FFD9E3;
+  font-size: 24rpx; color: #4A3F3A; text-align: center; font-weight: 700;
+}
+.num-chip.on { background: #FF5A5F; color: #fff; border-color: #FF5A5F; }
+
+/* 投注金额列表 */
+.bet-list { margin-top: 12rpx; }
+.bet-row { display: flex; gap: 10rpx; align-items: center; margin-bottom: 10rpx; }
+.bet-tag { flex: 1; font-size: 24rpx; color: #4A3F3A; background: #fff; padding: 14rpx 16rpx; border-radius: 14rpx; border: 3rpx solid #FFD9E3; }
+
+.total-box {
+  background: linear-gradient(135deg, #FFF3D6, #FFE7B0); border-radius: 24rpx;
+  padding: 24rpx 28rpx; display: flex; justify-content: space-between; align-items: center;
+}
+.total-box.profit { background: linear-gradient(135deg, #E0F7FA, #B2EBF2); }
+.total-box.profit.loss { background: linear-gradient(135deg, #FFE3E3, #FFC9C9); }
+.total-box.profit.loss .t1 { color: #C0392B; }
+.total-box.profit.loss .t2 { color: #C0392B; }
+.total-box .t1 { font-size: 26rpx; color: #9A7B2E; font-weight: 700; }
+.total-box.profit .t1 { color: #007A8A; }
+.total-box .t2 { font-size: 44rpx; font-weight: 800; color: #C9881F; font-variant-numeric: tabular-nums; }
+.total-box.profit .t2 { color: #00838F; }
+.total-box.dim .t2 { color: #BCA89C; }
+
+/* 中奖金额构成分解 */
+.breakdown { font-size: 22rpx; color: #BCA89C; margin-top: 10rpx; text-align: right; font-variant-numeric: tabular-nums; }
+
+.save-row { display: flex; gap: 16rpx; margin-top: 16rpx; }
+.draw-btn {
+  flex: 1; width: auto; height: 92rpx; line-height: 92rpx; border-radius: 999rpx; color: #fff;
+  font-size: 32rpx; font-weight: 800; text-align: center;
+  background: linear-gradient(135deg, #FF5A5F, #FF7A5C);
+  box-shadow: 0 10rpx 22rpx rgba(255, 90, 95, 0.35);
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* 编辑门控：展示模式只读 + 编辑按钮 */
+.edit-bar { margin-top: 24rpx; padding-top: 20rpx; border-top: 2rpx dashed #FFD9E3; }
+.edit-btn {
+  display: block; width: 60%; margin: 0 auto; height:96rpx; line-height:96rpx; border-radius: 999rpx; text-align: center;
+  background: #FFF0F3; color: #FF5A5F; font-size:36rpx; font-weight: 800;
+  border: 3rpx solid #FFD9E3;
+}
+.ghost-btn {
+  flex: 1; height: 92rpx; line-height: 92rpx; border-radius: 999rpx; text-align: center;
+  background: #fff; color: #8A7E78; font-size: 32rpx; font-weight: 800;
+  border: 3rpx solid #FFD9E3;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* 备忘展示态 */
+.memo-view { }
+.memo-text {
+  white-space: pre-wrap; word-break: break-word;
+  font-size: 28rpx; line-height: 1.7; color: #4A3F3A;
+  background: #FFF9FA; border-radius: 20rpx; padding: 22rpx 24rpx; min-height: 120rpx;
+}
+.memo-empty { font-size: 26rpx; color: #BCA89C; text-align: center; padding: 40rpx 0; }
+
+/* 买码展示态 */
+.buy-view { }
+.ro-line { font-size: 26rpx; color: #4A3F3A; padding: 10rpx 0; display: flex; align-items: center; }
+.ro-line.dim { color: #BCA89C; }
+.kai-label { font-size: 26rpx; color: #8A7E78; font-weight: 700; margin-right: 12rpx; }
+.kai-chip { display: inline-flex; align-items: center; gap: 8rpx; background: linear-gradient(135deg, #FFF0F3, #FFE0E9); border: 3rpx solid #FFB6C9; color: #E75480; font-size: 30rpx; font-weight: 800; padding: 14rpx 24rpx; border-radius: 999rpx; box-shadow: 0 4rpx 12rpx rgba(255, 143, 171, 0.22); }
+.bet-amt { color: #C9881F; font-weight: 800; font-variant-numeric: tabular-nums; }
+.bet-row.ro { display: flex; justify-content: space-between; align-items: center;
+  background: #fff; border: 3rpx solid #FFD9E3; border-radius: 14rpx; padding: 14rpx 18rpx; margin-bottom: 10rpx; }
+.bet-row.ro.hit { background: linear-gradient(135deg, #E9F9EC, #CDEFD2); border-color: #34C759; }
+.hit-badge { display: inline-flex; align-items: center; font-size: 22rpx; font-weight: 800; color: #1E9E3A; background: #DFF7E3; border: 1rpx solid #9BE0A8; border-radius: 999rpx; padding: 2rpx 10rpx; flex: none; }
+
+/* 下拉添加买码 */
+.row2.add-row { flex-wrap: nowrap; align-items: stretch; }
+.row2.add-row .pk { width: 140rpx; }
+.row2.add-row .pk.num { width: 100rpx; }
+.row2.add-row .pk-text { padding: 0 6rpx; font-size: 24rpx; height: 56rpx; box-sizing: border-box; display: flex; align-items: center; justify-content: center; }
+.row2.add-row .amt.sm { width: 100rpx; flex: none; }
+.add-btn {
+  padding: 0 12rpx; border-radius: 14rpx; height: 56rpx; box-sizing: border-box;
+  background: linear-gradient(135deg, #FFB6C9, #FF8FAB); color: #fff;
+  font-size: 24rpx; font-weight: 800; white-space: nowrap;
+  display: flex; align-items: center; justify-content: center;
+}

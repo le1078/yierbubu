@@ -1,0 +1,65 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/calendar/calendar",
+    "pages/records/records",
+    "pages/games/games",
+    "pages/life/life",
+    "pages/restaurant/restaurant"
+  ],
+  "subpackages": [
+    {
+      "root": "subpackages/games",
+      "name": "games",
+      "pages": [
+        "gomoku/gomoku"
+      ]
+    }
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#FF8FAB",
+    "navigationBarTitleText": "小笨日历",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#FFFDF8"
+  },
+  "tabBar": {
+    "color": "#8A7E78",
+    "selectedColor": "#FF5A5F",
+    "backgroundColor": "#FFFFFF",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/index/index",
+        "text": "来财",
+        "iconPath": "assets/tab_luck.png",
+        "selectedIconPath": "assets/tab_luck.png"
+      },
+      {
+        "pagePath": "pages/calendar/calendar",
+        "text": "日历",
+        "iconPath": "assets/tab_calendar.png",
+        "selectedIconPath": "assets/tab_calendar.png"
+      },
+      {
+        "pagePath": "pages/life/life",
+        "text": "生活",
+        "iconPath": "assets/tab_life.png",
+        "selectedIconPath": "assets/tab_life.png"
+      },
+      {
+        "pagePath": "pages/records/records",
+        "text": "记录",
+        "iconPath": "assets/tab_records.png",
+        "selectedIconPath": "assets/tab_records.png"
+      },
+      {
+        "pagePath": "pages/games/games",
+        "text": "游戏",
+        "iconPath": "assets/tab_games.png",
+        "selectedIconPath": "assets/tab_games.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

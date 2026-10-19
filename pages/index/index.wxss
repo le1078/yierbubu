@@ -1,0 +1,164 @@
+.page { padding: 24rpx 24rpx 40rpx; }
+
+.topbar {
+  display: flex; align-items: center; gap: 14rpx;
+  background: linear-gradient(135deg, #FFFDF8, #FFEFE6);
+  padding: 18rpx 20rpx; border-radius: 28rpx; border: 2rpx dashed #F3D9C9;
+  margin-bottom: 24rpx;
+}
+.mascots { display: flex; gap: 6rpx; }
+.masc {
+  width: 80rpx; height: 80rpx; border-radius: 50%; overflow: hidden;
+  background: linear-gradient(135deg, #fff, #FFE3D3);
+  box-shadow: 0 3rpx 8rpx rgba(200, 146, 94, 0.18);
+}
+.masc.big { width: 84rpx; height: 84rpx; }
+.brand { flex: 1; min-width: 0; }
+.brand .title {
+  display: flex; flex-direction: column; align-items: center; line-height: 1.15;
+  white-space: nowrap;
+}
+.brand .t-top {
+  font-size: 42rpx; font-weight: 900; letter-spacing: 4rpx;
+  color: #FF5A5F;
+  text-shadow:
+    0 0 0 #fff,
+    -2rpx -2rpx 0 #fff, 2rpx -2rpx 0 #fff, -2rpx 2rpx 0 #fff, 2rpx 2rpx 0 #fff,
+    0 4rpx 8rpx rgba(255,90,95,0.25);
+  animation: bounce 1.4s ease-in-out infinite;
+}
+.brand .t-bottom {
+  font-size: 34rpx; font-weight: 800; letter-spacing: 6rpx;
+  background: linear-gradient(90deg, #FF5A5F, #FFB6C9, #FF5A5F);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shine 2.5s linear infinite;
+}
+@keyframes shine { to { background-position: 200% center; } }
+@keyframes bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  40% { transform: translateY(-4rpx) scale(1.04); }
+  60% { transform: translateY(2rpx) scale(0.98); }
+}
+
+/* 年份：自动获取，醒目展示 */
+.yearnav { flex: none; background: linear-gradient(135deg, #FF5A5F, #FF8FAB); border-radius: 20rpx; padding: 16rpx 24rpx; box-shadow: 0 8rpx 18rpx rgba(255, 90, 95, 0.28); }
+.yl { font-size: 30rpx; font-weight: 900; color: #fff; white-space: nowrap; text-align: center; text-shadow: 0 2rpx 4rpx rgba(0,0,0,0.08); }
+
+.g-card {
+  background: #fff; border: 4rpx solid #FFD9E3; border-radius: 32rpx;
+  padding: 28rpx 28rpx; text-align: center;
+  box-shadow: 0 12rpx 28rpx rgba(255, 138, 171, 0.16);
+}
+.g-mascot { display: flex; justify-content: center; gap: 8rpx; margin-bottom: 14rpx; }
+
+/* 结果置顶 */
+.results { display: flex; flex-wrap: wrap; justify-content: center; gap: 16rpx; margin-bottom: 24rpx; min-height: 120rpx; }
+.res-empty { width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  color: #BCA89C; font-size: 24rpx; line-height: 1.7; padding: 24rpx 0; border: 3rpx dashed #FFD9E3; border-radius: 24rpx; }
+.r-card {
+  background: linear-gradient(135deg, #FFFDF8, #FFF2F6); border-radius: 24rpx; padding: 22rpx 18rpx;
+  border: 3rpx solid #FFE3D3; text-align: center; box-shadow: 0 8rpx 18rpx rgba(255, 138, 171, 0.12);
+  min-width: 140rpx;
+}
+.r-card .re { font-size: 64rpx; line-height: 1; margin-bottom: 4rpx; }
+.r-card .rn { font-size: 26rpx; font-weight: 700; color: #4A3F3A; margin-top: 6rpx; }
+.r-card .rb {
+  display: inline-block; margin-top: 12rpx; color: #fff; font-weight: 800; font-size: 32rpx;
+  padding: 6rpx 24rpx; border-radius: 999rpx; font-variant-numeric: tabular-nums;
+  box-shadow: 0 4rpx 10rpx rgba(0,0,0,0.12);
+}
+
+.g-title {
+  display: inline-block; margin: 0 auto 10rpx;
+  font-size: 44rpx; font-weight: 900; color: #fff; letter-spacing: 6rpx;
+  padding: 12rpx 38rpx; border-radius: 999rpx;
+  background: linear-gradient(135deg, #FF5A5F, #FF8FAB, #FF5A5F);
+  background-size: 200% auto;
+  box-shadow: 0 8rpx 20rpx rgba(255, 90, 95, 0.35);
+  animation: shine 3s linear infinite, wiggle 2s ease-in-out infinite;
+  text-shadow: 0 2rpx 4rpx rgba(0,0,0,0.08);
+}
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
+}
+.g-sub { font-size: 24rpx; color: #A9743F; margin: 8rpx 0 24rpx; }
+
+.count-row { display: flex; flex-wrap: nowrap; gap: 12rpx; justify-content: center; margin-bottom: 24rpx; }
+.count-chip {
+  width: 50rpx; height: 50rpx; border-radius: 16rpx;
+  border: 3rpx solid #FFD9E3; background: #FFF9FA;
+  font-size: 24rpx; font-weight: 700; color: #A9743F;
+  display: flex; align-items: center; justify-content: center;
+}
+.count-chip.on { background: linear-gradient(135deg, #FFB6C9, #FF8FAB); color: #fff; border-color: #FF8FAB; }
+
+.draw-btn {
+  width: 100%; min-height: 80rpx; line-height: 1.2; border-radius: 999rpx;
+  color: #fff; font-size: 30rpx; font-weight: 900; text-align: center;
+  background: linear-gradient(135deg, #FF5A5F, #FF7A5C);
+  box-shadow: 0 6rpx 16rpx rgba(255, 90, 95, 0.35);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 12rpx 0;
+}
+.draw-btn.is-rolling { animation: pulse 0.5s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(0.97); } }
+.tip { margin-top: 28rpx; font-size: 21rpx; color: #BCA89C; text-align: center; line-height: 1.6; }
+
+/* 三个栏目 tab 切换：摇一摇 / 刮一刮 / 小笨生肖 */
+.tabbar { display: flex; gap: 12rpx; margin-bottom: 24rpx; }
+.tab {
+  flex: 1; min-width: 0; text-align: center; padding: 18rpx 4rpx; border-radius: 24rpx;
+  font-size: 24rpx; font-weight: 800; color: #A9743F; white-space: nowrap;
+  background: #FFF9FA; border: 3rpx solid #FFD9E3;
+}
+.tab.on {
+  color: #fff; border-color: #FF8FAB;
+  background: linear-gradient(135deg, #FF5A5F, #FF8FAB);
+  box-shadow: 0 6rpx 16rpx rgba(255, 90, 95, 0.3);
+}
+
+/* 刮一刮 */
+.scratch-grid {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 18rpx;
+  margin: 0 0 24rpx; min-height: 120rpx;
+}
+.scratch-item {
+  position: relative; width: 200rpx; height: 220rpx;
+  border-radius: 24rpx; overflow: hidden;
+}
+.scratch-result {
+  width: 100%; height: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  margin: 0; box-shadow: 0 8rpx 18rpx rgba(255, 138, 171, 0.12);
+}
+.scratch-result.revealed { animation: pop 0.3s ease; }
+@keyframes pop { 0% { transform: scale(0.92); } 60% { transform: scale(1.04); } 100% { transform: scale(1); } }
+.scratch-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 3; }
+/* CSS 覆盖层：与 canvas 涂层同色同质感，coated 前盖住答案；不依赖 canvas 异步就绪，杜绝露底闪烁 */
+.scratch-cover {
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #FFD3E0, #FF93B0);
+  color: rgba(255, 255, 255, 0.95); font-size: 28rpx; font-weight: 800;
+  box-sizing: border-box; overflow: hidden;
+}
+.scratch-cover::after {
+  content: ''; position: absolute; inset: 0; opacity: 0.10;
+  background: repeating-linear-gradient(45deg, #fff 0 2rpx, transparent 2rpx 12rpx);
+}
+
+/* 刮一刮操作按钮 */
+.scratch-actions { display: flex; gap: 16rpx; margin-top: 20rpx; }
+.mini-btn {
+  flex: 1; text-align: center; padding: 18rpx 0; border-radius: 999rpx;
+  font-size: 26rpx; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  box-shadow: 0 4rpx 12rpx rgba(255, 90, 95, 0.25);
+}
+.mini-btn.ghost {
+  color: #FF5A5F; background: #FFF9FA; border: 3rpx solid #FFD9E3; box-shadow: none;
+}

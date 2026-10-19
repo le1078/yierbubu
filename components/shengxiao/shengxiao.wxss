@@ -1,0 +1,139 @@
+/* 小笨生肖 · 迁移自内部测试页
+   换算基准：原网页 1px = 2rpx（750rpx = 375px）
+   网格列数按原网页手机宽度断点取值：≤460px 为 3 列
+   （原网页左上角装饰图 .deco 在 ≤900px 即 display:none，手机端本就不显示，故未迁移）
+
+   本组件嵌在首页同页切换展示，因此去掉了原网页作为整页时的 min-height / 底部安全区留白，
+   其余版式、配色、字号一律保持 1:1。 */
+
+/* 对齐原网页的 *{box-sizing:border-box} */
+.sx-page,
+.sx-page view,
+.sx-page text,
+.sx-page image,
+.sx-page canvas { box-sizing: border-box; }
+
+.sx-page {
+  padding: 8rpx 0 0;
+  font-family: "PingFang SC", "Microsoft YaHei", "Yuanti SC", sans-serif;
+  color: #6B4A52;
+  line-height: 1.8;
+  background-color: #FFF0F4;
+  background-image:
+    radial-gradient(circle at 15% 20%, #FFE0EA 0, rgba(255, 224, 234, 0) 40%),
+    radial-gradient(circle at 85% 35%, #FFE9F0 0, rgba(255, 233, 240, 0) 45%);
+  border-radius: 32rpx;
+  overflow: hidden;
+}
+
+/* ---- 标题区（对应原 section{padding:0 20px} 的 20px 左右留白） ---- */
+.sx-hd { padding: 48rpx 40rpx 0; text-align: center; }
+.sx-h2 {
+  font-size: 52rpx; font-weight: 900; letter-spacing: 12rpx; color: #F15A7E;
+  margin-bottom: 12rpx;
+  text-shadow: 0 4rpx 0 #fff, 0 8rpx 24rpx rgba(241, 90, 126, 0.2);
+}
+/* 原网页 h2::before/::after 的 🌸 比正文字小一号，左右各留 10px */
+.sx-h2 .fl { font-size: 35rpx; letter-spacing: 0; margin: 0 20rpx; }
+/* 原网页 .sub 不在 <header> 内，没有 letter-spacing，此处保持一致 */
+.sx-sub { font-size: 32rpx; color: #A07D86; margin-bottom: 48rpx; }
+
+/* ---- 卡片 ---- */
+.sx-card {
+  margin: 0 40rpx;
+  background: #FFFAF7;
+  border: 4rpx solid #FFD9E4;
+  border-radius: 48rpx;
+  padding: 56rpx;
+  box-shadow: 0 16rpx 48rpx rgba(241, 90, 126, 0.12);
+  position: relative;
+}
+
+/* ---- 顶部提示（对应原网页 .tip：文字不设 flex，装不下时整段换行占满一行） ---- */
+.sx-tip { display: flex; align-items: center; flex-wrap: wrap; gap: 24rpx; margin-bottom: 32rpx; }
+.sx-tip-img { width: 144rpx; height: 144rpx; flex: none; }
+.sx-tip-txt { font-size: 32rpx; font-weight: 700; line-height: 1.6; }
+
+/* ---- 生肖格：3 列 × 4 行，格子间 12px(24rpx) 间距 ---- */
+.zgrid { display: flex; flex-wrap: wrap; margin: 0 -12rpx; }
+/* 原网页 .zbtn 是 <button>，UA 会给 line-height:normal，这里显式对齐，
+   否则会继承页面 1.8 行高导致按钮明显变高 */
+.zbtn {
+  width: calc(33.333% - 24rpx); margin: 12rpx; box-sizing: border-box;
+  background: #fff; border: 4rpx solid #FFD9E4; border-radius: 36rpx;
+  padding: 28rpx 8rpx 20rpx; text-align: center; transition: all 0.2s;
+  line-height: normal;
+}
+.zbtn .e { display: block; font-size: 64rpx; margin-bottom: 4rpx; }
+.zbtn .n { display: block; font-size: 32rpx; color: #6B4A52; }
+.zbtn-hover { transform: translateY(-6rpx) scale(1.03); border-color: #FF8FAB; }
+.zbtn.sel {
+  background: linear-gradient(160deg, #FF8FAB, #F15A7E);
+  border-color: #F15A7E;
+  box-shadow: 0 12rpx 24rpx rgba(241, 90, 126, 0.4);
+}
+.zbtn.sel .n { color: #fff; }
+.zbtn.r-chong { background: #FFE3EA; border-color: #F15A7E; box-shadow: 0 6rpx 14rpx rgba(241, 90, 126, 0.2); }
+.zbtn.r-chong .n { color: #F15A7E; }
+.zbtn.r-he { background: #E5F5E9; border-color: #5AA66B; }
+.zbtn.r-he .n { color: #5AA66B; }
+.zbtn.r-bad { background: #FDF3DA; border-color: #E8CF95; }
+.zbtn.r-bad .n { color: #C79A3B; }
+
+/* ---- 图例 ---- */
+.legend { display: flex; flex-wrap: wrap; margin: 32rpx 0 4rpx; }
+.lg { display: flex; align-items: center; margin: 0 28rpx 12rpx 0; font-size: 28rpx; color: #A07D86; }
+.lg-dot {
+  width: 28rpx; height: 28rpx; border-radius: 12rpx; margin-right: 12rpx; flex: none;
+  border: 3rpx solid transparent; box-sizing: border-box;
+}
+.lg-sel { background: #F15A7E; }
+.lg-chong { background: #FFE3EA; border-color: #F15A7E; }
+.lg-he { background: #E5F5E9; border-color: #5AA66B; }
+.lg-bad { background: #FDF3DA; border-color: #E8CF95; }
+
+/* ---- 空状态 ---- */
+.empty { text-align: center; padding: 52rpx 20rpx 12rpx; color: #A07D86; }
+.empty-img { width: 220rpx; height: 220rpx; }
+.empty-txt { display: block; font-size: 32rpx; }
+
+/* ---- 结果面板 ---- */
+.result {
+  display: none;
+  margin-top: 44rpx; border-radius: 40rpx; padding: 48rpx 52rpx;
+  background: #fff; border: 4rpx dashed #FF8FAB; position: relative;
+}
+.result.show { display: block; animation: pop 0.35s ease-out; }
+@keyframes pop {
+  from { opacity: 0; transform: scale(0.96) translateY(16rpx); }
+  to { opacity: 1; transform: none; }
+}
+.result .sticker {
+  position: absolute; right: 32rpx; top: -68rpx;
+  width: 192rpx; height: 192rpx; transform: rotate(6deg);
+}
+.r-h3 { color: #F15A7E; font-size: 42rpx; font-weight: 900; margin-bottom: 20rpx; }
+
+.rel-row { display: flex; flex-wrap: wrap; gap: 20rpx; margin: 20rpx 0; align-items: baseline; }
+.rel-label {
+  flex: none; min-width: 192rpx; text-align: center; padding: 4rpx 24rpx;
+  border-radius: 999rpx; font-size: 28rpx; border: 3rpx solid; line-height: 1.6;
+}
+.rl-chong { background: #FFE3EA; color: #F15A7E; border-color: #FF8FAB; }
+.rl-he { background: #E5F5E9; color: #5AA66B; border-color: #A8D8B4; }
+.rl-bad { background: #FDF3DA; color: #C79A3B; border-color: #E8CF95; }
+.rel-val { font-size: 32rpx; font-weight: 800; color: #6B4A52; }
+.rel-desc { color: #A07D86; font-size: 30rpx; line-height: 1.7; }
+
+.meta {
+  margin-top: 24rpx; padding-top: 24rpx; border-top: 4rpx dashed #FFD9E4;
+  color: #A07D86; font-size: 29rpx;
+}
+
+/* ---- 页脚（同页嵌入，底部安全区由首页统一处理） ---- */
+.sx-foot {
+  text-align: center; padding: 68rpx 40rpx 48rpx;
+  color: #A07D86; font-size: 29rpx; letter-spacing: 5rpx;
+}
+.foot-img { display: block; width: 168rpx; height: 168rpx; margin: 0 auto 20rpx; }
+.foot-txt { display: block; }

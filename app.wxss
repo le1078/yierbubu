@@ -1,0 +1,6 @@
+page {
+  background: #FFFDF8;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", sans-serif;
+  color: #4A3F3A;
+}
+view, text, textarea, input, picker { box-sizing: border-box; }

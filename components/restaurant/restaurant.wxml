@@ -1,0 +1,205 @@
+<view class="rest-page">
+
+  <!-- ===== 餐厅牌子 ===== -->
+  <view class="signboard">
+    <view class="sign-frame">
+      <image class="chef chef-left" src="{{chefLeft}}" mode="aspectFit"/>
+      <view class="sign-content">
+        <view class="sign-title">小笨餐厅</view>
+        <view class="sign-sub">🍜 今天也要好好吃饭 🍜</view>
+        <view class="sign-date">{{today}}</view>
+      </view>
+      <image class="chef chef-right" src="{{chefRight}}" mode="aspectFit"/>
+    </view>
+  </view>
+
+  <!-- ===== 菜单区 ===== -->
+  <view class="menu-section">
+    <view class="menu-header">
+      <view class="menu-title">📋 今日菜单</view>
+      <view class="menu-edit-btn" bindtap="openMenuEditor">🏗️ 餐厅改造</view>
+    </view>
+
+    <!-- 分类标签 -->
+    <scroll-view class="cat-tabs" scroll-x>
+      <view
+        wx:for="{{menu}}"
+        wx:key="cat"
+        class="cat-tab {{activeCat === index ? 'active' : ''}}"
+        data-idx="{{index}}"
+        bindtap="switchCat"
+      >{{item.cat}}</view>
+    </scroll-view>
+
+    <!-- 菜品列表 -->
+    <view class="dish-list">
+      <view
+        wx:for="{{menu[activeCat].items}}"
+        wx:key="id"
+        class="dish-card"
+      >
+        <view class="dish-img-wrap" wx:if="{{item.img}}">
+          <image class="dish-img" src="{{item.img}}" mode="aspectFill"/>
+        </view>
+        <view class="dish-emoji" wx:else>{{item.emoji}}</view>
+        <view class="dish-info">
+          <view class="dish-name">{{item.name}}</view>
+          <view class="dish-desc">{{item.desc}}</view>
+          <view class="dish-taste" wx:if="{{item.taste}}">口味：{{item.taste}}</view>
+          <view class="dish-price">¥{{item.price}}</view>
+        </view>
+        <view class="dish-actions">
+          <view wx:if="{{cart[item.id]}}" class="dish-btn minus" data-item="{{item}}" bindtap="minusFromCart">−</view>
+          <view wx:if="{{cart[item.id]}}" class="dish-count">{{cart[item.id].count}}</view>
+          <view class="dish-btn plus" data-item="{{item}}" bindtap="addToCart">+</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 底部购物车栏 ===== -->
+  <view class="cart-bar {{cartCount > 0 ? 'has-items' : ''}}" bindtap="toggleCart">
+    <view class="cart-left">
+      <view class="cart-icon">🛒</view>
+      <view wx:if="{{cartCount > 0}}" class="cart-badge">{{cartCount}}</view>
+    </view>
+    <view class="cart-total" wx:if="{{cartCount > 0}}">¥{{cartTotal}}</view>
+    <view class="cart-total empty" wx:else>未选购</view>
+    <view class="cart-submit {{cartCount > 0 ? 'active' : ''}}" catchtap="submitOrder">
+      {{orderSubmitting ? '提交中…' : '下单'}}
+    </view>
+  </view>
+
+  <!-- ===== 购物车展开面板 ===== -->
+  <view wx:if="{{showCart}}" class="cart-panel-mask" bindtap="toggleCart">
+    <view class="cart-panel" catchtap="noop">
+      <view class="cp-header">
+        <text class="cp-title">🛒 购物车</text>
+        <text class="cp-close" bindtap="toggleCart">✕</text>
+      </view>
+
+      <scroll-view class="cp-list" scroll-y>
+        <view wx:for="{{cartList}}" wx:key="id" class="cp-item">
+          <view class="cp-item-info">
+            <image wx:if="{{item.img}}" class="cp-item-img" src="{{item.img}}" mode="aspectFill"/>
+            <text wx:else class="cp-item-emoji">{{item.emoji}}</text>
+            <view class="cp-item-text">
+              <text class="cp-item-name">{{item.name}}</text>
+              <text class="cp-item-price">¥{{item.price}} × {{item.count}}</text>
+            </view>
+          </view>
+          <view class="cp-item-sub">¥{{item.subtotal}}</view>
+        </view>
+      </scroll-view>
+
+      <view class="cp-footer">
+        <textarea class="cp-textarea" placeholder="备注（选填）" value="{{tableNo}}" bindinput="onTableNoInput" auto-height maxlength="100"/>
+        <view class="cp-total-row">
+          <text>合计：</text>
+          <text class="cp-total">¥{{cartTotal}}</text>
+        </view>
+        <view class="cp-submit {{cartCount > 0 ? 'active' : ''}}" bindtap="submitOrder">
+          {{orderSubmitting ? '提交中…' : '确认下单'}}
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- ===== 餐厅改造面板 ===== -->
+  <view wx:if="{{showMenuEditor}}" class="editor-mask" bindtap="closeMenuEditor">
+    <view class="editor-panel" catchtap="noop">
+      <view class="ep-header">
+        <text class="ep-title">🏗️ 餐厅改造</text>
+        <text class="ep-close" bindtap="closeMenuEditor">✕</text>
+      </view>
+
+      <scroll-view class="ep-scroll" scroll-y>
+
+        <!-- 分类管理 -->
+        <view class="ep-section">
+          <view class="ep-label">分类管理</view>
+          <!-- 分类名编辑 -->
+          <view class="ep-cat-list">
+            <view
+              wx:for="{{menu}}"
+              wx:key="cat"
+              class="ep-cat-item {{editCat === index ? 'active' : ''}}"
+              data-idx="{{index}}"
+              bindtap="switchEditCat"
+            >
+              <input
+                class="ep-cat-name-input"
+                value="{{item.cat}}"
+                data-idx="{{index}}"
+                bindinput="onCatNameInput"
+                bindtap="switchEditCat"
+              />
+              <text class="ep-cat-del" data-idx="{{index}}" catchtap="deleteCat" wx:if="{{menu.length > 1}}">✕</text>
+            </view>
+          </view>
+          <view class="ep-add-cat" bindtap="addCat">+ 添加分类</view>
+        </view>
+
+        <!-- 已有菜品 -->
+        <view class="ep-section">
+          <view class="ep-label">「{{menu[editCat].cat}}」菜品（点击编辑）</view>
+          <view class="ep-dish-list">
+            <view
+              wx:for="{{menu[editCat].items}}"
+              wx:key="id"
+              class="ep-dish-item"
+              data-item="{{item}}"
+              bindtap="editDish"
+            >
+              <image wx:if="{{item.img}}" class="ep-dish-img" src="{{item.img}}" mode="aspectFill"/>
+              <text wx:else class="ep-dish-emoji">{{item.emoji}}</text>
+              <view class="ep-dish-info">
+                <text class="ep-dish-name">{{item.name}}</text>
+                <text class="ep-dish-price">¥{{item.price}}</text>
+              </view>
+              <text class="ep-dish-edit">编辑</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 添加/编辑表单 -->
+        <view class="ep-section">
+          <view class="ep-label">{{editingDish ? '编辑菜品' : '添加新菜品'}}</view>
+          <view class="ep-form">
+
+            <!-- 图片上传 -->
+            <view class="ep-img-section">
+              <view class="ep-img-label">菜品图片（选填）</view>
+              <view class="ep-img-row">
+                <view class="ep-img-preview" wx:if="{{form.img}}">
+                  <image class="ep-img-thumb" src="{{form.img}}" mode="aspectFill"/>
+                  <view class="ep-img-del" bindtap="removeFormImg">✕</view>
+                </view>
+                <view class="ep-img-upload" bindtap="chooseFormImg" wx:if="{{!form.img}}">
+                  <text class="ep-img-upload-icon">📷</text>
+                  <text class="ep-img-upload-text">上传图片</text>
+                </view>
+                <view class="ep-img-emoji-wrap" wx:if="{{!form.img}}">
+                  <input class="ep-input ep-emoji-input" placeholder="或用 Emoji" value="{{form.emoji}}" data-field="emoji" bindinput="onFormInput" maxlength="2"/>
+                </view>
+              </view>
+            </view>
+
+            <input class="ep-input" placeholder="菜品名称（必填）" value="{{form.name}}" data-field="name" bindinput="onFormInput"/>
+            <input class="ep-input" type="digit" placeholder="价格（必填，如 28.5）" value="{{form.price}}" data-field="price" bindinput="onFormInput"/>
+            <input class="ep-input" placeholder="口味（选填，如：微辣/酸甜）" value="{{form.taste}}" data-field="taste" bindinput="onFormInput"/>
+            <textarea class="ep-input ep-textarea" placeholder="备注描述（选填）" value="{{form.desc}}" data-field="desc" bindinput="onFormInput" auto-height maxlength="100"/>
+
+            <view class="ep-form-btns">
+              <view wx:if="{{editingDish}}" class="ep-btn danger" bindtap="deleteDish">删除</view>
+              <view class="ep-btn ghost" bindtap="resetForm">清空</view>
+              <view class="ep-btn primary" bindtap="saveDish">{{editingDish ? '保存修改' : '添加菜品'}}</view>
+            </view>
+          </view>
+        </view>
+
+      </scroll-view>
+    </view>
+  </view>
+
+</view>

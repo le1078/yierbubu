@@ -1,0 +1,31 @@
+<view class="page">
+  <view class="hero">
+    <image class="hero-masc" src="/assets/bubu.gif" mode="aspectFit"/>
+    <view class="hero-text">
+      <view class="hero-title">🎮 小笨游戏大厅</view>
+      <view class="hero-sub">和好友一起玩，快乐加倍～</view>
+    </view>
+    <image class="hero-masc" src="/assets/mascot_right.gif" mode="aspectFit"/>
+  </view>
+
+  <view class="list">
+    <view
+      wx:for="{{games}}"
+      wx:key="id"
+      class="gcard {{item.soon ? 'soon' : ''}}"
+      data-game="{{item}}"
+      bindtap="enterGame">
+      <view class="gicon">{{item.icon}}</view>
+      <view class="ginfo">
+        <view class="gname">
+          {{item.name}}
+          <text wx:for="{{item.tags}}" wx:for-item="tg" wx:key="*this" class="gtag {{item.soon ? 'dim' : ''}}">{{tg}}</text>
+        </view>
+        <view class="gdesc">{{item.desc}}</view>
+      </view>
+      <view class="ggo">{{item.soon ? '🔜' : '›'}}</view>
+    </view>
+  </view>
+
+  <view class="tip">本大厅仅供好友间休闲娱乐，友谊第一、比赛第二～</view>
+</view>

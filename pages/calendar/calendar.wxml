@@ -1,0 +1,157 @@
+<view class="page">
+  <view class="mode-switch">
+    <view class="mode {{mode === 'memo' ? 'on' : ''}}" data-mode="memo" bindtap="setMode">📝 日历备忘</view>
+    <view class="mode {{mode === 'buy' ? 'on' : ''}}" data-mode="buy" bindtap="setMode">💰 买码日历</view>
+  </view>
+
+  <view class="cal-head">
+    <view class="mn">{{monthLabel}}</view>
+    <view class="cal-nav">
+      <view class="navbtn" bindtap="prevM">‹</view>
+      <view class="navbtn" bindtap="nextM">›</view>
+    </view>
+  </view>
+
+  <view class="week">
+    <text wx:for="{{weekdays}}" wx:key="*this">{{item}}</text>
+  </view>
+
+  <view class="grid">
+    <view
+      wx:for="{{grid}}"
+      wx:key="ds"
+      class="day {{item.empty ? 'empty' : ''}} {{item.isToday ? 'today' : ''}} {{item.isSel ? 'sel' : ''}}"
+      data-ds="{{item.ds}}"
+      bindtap="openDate">
+      <text wx:if="{{!item.empty}}">{{item.day}}</text>
+      <view wx:if="{{item.dots.length}}" class="dots">
+        <view wx:for="{{item.dots}}" wx:for-item="dt" wx:key="*this" class="pd {{dt}}"></view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 选中日期：底部内联面板 -->
+  <view wx:if="{{sheetDate}}" class="date-panel">
+
+    <!-- 日历备忘 -->
+    <block wx:if="{{mode === 'memo'}}">
+      <view class="dp-head">
+        <text class="dh-t">📝 {{sheetDate}} 的小事</text>
+        <text class="dp-close" bindtap="closePanel">×</text>
+      </view>
+
+      <!-- 展示模式：只读 -->
+      <view wx:if="{{!memoEditing}}" class="memo-view">
+        <view wx:if="{{memoText}}" class="memo-text">{{memoText}}</view>
+        <view wx:else class="memo-empty">这一天还没有记录～点「编辑」写点什么吧 ✏️</view>
+        <view class="edit-bar"><view class="edit-btn" bindtap="toggleMemoEdit">✏️ 编辑</view></view>
+      </view>
+
+      <!-- 编辑模式：可改 -->
+      <view wx:else>
+        <textarea class="memo-area" value="{{memoText}}" bindinput="onMemoInput" placeholder="比如：和布布一起吃了火锅，超开心～" maxlength="500"></textarea>
+        <view class="save-row">
+          <view class="ghost-btn" bindtap="cancelEdit">不保存</view>
+          <view class="draw-btn" bindtap="saveMemo">完成</view>
+        </view>
+      </view>
+    </block>
+
+    <!-- 买码日历 -->
+    <block wx:if="{{mode === 'buy'}}">
+      <view class="dp-head">
+        <text class="dh-t">💰 {{sheetDate}} 买码日历</text>
+        <text class="dp-close" bindtap="closePanel">×</text>
+      </view>
+
+      <!-- 展示模式：只读固定内容 -->
+      <view wx:if="{{!buyEditing}}" class="buy-view">
+        <view wx:for="{{regions}}" wx:for-index="ri" wx:for-item="rg" wx:key="key" class="region-row">
+          <view class="region-head"><text class="rg-label">{{rg.label}}</text></view>
+          <view class="ro-line {{kaiValues[ri].name ? '' : 'dim'}}">
+            <text class="kai-label">开码：</text>
+            <text wx:if="{{kaiValues[ri].name}}" class="kai-chip">{{kaiValues[ri].emoji}} {{kaiValues[ri].name}} · {{(kaiValues[ri].number < 10 ? '0' : '') + kaiValues[ri].number}}</text>
+            <text wx:else>—</text>
+          </view>
+          <view wx:if="{{buyItems[ri].length > 0}}" class="bet-list">
+            <view wx:for="{{buyItems[ri]}}" wx:for-index="idx" wx:for-item="it" wx:key="idx" class="bet-row ro {{kaiValues[ri].name === it.name && kaiValues[ri].number === it.number ? 'hit' : ''}}">
+              <text class="bet-tag">{{it.emoji || ''}} {{it.name}} · {{it.number < 10 ? '0' + it.number : it.number}}</text>
+              <view wx:if="{{kaiValues[ri].name === it.name && kaiValues[ri].number === it.number}}" class="hit-badge">🎯 命中</view>
+              <text class="bet-amt">¥ {{it.amount || '0'}}</text>
+            </view>
+          </view>
+          <view wx:else class="ro-line dim">买码：—</view>
+        </view>
+
+        <view class="field"><text class="flabel">今日买码成本</text><view class="total-box"><text class="t1">合计支出</text><text class="t2">¥ {{total}}</text></view></view>
+        <view class="field"><text class="flabel">其他中奖金额</text><view class="total-box {{extraAmount ? '' : 'dim'}}"><text class="t1"></text><text class="t2">{{extraAmount ? '¥ ' + extraStr : '—'}}</text></view></view>
+        <view class="field"><text class="flabel">中奖金额</text><view class="total-box"><text class="t1">中奖金额</text><text class="t2">¥ {{middle}}</text></view><view class="breakdown">含命中 ¥{{winStr}} / 其他 ¥{{extraStr}}</view></view>
+        <view class="field"><text class="flabel">总利润</text><view class="total-box profit {{profitNeg ? 'loss' : ''}}"><text class="t1">总利润</text><text class="t2">¥ {{profit}}</text></view></view>
+
+        <view class="edit-bar"><view class="edit-btn" bindtap="toggleBuyEdit">✏️ 编辑</view></view>
+      </view>
+
+      <!-- 编辑模式：下拉框 + 输入 -->
+      <view wx:else>
+        <!-- ① 今日开码 -->
+        <view class="field">
+          <text class="flabel">今日开码（开奖结果）</text>
+          <view wx:for="{{regions}}" wx:for-index="ri" wx:for-item="rg" wx:key="key" class="region-row">
+            <text class="rg-label">{{rg.label}}</text>
+            <view class="row2">
+              <picker class="pk" mode="selector" range="{{zodiacNames}}" value="{{kZIdx[ri] > 0 ? kZIdx[ri] - 1 : 0}}" data-ri="{{ri}}" bindchange="onKaiZodiac">
+                <view class="pk-text">{{kZIdx[ri] > 0 ? zodiacNames[kZIdx[ri]-1] : '-- 请选择 --'}}</view>
+              </picker>
+              <picker class="pk num" mode="selector" range="{{kNums[ri]}}" value="{{kNIdx[ri]}}" data-ri="{{ri}}" bindchange="onKaiNum">
+                <view class="pk-text">{{kNums[ri][kNIdx[ri]]}}</view>
+              </picker>
+              <view class="clear-txt" data-ri="{{ri}}" bindtap="clearKai">清空</view>
+            </view>
+          </view>
+        </view>
+
+        <!-- ② 今日买码（下拉框添加） -->
+        <view class="field">
+          <text class="flabel">今日买码（下拉选择添加）</text>
+          <view wx:for="{{regions}}" wx:for-index="ri" wx:for-item="rg" wx:key="key" class="region-row">
+            <view class="region-head">
+              <text class="rg-label">{{rg.label}}</text>
+              <text class="clear-txt" data-ri="{{ri}}" bindtap="clearMai">清空本区</text>
+            </view>
+            <view class="row2 add-row">
+              <picker class="pk" mode="selector" range="{{zodiacNames}}" value="{{pick[ri].z > 0 ? pick[ri].z - 1 : 0}}" data-ri="{{ri}}" bindchange="onPickZodiac">
+                <view class="pk-text">{{pick[ri].z > 0 ? zodiacNames[pick[ri].z-1] : '-- 生肖 --'}}</view>
+              </picker>
+              <picker class="pk num" mode="selector" range="{{pickNums[ri]}}" value="{{pick[ri].n}}" data-ri="{{ri}}" bindchange="onPickNum">
+                <view class="pk-text">{{pickNums[ri][pick[ri].n] || '-- 号码 --'}}</view>
+              </picker>
+              <input class="amt sm" type="digit" value="{{pick[ri].amount}}" data-ri="{{ri}}" bindinput="onPickAmount" placeholder="金额"/>
+              <view class="add-btn" data-ri="{{ri}}" bindtap="addBuy">➕ 添加</view>
+            </view>
+
+            <view wx:if="{{buyItems[ri].length > 0}}" class="bet-list">
+              <view wx:for="{{buyItems[ri]}}" wx:for-index="idx" wx:for-item="it" wx:key="idx" class="bet-row">
+                <text class="bet-tag">{{it.emoji || ''}} {{it.name}} · {{it.number < 10 ? '0' + it.number : it.number}}</text>
+                <input class="amt" type="digit" value="{{it.amount}}" data-ri="{{ri}}" data-idx="{{idx}}" bindinput="onBuyAmount" placeholder="金额"/>
+                <text class="clear-txt" data-ri="{{ri}}" data-idx="{{idx}}" bindtap="deleteBuyItem">删除</text>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view class="field"><text class="flabel">今日买码成本</text><view class="total-box"><text class="t1">合计支出</text><text class="t2">¥ {{total}}</text></view></view>
+        <view class="field"><text class="flabel">其他中奖金额</text><input class="amt full" type="digit" value="{{extraAmount}}" bindinput="onExtraAmount" placeholder="其他中奖金额（元），无则空"/></view>
+        <view class="field"><text class="flabel">中奖金额</text><view class="total-box"><text class="t1">中奖金额</text><text class="t2">¥ {{middle}}</text></view><view class="breakdown">含命中 ¥{{winStr}} / 其他 ¥{{extraStr}}</view></view>
+        <view class="field"><text class="flabel">总利润</text><view class="total-box profit {{profitNeg ? 'loss' : ''}}"><text class="t1">总利润</text><text class="t2">¥ {{profit}}</text></view></view>
+
+        <view class="save-row">
+          <view class="ghost-btn" bindtap="cancelEdit">不保存</view>
+          <view class="draw-btn" bindtap="saveBuy">完成</view>
+        </view>
+      </view>
+    </block>
+
+  </view>
+
+  <view class="tip">点任意日期，在下方记下开心小事，或你的开码 / 买码记录～</view>
+</view>

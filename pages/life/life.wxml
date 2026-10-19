@@ -1,0 +1,323 @@
+<view class="life">
+
+  <!-- ================= 顶部切换（广场内） ================= -->
+  <view class="seg {{view === 'hub' ? 'at-hub' : ''}}">
+    <view class="seg-item {{view === 'hub' ? 'on' : ''}}" bindtap="goHub">
+      <text class="seg-ico">🏡</text>
+      <text class="seg-txt">广场</text>
+    </view>
+    <view class="seg-item {{view === 'buy' ? 'on' : ''}}" bindtap="goBuy">
+      <text class="seg-ico">🛍️</text>
+      <text class="seg-txt">购物</text>
+    </view>
+    <view class="seg-item {{view === 'restaurant' ? 'on' : ''}}" bindtap="goRest">
+      <text class="seg-ico">🍜</text>
+      <text class="seg-txt">餐厅</text>
+    </view>
+  </view>
+
+  <!-- ================= 广场 ================= -->
+  <block wx:if="{{view === 'hub'}}">
+    <view class="hero">
+      <view class="hero-glow"></view>
+      <view class="hero-txt">
+        <view class="hero-hi">{{dateLabel}} · {{weekLabel}}</view>
+        <view class="hero-title">小笨生活</view>
+        <view class="hero-sub">记下想买的小东西，再去餐厅吃顿好的～</view>
+      </view>
+      <view class="hero-mascot">
+        <image class="hero-mascot-gif" src="/assets/emotes/shopping.gif" mode="aspectFit"/>
+      </view>
+    </view>
+
+    <view class="entry-list">
+
+      <!-- 购物 -->
+      <view class="entry buy" bindtap="goBuy">
+        <view class="entry-ico-wrap">
+          <image class="entry-ico" src="/assets/emotes/note.gif" mode="aspectFit"/>
+        </view>
+        <view class="entry-main">
+          <view class="entry-title">购物清单</view>
+          <view class="entry-sub">
+            <text wx:if="{{shopCount > 0}}">共 {{shopCount}} 件 · 想买 {{shopWish}}</text>
+            <text wx:else>把链接、价格、日期记下来</text>
+          </view>
+          <view class="entry-tags">
+            <text class="etag">🔗 粘贴即识别</text>
+            <text class="etag">💰 自动算支出</text>
+          </view>
+        </view>
+        <view class="entry-go">›</view>
+      </view>
+
+      <!-- 餐厅 -->
+      <view class="entry rest" bindtap="goRest">
+        <view class="entry-ico-wrap">
+          <image class="entry-ico" src="/assets/chef_left.gif" mode="aspectFit"/>
+        </view>
+        <view class="entry-main">
+          <view class="entry-title">小笨餐厅</view>
+          <view class="entry-sub">{{menuCats}} 个分类 · {{dishCount}} 道菜等你点</view>
+          <view class="entry-tags">
+            <text class="etag">🍚 点餐下单</text>
+            <text class="etag">🏗️ 可自己加菜</text>
+          </view>
+        </view>
+        <view class="entry-go">›</view>
+      </view>
+    </view>
+
+    <!-- 最近记的 -->
+    <view class="recent" wx:if="{{recent.length > 0}}">
+      <view class="recent-head">
+        <text class="recent-title">🕒 最近记的</text>
+        <text class="recent-more" bindtap="goBuy">全部 ›</text>
+      </view>
+      <view wx:for="{{recent}}" wx:key="id" class="mini" data-item="{{item}}" bindtap="openEdit">
+        <view class="mini-badge" style="background:{{item.platBg}};color:{{item.platColor}}">{{item.platEmoji}}</view>
+        <view class="mini-main">
+          <view class="mini-title {{item.bought ? 'done' : ''}}">{{item.title}}</view>
+          <view class="mini-meta">{{item.dateShort}} · {{item.platName}}</view>
+        </view>
+        <view class="mini-price">¥{{item.priceText}}</view>
+      </view>
+    </view>
+
+    <view class="hub-foot">
+      <image class="hub-foot-gif" src="/assets/emotes/happy.gif" mode="aspectFit"/>
+      <text class="hub-foot-txt">一二布布陪你把日子过好</text>
+    </view>
+  </block>
+
+  <!-- ================= 购物 ================= -->
+  <block wx:if="{{view === 'buy'}}">
+
+    <!-- 统计 -->
+    <view class="stats">
+      <view class="stat main">
+        <view class="stat-label">本月已花</view>
+        <view class="stat-num"><text class="stat-yen">¥</text>{{statMonthTotal}}</view>
+        <view class="stat-foot">到手 {{statMonthCount}} 件 · 月均 ¥{{statMonthAvg}}</view>
+      </view>
+      <view class="stat-col">
+        <view class="stat sm wish">
+          <view class="stat-top">
+            <view class="stat-label">想买</view>
+            <view class="stat-num sm">{{statWish}}</view>
+          </view>
+          <view class="stat-sub">预计 ¥{{statWishTotal}}</view>
+        </view>
+        <view class="stat sm done">
+          <view class="stat-top">
+            <view class="stat-label">已到手</view>
+            <view class="stat-num sm">{{statBought}}</view>
+          </view>
+          <view class="stat-sub">累计 ¥{{statAllTotal}}</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 记一笔 -->
+    <view class="compose">
+      <view class="compose-head">
+        <view class="compose-title">
+          <image class="compose-gif" src="/assets/emotes/note.gif" mode="aspectFit"/>
+          <text>记一笔</text>
+        </view>
+        <view class="compose-paste" bindtap="pasteFromClipboard">📋 粘贴</view>
+      </view>
+
+      <textarea
+        class="compose-input"
+        placeholder="把商品链接 / 口令粘到这里，自动认出名称和价格～"
+        placeholder-class="ph"
+        value="{{draft}}"
+        bindinput="onDraftInput"
+        maxlength="500"
+        auto-height
+      />
+      <view class="compose-smart" bindtap="smartParse">✨ 智能识别</view>
+
+      <!-- 识别结果 / 手动编辑 -->
+      <view class="form">
+        <view class="field">
+          <text class="field-label">商品</text>
+          <input class="field-input" placeholder="例如：毛绒绒居家拖鞋" placeholder-class="ph"
+            value="{{form.title}}" data-field="title" bindinput="onFormInput" maxlength="60"/>
+        </view>
+
+        <view class="field row">
+          <text class="field-label">价格</text>
+          <view class="price-box">
+            <text class="price-sym">¥</text>
+            <input class="price-input" type="digit" placeholder="0.00" placeholder-class="ph"
+              value="{{form.price}}" data-field="price" bindinput="onFormInput" maxlength="9"/>
+          </view>
+          <picker mode="date" value="{{form.date}}" bindchange="onDateChange" class="date-picker">
+            <view class="date-box">
+              <text class="date-ico">📅</text>
+              <text>{{form.dateShort}}</text>
+            </view>
+          </picker>
+        </view>
+
+        <!-- 备注：贴在价格下面，颜色 / 尺码 / 想买给谁 -->
+        <view class="field">
+          <view class="note-head">
+            <text class="field-label">备注</text>
+            <text class="note-count" wx:if="{{form.note}}">{{form.note.length}}/60</text>
+          </view>
+          <textarea class="note-box" placeholder="颜色、尺码、想买给谁…（选填）" placeholder-class="ph"
+            value="{{form.note}}" data-field="note" bindinput="onFormInput"
+            maxlength="60" auto-height disable-default-padding="true"/>
+        </view>
+
+        <view class="link-line" wx:if="{{form.link}}">
+          <text class="link-plat" wx:if="{{form.platName}}">{{form.platEmoji}} {{form.platName}}</text>
+          <text class="link-txt">{{form.linkShort}}</text>
+          <text class="link-clear" bindtap="clearLink">✕</text>
+        </view>
+
+        <view class="tag-row">
+          <view wx:for="{{tags}}" wx:key="*this"
+            class="tag {{form.tag === item ? 'on' : ''}}"
+            data-tag="{{item}}" bindtap="pickTag">#{{item}}</view>
+        </view>
+
+        <view class="save-btn" bindtap="quickSave">
+          <text class="save-emoji">✍️</text>
+          <text>记下来</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 清单 -->
+    <view class="list-head">
+      <view class="filters">
+        <view class="filter {{filter === 'all' ? 'on' : ''}}" data-f="all" bindtap="setFilter">全部</view>
+        <view class="filter {{filter === 'wish' ? 'on' : ''}}" data-f="wish" bindtap="setFilter">想买</view>
+        <view class="filter {{filter === 'done' ? 'on' : ''}}" data-f="done" bindtap="setFilter">已到手</view>
+      </view>
+      <view class="list-sum">
+        <text>{{filteredCount}} 件</text>
+        <text class="list-sum-total">¥{{filteredTotal}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{groupsCount === 0}}" class="empty">
+      <image class="empty-gif" src="/assets/emotes/shopping.gif" mode="aspectFit"/>
+      <view class="empty-title">{{filter === 'wish' ? '还没有想买的东西' : filter === 'done' ? '还没有到手的东西' : '清单还是空的'}}</view>
+      <view class="empty-sub">上面粘个链接，一二布布帮你记下来～</view>
+    </view>
+
+    <view wx:for="{{groups}}" wx:key="key" class="group">
+      <view class="group-head">
+        <text class="group-label">{{item.label}}</text>
+        <text class="group-total">¥{{item.totalText}}</text>
+      </view>
+
+      <view wx:for="{{item.items}}" wx:for-item="it" wx:key="id" class="item {{it.bought ? 'is-done' : ''}}">
+        <view class="item-ck {{it.bought ? 'on' : ''}}" data-id="{{it.id}}" catchtap="toggleBought">
+          <text wx:if="{{it.bought}}">✓</text>
+        </view>
+
+        <view class="item-main" data-item="{{it}}" bindtap="openEdit">
+          <view class="item-title">{{it.title}}</view>
+          <view class="item-meta">
+            <text class="item-plat" style="color:{{it.platColor}}">{{it.platEmoji}} {{it.platName}}</text>
+            <text class="item-dot">·</text>
+            <text>{{it.dateMonthDay}}</text>
+            <text class="item-tag" wx:if="{{it.tag}}">#{{it.tag}}</text>
+          </view>
+          <view class="item-link" wx:if="{{it.link}}" data-link="{{it.link}}" catchtap="copyLink">
+            <text class="link-clip">🔗</text>
+            <text class="link-url">{{it.linkShort}}</text>
+            <text class="link-copy">复制</text>
+          </view>
+          <view class="item-note" wx:if="{{it.note}}">
+            <text class="item-note-ico">📝</text>
+            <text class="item-note-txt">{{it.note}}</text>
+          </view>
+        </view>
+
+        <view class="item-right">
+          <view class="item-price">¥{{it.priceText}}</view>
+          <view class="item-edit" data-item="{{it}}" catchtap="openEdit">编辑</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="buy-foot" wx:if="{{groupsCount > 0}}">
+      <image class="buy-foot-gif" src="/assets/emotes/ok.gif" mode="aspectFit"/>
+      <text>想买的都记下了，慢慢来～</text>
+    </view>
+  </block>
+
+  <!-- ================= 餐厅 ================= -->
+  <block wx:if="{{view === 'restaurant'}}">
+    <restaurant id="restComp" bind:ordered="onOrdered"/>
+  </block>
+
+  <!-- ================= 编辑弹层 ================= -->
+  <view wx:if="{{showEdit}}" class="sheet-mask" bindtap="closeEdit">
+    <view class="sheet" catchtap="noop">
+      <view class="sheet-grab"></view>
+      <view class="sheet-head">
+        <text class="sheet-title">编辑记录</text>
+        <text class="sheet-close" bindtap="closeEdit">✕</text>
+      </view>
+
+      <view class="form">
+        <view class="field">
+          <text class="field-label">商品</text>
+          <input class="field-input" value="{{editForm.title}}" data-field="title" bindinput="onEditInput" maxlength="60"/>
+        </view>
+
+        <view class="field row">
+          <text class="field-label">价格</text>
+          <view class="price-box">
+            <text class="price-sym">¥</text>
+            <input class="price-input" type="digit" value="{{editForm.price}}" data-field="price" bindinput="onEditInput" maxlength="9"/>
+          </view>
+          <picker mode="date" value="{{editForm.date}}" bindchange="onEditDate" class="date-picker">
+            <view class="date-box"><text class="date-ico">📅</text><text>{{editForm.date}}</text></view>
+          </picker>
+        </view>
+
+        <view class="field">
+          <text class="field-label">链接</text>
+          <input class="field-input" placeholder="商品链接（选填）" placeholder-class="ph"
+            value="{{editForm.link}}" data-field="link" bindinput="onEditInput"/>
+        </view>
+
+        <view class="field">
+          <view class="note-head">
+            <text class="field-label">备注</text>
+            <text class="note-count" wx:if="{{editForm.note}}">{{editForm.note.length}}/60</text>
+          </view>
+          <textarea class="note-box" placeholder="颜色、尺码、想买给谁…（选填）" placeholder-class="ph"
+            value="{{editForm.note}}" data-field="note" bindinput="onEditInput"
+            maxlength="60" auto-height disable-default-padding="true"/>
+        </view>
+
+        <view class="tag-row">
+          <view wx:for="{{tags}}" wx:key="*this"
+            class="tag {{editForm.tag === item ? 'on' : ''}}"
+            data-tag="{{item}}" bindtap="pickEditTag">#{{item}}</view>
+        </view>
+
+        <view class="done-line" bindtap="toggleBoughtInEdit">
+          <text class="done-ck {{editForm.bought ? 'on' : ''}}">{{editForm.bought ? '✓' : ''}}</text>
+          <text>已经买到了</text>
+        </view>
+
+        <view class="sheet-btns">
+          <view class="sbtn danger" bindtap="deleteEdit">删除</view>
+          <view class="sbtn primary" bindtap="saveEdit">保存</view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+</view>

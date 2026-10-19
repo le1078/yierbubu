@@ -1,0 +1,155 @@
+<view class="page">
+
+  <!-- Tab 切换 -->
+  <view class="tab-bar">
+    <view class="tab-item {{activeTab === 'luck' ? 'active' : ''}}" data-tab="luck" bindtap="switchTab">🎲 抽取记录</view>
+    <view class="tab-item {{activeTab === 'food' ? 'active' : ''}}" data-tab="food" bindtap="switchTab">🍜 吃饭记录</view>
+    <view class="tab-item {{activeTab === 'shopping' ? 'active' : ''}}" data-tab="shopping" bindtap="switchTab">🛍️ 购物记录</view>
+  </view>
+
+  <!-- 头部操作 -->
+  <view class="rec-head">
+    <text class="rh">{{activeTab === 'luck' ? '📜 抽取记录' : activeTab === 'food' ? '🍽️ 吃饭记录' : '🛍️ 购物记录'}}</text>
+    <view class="head-actions">
+      <view class="trash-btn" bindtap="openTrash">
+        <text>🗑️ 回收站</text>
+        <text wx:if="{{trashCount > 0}}" class="trash-badge">{{trashCount > 99 ? '99+' : trashCount}}</text>
+      </view>
+      <view class="clear-btn" bindtap="clearAll">清空记录</view>
+    </view>
+  </view>
+
+  <!-- ===== 抽取记录 ===== -->
+  <block wx:if="{{activeTab === 'luck'}}">
+    <view wx:if="{{records.length === 0}}" class="empty-box">
+      <image class="empty-img" src="/assets/records.gif" mode="aspectFit"/>
+      <view class="empty-tip">还没有抽取记录哦～</view>
+      <view class="empty-sub">去「来财」摇一摇吧 🐼</view>
+    </view>
+
+    <view wx:for="{{records}}" wx:key="id" wx:for-item="r">
+      <view wx:if="{{r.type === 'group'}}" class="rec-group">
+        <view class="rg-head">
+          <view class="rg-title">
+            <text class="kind-pill {{r.kind}}">{{r.kindLabel}}</text>
+            <text class="rg-subtitle">{{r.verb}} {{r.count}} {{r.unit}}</text>
+          </view>
+          <view class="rg-right">
+            <text class="ri-time">{{r.time}}</text>
+            <view class="del-btn" catchtap="deleteOne" data-id="{{r.id}}">删除</view>
+          </view>
+        </view>
+        <view class="rg-chips">
+          <view wx:for="{{r.chips}}" wx:for-item="c" wx:key="index" class="rec-chip" style="background:{{c.color}};">{{c.label}}</view>
+        </view>
+      </view>
+
+      <view wx:if="{{r.type === 'single'}}" class="rec-item">
+        <text class="kind-pill {{r.kind}} sm">{{r.kindLabel}}</text>
+        <text class="re">{{r.emoji}}</text>
+        <view class="ri-main">
+          <view class="ri-name">{{r.name}}</view>
+          <view class="ri-time">{{r.time}}</view>
+        </view>
+        <text class="ri-num" style="background:{{r.color}};">{{r.number < 10 ? '0' : ''}}{{r.number}}</text>
+        <view class="del-btn" catchtap="deleteOne" data-id="{{r.id}}">删除</view>
+      </view>
+    </view>
+  </block>
+
+  <!-- ===== 吃饭记录 ===== -->
+  <block wx:if="{{activeTab === 'food'}}">
+    <view wx:if="{{orders.length === 0}}" class="empty-box">
+      <image class="empty-img" src="/assets/empty_food.gif" mode="aspectFit"/>
+      <view class="empty-tip">还没有吃饭记录哦～</view>
+      <view class="empty-sub">去「生活 · 餐厅」点一顿吧 🍜</view>
+    </view>
+
+    <view wx:for="{{orders}}" wx:key="id" class="order-card">
+      <view class="oc-header">
+        <view class="oc-left">
+          <text class="oc-time">{{item.time}}</text>
+          <text class="oc-status">{{item.status}}</text>
+        </view>
+        <view class="del-btn" catchtap="deleteOne" data-id="{{item.id}}">删除</view>
+      </view>
+      <view class="oc-items">
+        <view wx:for="{{item.items}}" wx:for-item="dish" wx:key="id" class="oc-dish">
+          {{dish.name}} ×{{dish.count}} <text class="oc-dish-price">¥{{dish.subtotal}}</text>
+        </view>
+      </view>
+      <view class="oc-footer">
+        <text class="oc-remark" wx:if="{{item.remark}}">备注：{{item.remark}}</text>
+        <view class="oc-total">合计：<text class="oc-total-num">¥{{item.total}}</text></view>
+      </view>
+    </view>
+  </block>
+
+  <!-- ===== 购物记录 ===== -->
+  <block wx:if="{{activeTab === 'shopping'}}">
+    <view wx:if="{{shopping.length === 0}}" class="empty-box">
+      <image class="empty-img" src="/assets/emotes/shopping.gif" mode="aspectFit"/>
+      <view class="empty-tip">还没有购物记录哦～</view>
+      <view class="empty-sub">去「小笨生活 · 购物」记一笔吧 🛍️</view>
+    </view>
+
+    <view wx:for="{{shopping}}" wx:key="id" class="shop-card {{item.bought ? 'done' : ''}}">
+      <view class="sc-header">
+        <view class="sc-left">
+          <text class="sc-plat" style="color:{{item.platColor}}">{{item.platEmoji}} {{item.platName}}</text>
+          <text class="sc-date">{{item.date}}</text>
+        </view>
+        <view class="del-btn" catchtap="deleteOne" data-id="{{item.id}}">删除</view>
+      </view>
+
+      <view class="sc-body">
+        <view class="sc-title">{{item.title}}</view>
+        <view class="sc-price">¥{{item.priceText}}</view>
+      </view>
+
+      <view class="sc-note" wx:if="{{item.note}}">📝 {{item.note}}</view>
+
+      <view class="sc-footer">
+        <text class="sc-tag" wx:if="{{item.tag}}">#{{item.tag}}</text>
+        <text class="sc-state {{item.bought ? 'bought' : ''}}">{{item.bought ? '✓ 已到手' : '想买'}}</text>
+      </view>
+    </view>
+  </block>
+
+  <!-- ===== 回收站弹层 ===== -->
+  <view wx:if="{{showTrash}}" class="trash-mask" bindtap="closeTrash">
+    <view class="trash-panel" catchtap="noop">
+      <view class="tp-head">
+        <text class="tp-title">🗑️ 回收站</text>
+        <view class="tp-acts">
+          <text wx:if="{{trashList.length > 0}}" class="tp-clear" bindtap="clearTrash">全部清空</text>
+          <text class="tp-close" bindtap="closeTrash">✕</text>
+        </view>
+      </view>
+      <view class="tp-tip">删除的记录会先到这里，可恢复；再删除则彻底清除。</view>
+
+      <scroll-view scroll-y class="tp-body">
+        <view wx:if="{{trashList.length === 0}}" class="tp-empty">
+          <image class="tp-empty-img" src="/assets/records.gif" mode="aspectFit"/>
+          <view class="tp-empty-tip">回收站是空的～</view>
+        </view>
+
+        <view wx:for="{{trashList}}" wx:key="tid" class="tp-item">
+          <view class="tp-item-main">
+            <view class="tp-item-title">
+              <text>{{item.title}}</text>
+              <text class="tp-item-amt">{{item.amount}}</text>
+            </view>
+            <view class="tp-item-desc">{{item.desc}}</view>
+            <view class="tp-item-time">删除于 {{item.time}}</view>
+          </view>
+          <view class="tp-item-acts">
+            <view class="tp-restore" catchtap="restoreOne" data-tid="{{item.tid}}">恢复</view>
+            <view class="tp-purge" catchtap="purgeOne" data-tid="{{item.tid}}">彻底删</view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+  </view>
+
+</view>

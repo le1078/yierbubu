@@ -1,0 +1,178 @@
+<view class="page">
+
+  <!-- ===== 大厅：创建 / 加入 ===== -->
+  <view wx:if="{{stage === 'lobby'}}" class="lobby">
+    <view class="lobby-hero">
+      <image class="lobby-masc" src="/assets/avatar_a.gif" mode="aspectFit"/>
+      <view class="lobby-title">⚫⚪ 小笨五子棋</view>
+      <image class="lobby-masc" src="/assets/avatar_b.gif" mode="aspectFit"/>
+    </view>
+    <view class="lobby-sub">双人联机 · 房间对战</view>
+
+    <view class="lobby-card">
+      <view class="big-btn primary" bindtap="createRoom">🏠 创建房间</view>
+
+      <view class="divider"><text>或加入好友的房间</text></view>
+
+      <view class="join-row">
+        <input class="room-input" type="number" maxlength="4" placeholder="输入4位房间号"
+          value="{{roomNoInput}}" bindinput="onRoomNoInput"/>
+        <view class="big-btn" bindtap="joinRoom">加入</view>
+      </view>
+
+      <view class="hint">💡 创建后点右上角「···」转发给微信好友，TA 点卡片直接进入你的房间</view>
+    </view>
+  </view>
+
+  <!-- ===== 等待对手 ===== -->
+  <view wx:if="{{stage === 'waiting'}}" class="waiting">
+    <view class="wait-card">
+      <view class="wait-title">房间已创建</view>
+      <view class="wait-no">{{roomNo}}</view>
+      <view class="wait-tip">把房间号告诉好友，或点右上角转发邀请</view>
+      <view class="wait-avatars">
+        <view class="wa-item">
+          <image class="wa-img" src="{{myAvatar}}" mode="aspectFit"/>
+          <view class="wa-name">我 · {{myColorText}}</view>
+        </view>
+        <view class="wa-vs">VS</view>
+        <view class="wa-item dim">
+          <view class="wa-img placeholder">?</view>
+          <view class="wa-name">等待加入…</view>
+        </view>
+      </view>
+      <view class="loading-dots"><text class="dot"></text><text class="dot"></text><text class="dot"></text></view>
+    </view>
+  </view>
+
+  <!-- ===== 对局 ===== -->
+  <view wx:if="{{stage === 'playing' || stage === 'ended'}}" class="game">
+
+    <!-- 双方信息条 -->
+    <view class="players">
+      <view class="p-item {{isMyTurn ? 'active' : ''}}">
+        <image class="p-avatar" src="{{myAvatar}}" mode="aspectFit"/>
+        <view class="p-name">我</view>
+        <view class="p-color">{{myColorText}}</view>
+      </view>
+      <view class="p-mid">
+        <view class="p-status">{{statusText}}</view>
+        <view class="p-room">房间 {{roomNo}} · 第 {{moveCount}} 手</view>
+      </view>
+      <view class="p-item {{!isMyTurn && stage === 'playing' ? 'active' : ''}}">
+        <image class="p-avatar" src="{{oppAvatar}}" mode="aspectFit"/>
+        <view class="p-name">对方</view>
+        <view class="p-color">{{myColor === 1 ? '⚪ 白棋' : '⚫ 黑棋'}}</view>
+      </view>
+    </view>
+
+    <!-- 戳一戳浮层 -->
+    <view wx:if="{{pokeVisible}}" class="poke-toast">{{pokeText}}</view>
+
+    <!-- 棋盘 -->
+    <view class="board-wrap">
+      <canvas type="2d" id="gboard" class="board"
+        style="width: {{boardW}}px; height: {{boardW}}px;"
+        bindtouchstart="onCanvasTap"
+        canvas-id="gboard"
+        disable-scroll="true"></canvas>
+    </view>
+
+    <!-- 胜负横幅 -->
+    <view wx:if="{{stage === 'ended'}}" class="end-banner">
+      <view class="end-text">{{winText}}</view>
+    </view>
+
+    <!-- 操作按钮区 -->
+    <view class="actions">
+      <view class="act-btn" bindtap="poke">👉 戳一戳</view>
+      <view class="act-btn" bindtap="toggleEmojiPanel">😄 表情</view>
+      <view class="act-btn {{moveCount === 0 || undoState ? 'disabled' : ''}}" bindtap="requestUndo">↩️ 悔棋</view>
+      <view class="act-btn" bindtap="requestFirst">✋ 申请先手</view>
+      <view wx:if="{{stage === 'ended'}}" class="act-btn primary" bindtap="requestRematch">🔄 再来一局</view>
+      <view class="act-btn ghost" bindtap="leaveRoom">🚪 离开</view>
+    </view>
+
+    <!-- 表情面板 -->
+    <view wx:if="{{showEmojiPanel}}" class="emoji-panel">
+      <view class="emoji-row">
+        <view wx:for="{{emojis}}" wx:key="key" class="emoji-item" data-icon="{{item.icon}}" bindtap="sendEmoji">
+          <text class="emoji-icon">{{item.icon}}</text>
+          <text class="emoji-label">{{item.label}}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 表情飞行动画 -->
+    <view wx:if="{{emojiFlying}}" class="emoji-fly">{{emojiFlying.icon}}</view>
+
+    <!-- 聊天区 -->
+    <view class="chat-area">
+      <scroll-view class="chat-list" scroll-y scroll-into-view="chat{{chatList.length - 1}}">
+        <view wx:for="{{chatList}}" wx:key="ts" id="chat{{index}}" class="chat-msg {{item.mine ? 'mine' : 'theirs'}}">
+          <text wx:if="{{item.type === 'text'}}" class="chat-bubble">{{item.content}}</text>
+          <text wx:else class="chat-emoji">{{item.content}}</text>
+        </view>
+      </scroll-view>
+      <view class="chat-input-row">
+        <input class="chat-input" placeholder="说点什么…" value="{{chatInput}}" bindinput="onChatInput" bindconfirm="sendChat" maxlength="50"/>
+        <view class="chat-send" bindtap="sendChat">发送</view>
+      </view>
+    </view>
+
+    <!-- 悔棋请求弹层 -->
+    <view wx:if="{{undoState === 'iRequested'}}" class="modal-mask">
+      <view class="modal">
+        <view class="m-title">已发出悔棋请求</view>
+        <view class="m-desc">等待对方同意…</view>
+      </view>
+    </view>
+    <view wx:if="{{undoState === 'oppRequested'}}" class="modal-mask">
+      <view class="modal">
+        <view class="m-title">↩️ 对方请求悔棋</view>
+        <view class="m-desc">同意则撤销上一手</view>
+        <view class="m-btns">
+          <view class="m-btn ghost" data-agree="0" bindtap="respondUndo">拒绝</view>
+          <view class="m-btn primary" data-agree="1" bindtap="respondUndo">同意</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 申请先手弹层 -->
+    <view wx:if="{{firstState === 'iRequested'}}" class="modal-mask">
+      <view class="modal">
+        <view class="m-title">已发出先手申请</view>
+        <view class="m-desc">等待对方同意…</view>
+      </view>
+    </view>
+    <view wx:if="{{firstState === 'oppRequested'}}" class="modal-mask">
+      <view class="modal">
+        <view class="m-title">✋ 对方申请先手</view>
+        <view class="m-desc">同意则下一局对方执黑先行</view>
+        <view class="m-btns">
+          <view class="m-btn ghost" data-agree="0" bindtap="respondFirst">拒绝</view>
+          <view class="m-btn primary" data-agree="1" bindtap="respondFirst">同意</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 再来一局请求弹层 -->
+    <view wx:if="{{rematchState === 'iRequested'}}" class="modal-mask">
+      <view class="modal">
+        <view class="m-title">已发出再来一局请求</view>
+        <view class="m-desc">等待对方同意…</view>
+      </view>
+    </view>
+    <view wx:if="{{rematchState === 'oppRequested'}}" class="modal-mask">
+      <view class="modal">
+        <view class="m-title">🔄 对方想再来一局</view>
+        <view class="m-desc">同意则重新开局</view>
+        <view class="m-btns">
+          <view class="m-btn ghost" data-agree="0" bindtap="respondRematch">拒绝</view>
+          <view class="m-btn primary" data-agree="1" bindtap="respondRematch">同意</view>
+        </view>
+      </view>
+    </view>
+
+  </view>
+</view>

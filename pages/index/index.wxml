@@ -1,0 +1,105 @@
+<view class="page">
+  <view class="topbar">
+    <view class="mascots">
+      <image class="masc" src="/assets/bubu.gif" mode="aspectFit"/>
+      <image class="masc" src="/assets/mascot_right.gif" mode="aspectFit"/>
+    </view>
+    <view class="brand">
+      <view class="title">
+        <text class="t-top">一二布布</text>
+        <text class="t-bottom">来财啦</text>
+      </view>
+    </view>
+    <view class="yearnav">
+      <view class="yl">{{year}} · {{yearAnimal}}年</view>
+    </view>
+  </view>
+
+  <view class="tabbar">
+    <view class="tab {{tab === 'shake' ? 'on' : ''}}" data-t="shake" bindtap="switchTab">🎲 摇一摇来财啦</view>
+    <view class="tab {{tab === 'scratch' ? 'on' : ''}}" data-t="scratch" bindtap="switchTab">🪙 刮一刮来财啦</view>
+    <view class="tab {{tab === 'shengxiao' ? 'on' : ''}}" data-t="shengxiao" bindtap="switchTab">🌸 小笨生肖</view>
+  </view>
+
+  <!-- 栏目：小笨生肖（同页切换，与摇一摇 / 刮一刮一致） -->
+  <shengxiao wx:if="{{tab === 'shengxiao'}}"/>
+
+  <!-- 摇一摇 -->
+  <view wx:if="{{tab === 'shake'}}" class="g-card">
+    <view class="g-mascot">
+      <image class="masc big" src="/assets/bottom_left.gif" mode="aspectFit"/>
+      <image class="masc big" src="/assets/bottom_right.gif" mode="aspectFit"/>
+    </view>
+
+    <!-- 结果置顶 -->
+    <view class="results">
+      <view wx:if="{{results.length === 0}}" class="res-empty">
+        <text>🎲 点下方按钮</text>
+        <text>摇出今日好运～</text>
+      </view>
+      <view wx:for="{{results}}" wx:key="index" class="r-card">
+        <view class="re">{{item.emoji}}</view>
+        <view class="rn">{{item.name}}</view>
+        <view class="rb" style="background:{{item.color}};">{{item.number < 10 ? '0' : ''}}{{item.number}}</view>
+      </view>
+    </view>
+
+    <view class="g-title">摇一摇，来财啦</view>
+    <view class="g-sub">每次抽取完全随机 · 生肖与号码一一对应</view>
+
+    <view class="count-row">
+      <view
+        class="count-chip {{count === item ? 'on' : ''}}"
+        wx:for="{{counts}}"
+        wx:key="*this"
+        data-n="{{item}}"
+        bindtap="setCount">{{item}}</view>
+    </view>
+
+    <view class="draw-btn {{rolling ? 'is-rolling' : ''}}" bindtap="onDraw">
+      {{rolling ? '摇一摇…' : (results.length ? '再来一次' : '随机抽取')}}
+    </view>
+  </view>
+
+  <!-- 刮一刮 -->
+  <view wx:if="{{tab === 'scratch'}}" class="g-card scratch-card">
+    <view class="g-mascot">
+      <image class="masc big" src="/assets/bottom_left.gif" mode="aspectFit"/>
+      <image class="masc big" src="/assets/bottom_right.gif" mode="aspectFit"/>
+    </view>
+
+    <view class="scratch-grid">
+      <view wx:if="{{scratchCards.length === 0}}" class="res-empty">
+        <text>🪙 选好张数</text>
+        <text>点「开始刮」生成刮刮卡</text>
+      </view>
+      <view wx:for="{{scratchCards}}" wx:key="id" class="scratch-item">
+        <view class="r-card scratch-result {{item.revealed ? 'revealed' : ''}}">
+          <view class="re">{{item.result.emoji}}</view>
+          <view class="rn">{{item.result.name}}</view>
+          <view class="rb" style="background:{{item.result.color}};">{{item.result.number < 10 ? '0' : ''}}{{item.result.number}}</view>
+        </view>
+        <!-- CSS 覆盖层：coated 前一直存在并挡住答案；不依赖 canvas 是否就绪，结构上杜绝露底闪烁 -->
+        <view wx:if="{{!item.revealed && !item.coated}}" class="scratch-cover"><text>{{item.cover}}</text></view>
+        <canvas wx:if="{{!item.revealed}}" type="2d" class="scratch-canvas" data-index="{{index}}"
+          catchtouchstart="onScratchStart" catchtouchmove="onScratchMove" catchtouchend="onScratchEnd"></canvas>
+      </view>
+    </view>
+
+    <view class="g-title">刮一刮，来财啦</view>
+    <view class="g-sub">选择张数，手动刮开惊喜</view>
+
+    <view class="count-row">
+      <view class="count-chip {{scratchCount === item ? 'on' : ''}}" wx:for="{{counts}}" wx:key="*this" data-n="{{item}}" bindtap="setScratchCount">{{item}}</view>
+    </view>
+
+    <view class="draw-btn" bindtap="onScratchGenerate">开始刮</view>
+
+    <view class="scratch-actions" wx:if="{{scratchCards.length}}">
+      <view class="mini-btn" bindtap="onScratchRevealAll">全部刮开</view>
+      <view class="mini-btn ghost" bindtap="onScratchGenerate">重新生成</view>
+    </view>
+  </view>
+
+  <view class="tip">本工具仅用于个人娱乐与记录，结果完全随机、无预测含义，请理性参与、量力而行。</view>
+</view>

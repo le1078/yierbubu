@@ -1,0 +1,58 @@
+<view class="sx-page">
+  <view class="sx-hd">
+    <view class="sx-h2"><text class="fl">🌸</text>小笨生肖<text class="fl">🌸</text></view>
+    <view class="sx-sub">戳一戳你喜欢的生肖，看看谁跟它最合拍、谁跟它犯冲鸭～</view>
+  </view>
+
+  <view class="sx-card">
+    <view class="sx-tip">
+      <image class="sx-tip-img" src="{{tipImg}}" mode="aspectFit"/>
+      <text class="sx-tip-txt">试试点击一个生肖，布布帮你看看它的对冲与相配对象：</text>
+    </view>
+
+    <view class="zgrid">
+      <view
+        class="zbtn {{item.cls}}"
+        wx:for="{{zodiacs}}"
+        wx:key="i"
+        data-i="{{item.i}}"
+        hover-class="zbtn-hover"
+        bindtap="onPick">
+        <text class="e">{{item.e}}</text>
+        <text class="n">{{item.n}}</text>
+      </view>
+    </view>
+
+    <view class="legend">
+      <view class="lg"><view class="lg-dot lg-sel"></view><text>当前选中</text></view>
+      <view class="lg"><view class="lg-dot lg-chong"></view><text>相冲（六冲）</text></view>
+      <view class="lg"><view class="lg-dot lg-he"></view><text>相配（六合 / 三合）</text></view>
+      <view class="lg"><view class="lg-dot lg-bad"></view><text>相刑 · 相害 · 相破</text></view>
+    </view>
+
+    <view class="empty" wx:if="{{!hasResult}}">
+      <image class="empty-img" src="{{emptyImg}}" mode="aspectFit"/>
+      <text class="empty-txt">还没有选择生肖哦，布布先躺一会儿～</text>
+    </view>
+
+    <view class="result {{hasResult ? 'show' : ''}}">
+      <image class="sticker" src="{{sticker}}" mode="aspectFit"/>
+      <view class="result-body">
+        <view class="r-h3">{{pickedEmoji}} {{pickedName}} 的相冲相配</view>
+
+        <view class="rel-row" wx:for="{{rows}}" wx:key="label">
+          <view class="rel-label {{item.cls}}">{{item.label}}</view>
+          <text class="rel-val" wx:if="{{item.value}}">{{item.value}}</text>
+          <text class="rel-desc">{{item.desc}}</text>
+        </view>
+
+        <view class="meta">地支：{{pickedZhi}} · 五行：{{pickedWx}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view class="sx-foot">
+    <image class="foot-img" src="{{footImg}}" mode="aspectFit"/>
+    <text class="foot-txt">🌸 一二布布小笨肖 · 仅供娱乐参考 · 天天开心 🌸</text>
+  </view>
+</view>

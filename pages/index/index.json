@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "一二布布来财啦",
+  "usingComponents": {
+    "shengxiao": "/components/shengxiao/shengxiao"
+  }
+}
