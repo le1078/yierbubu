@@ -4,8 +4,9 @@
 
 const COLLECTION = 'gomoku_rooms';
 const SIZE = 15; // 15x15 棋盘
-const C = require('../../utils/constants.js');
-const log = require('../../utils/log.js');
+// 注意：分包里引用主包 utils 要往上三级（subpackages/games/gomoku → 根目录）
+const C = require('../../../utils/constants.js');
+const log = require('../../../utils/log.js');
 
 const AVATARS = ['/assets/avatar_a.gif', '/assets/avatar_b.gif'];
 

@@ -18,7 +18,13 @@ const DOC_TRASH = 'shared_trash';        // { list: [] } 回收站
 const MAX_RETRY = 3;   // CAS 冲突重试次数
 
 function db() { return wx.cloud.database(); }
-const _ = db.command;
+
+// 注意：不能写成 const _ = db.command;
+// db.command 在模块加载时求值，而那时 wx.cloud 可能还没 init 完，
+// 取到的是 undefined，后续 _.lte() / _.gte() 会抛
+// 「Cannot read properties of undefined (reading 'lte')」，所有云端写入全挂。
+// 所以做成 getter，每次用时才取。
+function cmd() { return db().command; }
 
 /* ===== 写入串行队列 ===== */
 // 保证同一时刻只有一个写操作在执行，避免「读-改-写」交错
@@ -67,7 +73,7 @@ async function mutateDoc(docId, mergeFn) {
       doc._rev = rev + 1;
 
       const cond = rev === 0
-        ? { _rev: _.lte(0) }                 // 首次创建：确保没有别人抢先建
+        ? { _rev: cmd().lte(0) }              // 首次创建：确保没有别人抢先建
         : { _rev: rev };                     // 后续更新：版本必须匹配
 
       try {
