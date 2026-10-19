@@ -2,15 +2,42 @@
   "description": "小笨日历",
   "packOptions": {
     "ignore": [
-      { "type": "folder", "value": ".preview" },
-      { "type": "folder", "value": ".workbuddy" },
-      { "type": "folder", "value": "backup-20260830" },
-      { "type": "folder", "value": "deploy" },
-      { "type": "folder", "value": "tools" },
-      { "type": "file", "value": "preview.html" },
-      { "type": "file", "value": "preview-v12.html" },
-      { "type": "file", "value": "GAMES_README.md" },
-      { "type": "file", "value": "test_update.js" }
+      {
+        "type": "folder",
+        "value": ".preview"
+      },
+      {
+        "type": "folder",
+        "value": ".workbuddy"
+      },
+      {
+        "type": "folder",
+        "value": "backup-20260830"
+      },
+      {
+        "type": "folder",
+        "value": "deploy"
+      },
+      {
+        "type": "folder",
+        "value": "tools"
+      },
+      {
+        "type": "file",
+        "value": "preview.html"
+      },
+      {
+        "type": "file",
+        "value": "preview-v12.html"
+      },
+      {
+        "type": "file",
+        "value": "GAMES_README.md"
+      },
+      {
+        "type": "file",
+        "value": "test_update.js"
+      }
     ],
     "include": []
   },
@@ -25,5 +52,6 @@
   "libVersion": "3.0.0",
   "appid": "wx1007126f01c9858d",
   "projectname": "xiaoben-calendar",
-  "condition": {}
+  "condition": {},
+  "simulatorPluginLibVersion": {}
 }

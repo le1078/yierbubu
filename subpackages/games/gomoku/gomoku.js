@@ -630,7 +630,10 @@ Page({
 
   _checkWin(r, c, color) {
     const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
-    for (const [dr, dc] of dirs) {
+    // 不用 for (const [dr, dc] of dirs)：数组解构会被 SWC 编译成
+    // require('@swc/runtime/_array_with_holes.js')，小程序运行时不提供该模块
+    for (let i = 0; i < dirs.length; i++) {
+      const dr = dirs[i][0], dc = dirs[i][1];
       let count = 1;
       for (const s of [1, -1]) {
         let nr = r + dr * s, nc = c + dc * s;

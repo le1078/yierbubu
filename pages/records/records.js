@@ -80,12 +80,15 @@ Page({
     this.setData({ loading: true, loadError: false });
     try {
       // 一次 Promise.all 拉齐 4 个文档（原来列表与回收站角标分两次拉，trash 读了两遍）
-      const [recs, orders, shopping, trash] = await Promise.all([
+      // 注意：用索引访问而不是数组解构 —— 数组解构会被 SWC 编译成
+      // require('@swc/runtime/_array_with_holes.js')，小程序运行时不提供该模块
+      const res = await Promise.all([
         cloud.loadRecords(),
         cloud.loadOrders(),
         cloud.loadShopping(),
         cloud.loadTrash()
       ]);
+      const recs = res[0], orders = res[1], shopping = res[2], trash = res[3];
       this._lastLoadAt = Date.now();
       this.setData({
         records: this._mapRecords(recs),

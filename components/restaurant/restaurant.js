@@ -389,15 +389,16 @@ Component({
           wx.showToast({ title: '该菜品不在当前分类，已取消', icon: 'none' });
           return;
         }
-        catItems[idx] = {
-          ...catItems[idx],
+        // 用 Object.assign 而不是对象展开：对象展开会被 SWC 编译成
+        // require('@swc/runtime/_object_spread.js')，小程序运行时不提供该模块
+        catItems[idx] = Object.assign({}, catItems[idx], {
           name: form.name.trim(),
           price,
           taste: form.taste.trim(),
           desc: form.desc.trim(),
           emoji: form.emoji.trim() || catItems[idx].emoji,
           img: form.img || ''
-        };
+        });
       } else {
         const newId = 'd' + Date.now().toString(36);
         catItems.push({
