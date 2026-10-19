@@ -488,8 +488,6 @@
   margin-bottom: 16rpx;
 }
 
-}
-
 .ep-dish-list {
   display: flex;
   flex-direction: column;
