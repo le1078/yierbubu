@@ -1,0 +1,87 @@
+<view class="page">
+
+  <!-- ===== 大厅：选难度 / 选执子 ===== -->
+  <view wx:if="{{stage === 'lobby'}}" class="lobby">
+    <view class="lobby-hero">
+      <view class="lobby-title">🤖 五子棋人机对战</view>
+    </view>
+    <view class="lobby-sub">单机挑战 · 三档难度 · 无需联网</view>
+
+    <view class="lobby-card">
+      <view class="sec-title">选择难度</view>
+      <view class="opt-row">
+        <view class="opt {{difficulty === 'easy' ? 'on' : ''}}" data-d="easy" bindtap="pickDifficulty">
+          <view class="opt-name">😊 简单</view>
+          <view class="opt-desc">只看一步棋型</view>
+        </view>
+        <view class="opt {{difficulty === 'normal' ? 'on' : ''}}" data-d="normal" bindtap="pickDifficulty">
+          <view class="opt-name">😤 普通</view>
+          <view class="opt-desc">两步搜索</view>
+        </view>
+        <view class="opt {{difficulty === 'hard' ? 'on' : ''}}" data-d="hard" bindtap="pickDifficulty">
+          <view class="opt-name">😈 困难</view>
+          <view class="opt-desc">四步搜索</view>
+        </view>
+      </view>
+
+      <view class="sec-title">我执</view>
+      <view class="opt-row">
+        <view class="opt {{myColor === 1 ? 'on' : ''}}" data-c="1" bindtap="pickColor">
+          <view class="opt-name">⚫ 黑棋</view>
+          <view class="opt-desc">我先走</view>
+        </view>
+        <view class="opt {{myColor === 2 ? 'on' : ''}}" data-c="2" bindtap="pickColor">
+          <view class="opt-name">⚪ 白棋</view>
+          <view class="opt-desc">AI 先走</view>
+        </view>
+      </view>
+
+      <view class="big-btn primary" bindtap="startGame">🎮 开始对局</view>
+    </view>
+  </view>
+
+  <!-- ===== 对局 ===== -->
+  <view wx:if="{{stage === 'playing' || stage === 'ended'}}" class="game">
+
+    <!-- 信息条 -->
+    <view class="players">
+      <view class="p-item {{turn === myColor && stage === 'playing' ? 'active' : ''}}">
+        <view class="p-dot {{myColor === 1 ? 'black' : 'white'}}"></view>
+        <view class="p-name">我</view>
+      </view>
+      <view class="p-mid">
+        <view class="p-status">{{statusText}}</view>
+        <view class="p-count">{{moveCount}} 手 · {{difficultyText}}</view>
+      </view>
+      <view class="p-item {{turn !== myColor && stage === 'playing' ? 'active' : ''}}">
+        <view class="p-dot {{myColor === 1 ? 'white' : 'black'}}"></view>
+        <view class="p-name">AI</view>
+      </view>
+    </view>
+
+    <!-- 棋盘 -->
+    <view class="board-wrap">
+      <canvas type="2d" id="gboard" class="board"
+        style="width: {{boardW}}px; height: {{boardW}}px;"
+        bindtouchend="onCanvasTap"
+        disable-scroll="true"></canvas>
+      <view wx:if="{{thinking}}" class="think-mask">
+        <view class="think-dots"><text class="dot"></text><text class="dot"></text><text class="dot"></text></view>
+        <view class="think-text">AI 思考中…</view>
+      </view>
+    </view>
+
+    <!-- 胜负横幅 -->
+    <view wx:if="{{stage === 'ended'}}" class="end-banner">
+      <view class="end-text">{{winText}}</view>
+    </view>
+
+    <!-- 操作 -->
+    <view class="actions">
+      <view class="act-btn" bindtap="restart">🔄 重新开始</view>
+      <view class="act-btn" bindtap="undo">↩️ 悔棋</view>
+      <view class="act-btn ghost" bindtap="backToLobby">🚪 换难度</view>
+    </view>
+
+  </view>
+</view>

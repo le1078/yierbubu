@@ -1,0 +1,254 @@
+.page {
+  min-height: 100vh;
+  padding: 24rpx;
+}
+
+/* ===== 大厅 ===== */
+.lobby-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 40rpx;
+}
+
+.lobby-title {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: #E2547A;
+}
+
+.lobby-sub {
+  text-align: center;
+  color: #A08A80;
+  font-size: 26rpx;
+  margin-top: 12rpx;
+}
+
+.lobby-card {
+  margin-top: 40rpx;
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 36rpx 32rpx;
+  box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
+}
+
+.sec-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #6B4A52;
+  margin-bottom: 20rpx;
+}
+
+.opt-row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 32rpx;
+}
+
+.opt {
+  flex: 1;
+  background: #FFF8F5;
+  border: 2rpx solid #FCE8EF;
+  border-radius: 20rpx;
+  padding: 20rpx 12rpx;
+  text-align: center;
+}
+
+.opt.on {
+  border-color: #FF8FAB;
+  background: #FFF0F4;
+}
+
+.opt-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #6B4A52;
+}
+
+.opt.on .opt-name {
+  color: #E2547A;
+}
+
+.opt-desc {
+  font-size: 22rpx;
+  color: #A08A80;
+  margin-top: 8rpx;
+}
+
+.big-btn {
+  background: #FFF0F4;
+  color: #E2547A;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  padding: 24rpx 0;
+}
+
+.big-btn:active { opacity: 0.85; }
+
+.big-btn.primary {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+  box-shadow: 0 8rpx 20rpx rgba(255, 90, 95, 0.28);
+}
+
+/* ===== 对局 ===== */
+.players {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #FFFFFF;
+  border-radius: 24rpx;
+  padding: 20rpx 24rpx;
+  box-shadow: 0 4rpx 16rpx rgba(74, 63, 58, 0.06);
+}
+
+.p-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 96rpx;
+  padding: 8rpx 12rpx;
+  border-radius: 16rpx;
+  border: 2rpx solid transparent;
+}
+
+.p-item.active {
+  border-color: #FF8FAB;
+  background: #FFF6F8;
+}
+
+.p-dot {
+  width: 36rpx;
+  height: 36rpx;
+  border-radius: 50%;
+}
+
+.p-dot.black {
+  background: radial-gradient(circle at 35% 35%, #666, #111);
+}
+
+.p-dot.white {
+  background: radial-gradient(circle at 35% 35%, #FFF, #CCC);
+  border: 2rpx solid #E0D5CF;
+}
+
+.p-name {
+  font-size: 24rpx;
+  color: #6B4A52;
+  margin-top: 6rpx;
+  font-weight: 600;
+}
+
+.p-mid {
+  flex: 1;
+  text-align: center;
+}
+
+.p-status {
+  font-size: 26rpx;
+  color: #E2547A;
+  font-weight: 600;
+}
+
+.p-count {
+  font-size: 22rpx;
+  color: #A08A80;
+  margin-top: 4rpx;
+}
+
+/* 棋盘 */
+.board-wrap {
+  position: relative;
+  margin-top: 24rpx;
+  display: flex;
+  justify-content: center;
+}
+
+.board {
+  border-radius: 16rpx;
+  box-shadow: 0 6rpx 20rpx rgba(74, 63, 58, 0.12);
+}
+
+.think-mask {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(255, 255, 255, 0.86);
+  border-radius: 20rpx;
+  padding: 24rpx 40rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.think-dots {
+  display: flex;
+  gap: 8rpx;
+}
+
+.think-dots .dot {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: #FF8FAB;
+  animation: blink 1.2s infinite;
+}
+
+.think-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.think-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes blink {
+  0%, 60%, 100% { opacity: 0.25; }
+  30% { opacity: 1; }
+}
+
+.think-text {
+  font-size: 24rpx;
+  color: #A08A80;
+  margin-top: 12rpx;
+}
+
+/* 胜负横幅 */
+.end-banner {
+  margin-top: 24rpx;
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  border-radius: 24rpx;
+  padding: 28rpx;
+  text-align: center;
+  box-shadow: 0 8rpx 20rpx rgba(255, 90, 95, 0.28);
+}
+
+.end-text {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+/* 操作 */
+.actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.act-btn {
+  flex: 1;
+  background: #FFFFFF;
+  color: #E2547A;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 28rpx;
+  font-weight: 600;
+  padding: 22rpx 0;
+  box-shadow: 0 4rpx 12rpx rgba(74, 63, 58, 0.06);
+}
+
+.act-btn:active { opacity: 0.85; }
+
+.act-btn.ghost {
+  background: #FFF8F5;
+  color: #A08A80;
+}

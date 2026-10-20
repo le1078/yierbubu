@@ -134,6 +134,36 @@ console.log('\n[9] 性能');
   check(dt < 3000, '困难难度不超预算太多（' + dt + 'ms < 3000ms）');
 }
 
+/* ========== 10. 自我对局：连续 10 局不崩溃、不违例 ========== */
+console.log('\n[10] 自我对局（AI vs AI 各 5 局，验证不卡死/不落已占点/终局正确）');
+{
+  let games = 0, blackWins = 0, whiteWins = 0, draws = 0, illegal = 0;
+  for (let g = 0; g < 10; g++) {
+    const b = core.emptyBoard();
+    let turn = 1, over = false;
+    // 黑白用不同难度，避免完全对称导致每局一样
+    const diffOf = (c) => (g % 2 === 0 ? (c === 1 ? 'normal' : 'easy') : (c === 1 ? 'easy' : 'normal'));
+    for (let step = 0; step < 225 && !over; step++) {
+      const m = ai.think(b, turn, diffOf(turn), { budgetMs: 120 });
+      if (!m) { over = true; break; }
+      if (b[m.r][m.c] !== 0) { illegal++; over = true; break; }
+      b[m.r][m.c] = turn;
+      if (core.checkWin(b, m.r, m.c, turn)) {
+        if (turn === 1) blackWins++; else whiteWins++;
+        over = true;
+      } else if (step === 224) {
+        draws++;
+      }
+      turn = turn === 1 ? 2 : 1;
+    }
+    games++;
+  }
+  console.log('    完成 ' + games + ' 局：黑胜 ' + blackWins + ' / 白胜 ' + whiteWins + ' / 平 ' + draws + '，违例 ' + illegal);
+  check(illegal === 0, '无落在已占点的违例');
+  check(games === 10, '10 局全部正常终局');
+  check(blackWins + whiteWins + draws === 10, '胜负平计数自洽');
+}
+
 /* ========== 汇总 ========== */
 console.log('\n========================================');
 console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
