@@ -10,6 +10,33 @@ const GAMES = [
     online: true
   },
   {
+    id: 'gomokuai',
+    icon: '🤖',
+    name: '五子棋人机对战',
+    desc: '单人挑战 · 三档难度',
+    tags: ['AI', '闯关'],
+    path: '/subpackages/games/gomokuai/gomokuai',
+    online: false
+  },
+  {
+    id: 'xiangqi',
+    icon: '♟️',
+    name: '小笨中国象棋',
+    desc: '联机/同屏/人机 三种玩法',
+    tags: ['联机', 'AI', '对战'],
+    path: '/subpackages/games/xiangqi/xiangqi',
+    online: true
+  },
+  {
+    id: 'mario',
+    icon: '🍄',
+    name: '小笨马里奥',
+    desc: '双人联机 · 五关闯关 + Boss战',
+    tags: ['联机', '闯关', 'Boss'],
+    path: '/subpackages/games/mario/mario',
+    online: true
+  },
+  {
     id: 'coming1',
     icon: '🐍',
     name: '小笨贪吃蛇',

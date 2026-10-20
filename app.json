@@ -12,7 +12,10 @@
       "root": "subpackages/games",
       "name": "games",
       "pages": [
-        "gomoku/gomoku"
+        "gomoku/gomoku",
+        "gomokuai/gomokuai",
+        "xiangqi/xiangqi",
+        "mario/mario"
       ]
     }
   ],
