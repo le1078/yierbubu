@@ -89,8 +89,8 @@ Page({
   /* ========== 布局 ========== */
 
   _measure() {
-    const sys = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
-    const w = sys.windowWidth;
+    // 用安全取值：wx.getWindowInfo 在部分时机返回 null，直接读会崩
+    const w = roomkit.getWindowSize().windowWidth;
     const rpx2px = w / 750;
     const canvasW = Math.floor(w - 48 * rpx2px);
     // 视口高宽比 3:4，约 12.5 格高 × 15 格宽
@@ -627,22 +627,25 @@ Page({
         return;
       }
       const canvas = info.node;
-      const dpr = Math.min((wx.getWindowInfo ? wx.getWindowInfo().pixelRatio : 2) || 2, 2);
+      const dpr = roomkit.getDpr();
       // 用实际渲染尺寸而非 _measure 的估算值，避免 canvas.width 与 CSS 宽度
       // 不匹配导致画面被拉伸（表现为瓦片/人物变形或干脆画丢）
-      const realW = (info.size && info.size.width) ? info.size.width : this.data.canvasW;
-      const realH = (info.size && info.size.height) ? info.size.height : this.data.canvasH;
-      const cw = Math.floor(realW);
-      const ch = Math.floor(realH);
+      // ==== 单一尺寸源 ====
+      // 用 wxml 的 {{canvasW}}/{{canvasH}}（this.data）作为唯一真值：
+      // CSS 宽、canvas.width、绘制坐标系（viewW/viewH）、_scale 全部同源。
+      // 之前用 info.size 改 _scale 而 viewW 仍用 this.data.canvasW，两者不同
+      // → 格距与画布可见范围对不上 → 人物画到画布外（只看到天空）。
+      const cw = Math.round(this.data.canvasW);
+      const ch = Math.round(this.data.canvasH);
       canvas.width = cw * dpr;
       canvas.height = ch * dpr;
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
       this._canvas = canvas;
       this._ctx = ctx;
-      // 每格像素必须以真实宽度反推
+      // 每格像素与 viewW 必须同源
       this._scale = cw / 15;
-      log.d('[mario] canvas ready ' + cw + 'x' + ch + ' scale=' + this._scale.toFixed(2));
+      log.d('[mario] canvas ' + cw + 'x' + ch + ' scale=' + this._scale.toFixed(2));
       this._canvasRetry = 0;
     });
   }

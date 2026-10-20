@@ -213,7 +213,38 @@ function buildSharePath(route, roomNo, fallback) {
 
 /* ========== 导出 ========== */
 
+/* ========== 系统信息（安全取值） ========== */
+
+// 取屏幕信息。微信 API 在某些时机（初始化、切后台、开发者工具重载）会返回 null，
+// 直接读 .windowWidth 会抛 "Cannot read properties of null (reading 'screenHeight')"。
+// 这里做防御，并给出可用的兜底值，页面拿不到就用默认尺寸也不至于白屏。
+function getWindowSize() {
+  let info = null;
+  try {
+    if (wx.getWindowInfo) info = wx.getWindowInfo();
+    else if (wx.getSystemInfoSync) info = wx.getSystemInfoSync();
+  } catch (e) {
+    info = null;
+  }
+  // 兜底：iPhone 常见尺寸，只在 API 失效时用
+  const fallback = { windowWidth: 375, windowHeight: 667, pixelRatio: 2 };
+  if (!info || typeof info !== 'object') return fallback;
+  return {
+    windowWidth: (typeof info.windowWidth === 'number' && info.windowWidth > 0) ? info.windowWidth : fallback.windowWidth,
+    windowHeight: (typeof info.windowHeight === 'number' && info.windowHeight > 0) ? info.windowHeight : fallback.windowHeight,
+    pixelRatio: (typeof info.pixelRatio === 'number' && info.pixelRatio > 0) ? info.pixelRatio : fallback.pixelRatio
+  };
+}
+
+// 取设备像素比（绘制用，钳到 2 防止高分屏绘制量爆炸）
+function getDpr() {
+  return Math.min(getWindowSize().pixelRatio, 2);
+}
+
+
 module.exports = {
+  getWindowSize,
+  getDpr,
   genRoomNo,
   createRoom,
   findJoinableRoom,

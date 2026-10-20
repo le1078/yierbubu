@@ -72,8 +72,8 @@ Page({
   /* ========== 布局 ========== */
 
   _measureBoard() {
-    const sys = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
-    const w = sys.windowWidth;
+    // 用安全取值：wx.getWindowInfo 在部分时机返回 null，直接读会崩
+    const w = roomkit.getWindowSize().windowWidth;
     const rpx2px = w / 750;
     // 棋盘 9 列 10 行，格距 = 宽 / 8，高 = 格距 * 9
     const boardW = Math.floor(w - 48 * rpx2px);
@@ -540,13 +540,16 @@ Page({
         return;
       }
       const canvas = info.node;
-      const dpr = Math.min((wx.getWindowInfo ? wx.getWindowInfo().pixelRatio : 2) || 2, 2);
-      // 用实际渲染尺寸而非 onReady 的估算值：估算依赖 rpx 换算，可能有 1px 级
-      // 误差，canvas.width 与 CSS 宽度不匹配时绘制内容会被拉伸变形。
-      const realW = (info.size && info.size.width) ? info.size.width : this.data.boardW;
-      const realH = (info.size && info.size.height) ? info.size.height : this.data.boardH;
-      const bw = Math.floor(realW);
-      const bh = Math.floor(realH);
+      const dpr = roomkit.getDpr();
+      // ==== 单一尺寸源 ====
+      // 尺寸只在这里定一次，之后 canvas.width、绘制坐标系、命中测试全部用它。
+      // 之前的 bug：measureBoard 算的 boardW 与 info.size.width 不一致时，
+      // canvas 物理尺寸和 _drawBoard 的坐标系对不上，内容超出画布被切掉
+      // （现象：左右两侧棋子只剩一半）。统一以 info.size.width 为准。
+      // 不用 info.size（与 wxml 的 {{boardW}} 可能不同步），只用 this.data.boardW
+      const bw = Math.round(this.data.boardW);
+      const cell = bw / (X.COLS - 1);
+      const bh = Math.round(cell * (X.ROWS - 1));
       canvas.width = bw * dpr;
       canvas.height = bh * dpr;
       const ctx = canvas.getContext('2d');
@@ -554,9 +557,10 @@ Page({
       this._canvas = canvas;
       this._ctx = ctx;
       this._dpr = dpr;
-      // 格距必须以真实宽度反推，否则 _hitTest 与 _drawBoard 会用不同基准，点不中
-      this._cell = bw / (X.COLS - 1);
-      log.d('[xiangqi] canvas ready bw=' + bw + ' bh=' + bh + ' cell=' + this._cell.toFixed(2));
+      this._cell = cell;
+      this._bw = bw;
+      this._bh = bh;
+      log.d('[xiangqi] canvas ' + bw + 'x' + bh + ' cell=' + cell.toFixed(3) + ' dpr=' + dpr);
       if (!this._board) this._board = X.startBoard();
       this._drawBoard();
     });
@@ -576,7 +580,8 @@ Page({
     const ctx = this._ctx;
     if (!ctx || !this._board) return;
     const cell = this._cell;
-    const W = this.data.boardW, H = this.data.boardH;
+    // 用 _ensureCanvas 里确定的尺寸，不能用 this.data.boardW（两者可能不一致）
+    const W = this._bw || this.data.boardW, H = this._bh || this.data.boardH;
     if (!cell || !W || !H) return;
 
     ctx.clearRect(0, 0, W, H);

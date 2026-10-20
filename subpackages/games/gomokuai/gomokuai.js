@@ -4,6 +4,7 @@
 //
 // 注意：分包里引用主包 utils 要往上三级（subpackages/games/gomokuai → 根目录）
 const C = require('../../../utils/constants.js');
+const roomkit = require('../../../utils/roomkit.js');
 const log = require('../../../utils/log.js');
 const core = require('../../../utils/gomoku_core.js');
 const ai = require('../../../utils/gomoku_ai.js');
@@ -27,8 +28,8 @@ Page({
 
   onReady() {
     // 棋盘尺寸：屏幕宽度 - 页面左右边距 24rpx*2
-    const sys = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
-    const w = sys.windowWidth;
+    // 用安全取值：wx.getWindowInfo 在部分时机返回 null，直接读会崩
+    const w = roomkit.getWindowSize().windowWidth;
     const rpx2px = w / 750;
     const boardW = Math.floor(w - 48 * rpx2px);
     this._boardW = boardW;
@@ -258,14 +259,14 @@ Page({
         return;
       }
       const canvas = info.node;
-      const dpr = Math.min((wx.getWindowInfo ? wx.getWindowInfo().pixelRatio : 2) || 2, 2);
-      // 关键：用 canvas 的「实际渲染宽度」而不是 onReady 里估算的 boardW。
-      // 估算值依赖 rpx 换算，与真实 CSS 宽度可能有 1px 级误差；
-      // 一旦 canvas.width 与 CSS 宽度不匹配，绘制内容就会被压缩/拉伸，
-      // 网格和棋子全部变形（线上表现为棋盘出现放射状斜线）。
-      // info.size.width 是布局完成后的真实值，用它最稳。
-      const realW = (info.size && info.size.width) ? info.size.width : this._boardW;
-      const boardW = Math.floor(realW);
+      const dpr = roomkit.getDpr();
+      // ==== 单一尺寸源 ====
+      // 用 wxml 里的 {{boardW}}（即 this.data.boardW）作为唯一真值：
+      // CSS 宽、canvas.width/height、绘制坐标系三者必须完全一致。
+      // 之前引入 info.size.width 反而制造了三方不一致，导致内容溢出画布
+      // （现象：棋盘出现放射状斜线、棋子被切边）。
+      // 这里绝不再用 info.size —— 它和 wxml 的 style 值可能不同步。
+      const boardW = Math.round(this.data.boardW || this._boardW);
       canvas.width = boardW * dpr;
       canvas.height = boardW * dpr;
       const ctx = canvas.getContext('2d');
@@ -277,7 +278,7 @@ Page({
       // 尺寸基准变了，背景缓存必须作废
       this._bgCache = { canvas: null, w: 0, dpr: 0 };
       this._grads = { grads: null, cell: 0 };
-      log.d('[gomokuai] canvas ready boardW=' + boardW + ' realW=' + realW + ' dpr=' + dpr);
+      log.d('[gomokuai] canvas ' + boardW + 'x' + boardW + ' dpr=' + dpr + ' (CSS={{boardW}})');
       if (!this._board) this._board = core.emptyBoard();
       this._drawBoard();
     });
