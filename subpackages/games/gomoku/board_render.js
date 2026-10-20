@@ -14,13 +14,17 @@
 
 const SIZE = 15;
 
-// 缓存对象由调用方持有并回传，本模块只负责填充
+// 缓存对象由调用方持有并回传，本模块只负责填充。
+// 缓存 key 必须同时含 W 和 dpr：只比 W 的话，dpr 变化时（切后台恢复、
+// 屏幕缩放）不会重建离屏画布，drawImage 就会把旧尺寸的背景拉伸到新画布上，
+// 表现为网格整体变斜。线上实测过这个坑。
 function ensureBg(bgCache, W, dpr) {
-  if (bgCache.canvas && bgCache.w === W) return bgCache.canvas;
+  if (bgCache.canvas && bgCache.w === W && bgCache.dpr === dpr) return bgCache.canvas;
   const bg = wx.createOffscreenCanvas ? wx.createOffscreenCanvas({ type: '2d' }) : null;
   if (!bg) {
     bgCache.canvas = null;
     bgCache.w = W;
+    bgCache.dpr = dpr;
     return null;
   }
   bg.width = W * dpr;
@@ -30,6 +34,7 @@ function ensureBg(bgCache, W, dpr) {
   drawBgInto(bctx, W);
   bgCache.canvas = bg;
   bgCache.w = W;
+  bgCache.dpr = dpr;
   return bg;
 }
 
@@ -61,18 +66,16 @@ function drawBgInto(ctx, W) {
 // 渐变按颜色缓存：只有黑白两种，不要每颗都 new。
 // 渐变以原点为中心创建，绘制前必须 translate 到目标坐标。
 // 缓存由 opts.grads 持有（调用方创建一次：{ v: null }），cell 变了要置 null 重建。
+//
+// 注意：这里刻意改用「纯色」而非 createRadialGradient。
+// 原因：radial gradient 对象在多个 translate 后的 context 上复用时，
+// 部分小程序基础库版本会把渐变换算到错误的坐标系，表现为棋子被拉出
+// 放射状斜线（线上实测：iOS 3.17.2）。纯色 + 单独画高光点更稳。
 function ensurePieceGrads(ctx, cell, cache) {
-  if (cache.grads && cache.cell === cell) return cache.grads;
-  const grads = {};
-  for (let v = 0; v < 2; v++) {
-    const g = ctx.createRadialGradient(-cell * 0.15, -cell * 0.15, cell * 0.08, 0, 0, cell * 0.45);
-    if (v === 0) { g.addColorStop(0, '#666'); g.addColorStop(1, '#111'); }
-    else { g.addColorStop(0, '#FFF'); g.addColorStop(1, '#CCC'); }
-    grads[v + 1] = g;
-  }
-  cache.grads = grads;
+  if (cache.colors && cache.cell === cell) return cache.colors;
+  cache.colors = { 1: '#1A1A1A', 2: '#FDFDFD' };
   cache.cell = cell;
-  return grads;
+  return cache.colors;
 }
 
 // 主绘制入口
@@ -88,13 +91,15 @@ function draw(ctx, opts) {
   const bg = ensureBg(opts.bgCache, W, dpr);
   ctx.clearRect(0, 0, W, W);
   if (bg) {
-    ctx.drawImage(bg, 0, 0, W, W);
+    // 源用物理尺寸（bg.width/height），目标用逻辑尺寸（W,W）——
+    // 当前 ctx 已 scale(dpr)，这样正好 1:1 映射，绝不拉伸
+    ctx.drawImage(bg, 0, 0, bg.width, bg.height, 0, 0, W, W);
   } else {
     drawBgInto(ctx, W);
   }
 
   if (!opts.grads) opts.grads = { grads: null, cell: 0 };
-  const grads = ensurePieceGrads(ctx, cell, opts.grads);
+  const colors = ensurePieceGrads(ctx, cell, opts.grads);
 
   // 棋子
   for (let r = 0; r < SIZE; r++) {
@@ -107,14 +112,22 @@ function draw(ctx, opts) {
       ctx.arc(x + 1, y + 2, cell * 0.42, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(0,0,0,0.18)';
       ctx.fill();
-      // 本体（复用缓存渐变，平移到当前坐标）
-      ctx.save();
-      ctx.translate(x, y);
+      // 本体：纯色（渐变在部分基础库上复用会串坐标系，见 ensurePieceGrads 注释）
       ctx.beginPath();
-      ctx.arc(0, 0, cell * 0.4, 0, Math.PI * 2);
-      ctx.fillStyle = grads[v];
+      ctx.arc(x, y, cell * 0.4, 0, Math.PI * 2);
+      ctx.fillStyle = colors[v];
       ctx.fill();
-      ctx.restore();
+      // 白棋加描边，否则白底上看不见
+      if (v === 2) {
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+        ctx.stroke();
+      }
+      // 高光小点（左上角），让棋子有立体感
+      ctx.beginPath();
+      ctx.arc(x - cell * 0.13, y - cell * 0.13, cell * 0.1, 0, Math.PI * 2);
+      ctx.fillStyle = v === 1 ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.10)';
+      ctx.fill();
     }
   }
 

@@ -259,7 +259,13 @@ Page({
       }
       const canvas = info.node;
       const dpr = Math.min((wx.getWindowInfo ? wx.getWindowInfo().pixelRatio : 2) || 2, 2);
-      const boardW = this._boardW;
+      // 关键：用 canvas 的「实际渲染宽度」而不是 onReady 里估算的 boardW。
+      // 估算值依赖 rpx 换算，与真实 CSS 宽度可能有 1px 级误差；
+      // 一旦 canvas.width 与 CSS 宽度不匹配，绘制内容就会被压缩/拉伸，
+      // 网格和棋子全部变形（线上表现为棋盘出现放射状斜线）。
+      // info.size.width 是布局完成后的真实值，用它最稳。
+      const realW = (info.size && info.size.width) ? info.size.width : this._boardW;
+      const boardW = Math.floor(realW);
       canvas.width = boardW * dpr;
       canvas.height = boardW * dpr;
       const ctx = canvas.getContext('2d');
@@ -268,8 +274,10 @@ Page({
       this._ctx = ctx;
       this._dpr = dpr;
       this._boardW = boardW;
-      this._bgCache = { canvas: null, w: 0 };
+      // 尺寸基准变了，背景缓存必须作废
+      this._bgCache = { canvas: null, w: 0, dpr: 0 };
       this._grads = { grads: null, cell: 0 };
+      log.d('[gomokuai] canvas ready boardW=' + boardW + ' realW=' + realW + ' dpr=' + dpr);
       if (!this._board) this._board = core.emptyBoard();
       this._drawBoard();
     });

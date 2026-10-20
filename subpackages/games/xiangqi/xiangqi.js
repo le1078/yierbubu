@@ -107,6 +107,15 @@ Page({
 
   /* ========== 开局 ========== */
 
+  // 记录当前局面（棋盘 + 轮到谁走）。
+  // key 必须含 turn：象棋规则里「同盘面但轮次不同」不算重复局面，
+  // 只用棋盘做 key 会把来回走的对称局面误判成和棋。
+  _notePosition() {
+    if (!this._board) return;
+    const key = X.boardToStr(this._board) + '_' + this.data.turn;
+    this._positions[key] = (this._positions[key] || 0) + 1;
+  },
+
   _startLocal(mode) {
     this._board = X.startBoard();
     this._history = [];
@@ -114,7 +123,6 @@ Page({
     this._over = false;
     this._noCapture = 0;         // 自然限着计数
     this._positions = {};        // 重复局面检测
-    this._notePosition();
     this.setData({
       stage: 'playing',
       turn: X.RED,
@@ -124,6 +132,7 @@ Page({
       oppName: mode === 'ai' ? 'AI' : '黑方',
       metaText: ''
     }, () => {
+      this._notePosition();      // 初始局面也要计入，否则三次回到初始不判和
       this._ensureCanvas();
       if (mode === 'ai' && this.data.mySide !== X.RED) this._aiTurn();
     });
@@ -356,10 +365,9 @@ Page({
       return;
     }
 
-    // 和棋：三次重复局面
-    const key = X.boardToStr(this._board);
-    this._positions[key] = (this._positions[key] || 0) + 1;
-    if (this._positions[key] >= 3) {
+    // 和棋：三次重复局面（_notePosition 内部维护计数，key 含轮次）
+    this._notePosition();
+    if (this._positions[X.boardToStr(this._board) + '_' + this.data.turn] >= 3) {
       this._over = true;
       this.setData({ stage: 'ended', winText: '🤝 和棋（三次重复局面）', statusText: '对局结束' });
       return;
@@ -533,7 +541,12 @@ Page({
       }
       const canvas = info.node;
       const dpr = Math.min((wx.getWindowInfo ? wx.getWindowInfo().pixelRatio : 2) || 2, 2);
-      const bw = this.data.boardW, bh = this.data.boardH;
+      // 用实际渲染尺寸而非 onReady 的估算值：估算依赖 rpx 换算，可能有 1px 级
+      // 误差，canvas.width 与 CSS 宽度不匹配时绘制内容会被拉伸变形。
+      const realW = (info.size && info.size.width) ? info.size.width : this.data.boardW;
+      const realH = (info.size && info.size.height) ? info.size.height : this.data.boardH;
+      const bw = Math.floor(realW);
+      const bh = Math.floor(realH);
       canvas.width = bw * dpr;
       canvas.height = bh * dpr;
       const ctx = canvas.getContext('2d');
@@ -541,6 +554,9 @@ Page({
       this._canvas = canvas;
       this._ctx = ctx;
       this._dpr = dpr;
+      // 格距必须以真实宽度反推，否则 _hitTest 与 _drawBoard 会用不同基准，点不中
+      this._cell = bw / (X.COLS - 1);
+      log.d('[xiangqi] canvas ready bw=' + bw + ' bh=' + bh + ' cell=' + this._cell.toFixed(2));
       if (!this._board) this._board = X.startBoard();
       this._drawBoard();
     });

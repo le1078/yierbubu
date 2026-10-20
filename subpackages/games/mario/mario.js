@@ -111,8 +111,12 @@ Page({
 
   startSolo() {
     this._setupLevel(0);
-    this.setData({ stage: 'playing', mode: 'solo', mySeat: 1, statusText: '单机试玩 · P1' });
-    this._startLoop();
+    // 必须在 setData 回调里启动循环：_tick 会检查 this.data.stage === 'playing'，
+    // 而 setData 是异步的，提前启动会导致第一帧就 return、且不再续 timer
+    this.setData({ stage: 'playing', mode: 'solo', mySeat: 1, statusText: '单机试玩 · P1' }, () => {
+      this._over = false;
+      this._startLoop();
+    });
   },
 
   backToMenu() {
@@ -146,14 +150,18 @@ Page({
   nextLevel() {
     const n = (this.data.level + 1) % LV.LEVEL_SPECS.length;
     this._setupLevel(n);
-    this.setData({ stage: 'playing', winText: '' });
-    this._startLoop();
+    this.setData({ stage: 'playing', winText: '' }, () => {
+      this._over = false;
+      this._startLoop();
+    });
   },
 
   restart() {
     this._setupLevel(this.data.level);
-    this.setData({ stage: 'playing', winText: '' });
-    this._startLoop();
+    this.setData({ stage: 'playing', winText: '' }, () => {
+      this._over = false;
+      this._startLoop();
+    });
   },
 
   /* ========== 联机 ========== */
@@ -239,8 +247,10 @@ Page({
           stage: 'playing',
           statusText: '联机闯关 · P1',
           metaText: '房间 ' + (room.roomNo || this.data.roomNo) + ' · ' + (this.data.coop ? '合作' : '竞速')
+        }, () => {
+          this._over = false;
+          this._startLoop();
         });
-        this._startLoop();
       }
       return;
     }
@@ -618,12 +628,21 @@ Page({
       }
       const canvas = info.node;
       const dpr = Math.min((wx.getWindowInfo ? wx.getWindowInfo().pixelRatio : 2) || 2, 2);
-      canvas.width = this.data.canvasW * dpr;
-      canvas.height = this.data.canvasH * dpr;
+      // 用实际渲染尺寸而非 _measure 的估算值，避免 canvas.width 与 CSS 宽度
+      // 不匹配导致画面被拉伸（表现为瓦片/人物变形或干脆画丢）
+      const realW = (info.size && info.size.width) ? info.size.width : this.data.canvasW;
+      const realH = (info.size && info.size.height) ? info.size.height : this.data.canvasH;
+      const cw = Math.floor(realW);
+      const ch = Math.floor(realH);
+      canvas.width = cw * dpr;
+      canvas.height = ch * dpr;
       const ctx = canvas.getContext('2d');
       ctx.scale(dpr, dpr);
       this._canvas = canvas;
       this._ctx = ctx;
+      // 每格像素必须以真实宽度反推
+      this._scale = cw / 15;
+      log.d('[mario] canvas ready ' + cw + 'x' + ch + ' scale=' + this._scale.toFixed(2));
       this._canvasRetry = 0;
     });
   }
