@@ -51,6 +51,20 @@ function cameraX(level, targetX, viewW) {
   return want;
 }
 
+// 摄像机 y：让玩家保持在视口 55% 处。
+// 关卡高 16 行，而视口通常只有 ~9 格高，若 camY 恒为 0，
+// 玩家起点在 row 12、地面在 row 14~15，全部落在视口下方 → 画不出来
+// （线上实测：只看到天空，人物和地面全在画布外）。
+// 让 camY 跟随玩家，就能让可玩区始终在视口内。
+function cameraY(level, targetY, viewH) {
+  const want = targetY - viewH * 0.55;
+  const maxY = level.rowsH - viewH;
+  if (maxY <= 0) return 0;
+  if (want < 0) return 0;
+  if (want > maxY) return maxY;
+  return want;
+}
+
 /* ========== 背景缓存 ========== */
 
 function ensureBackground(cache, w, h) {
@@ -323,9 +337,11 @@ function drawFrame(ctx, opts) {
   const viewH = opts.viewH / s;               // 视口高（格）
   const bg = ensureBackground(opts.bgCache, opts.viewW, opts.viewH);
 
-  // 摄像机：跟随 seat 1（host），合作模式下最直观
+  // 摄像机：跟随 seat 1（host），合作模式下最直观。
+  // x 和 y 都要跟随，否则纵向视口太短时地面/人物会画到画布外。
   const focus = players.find(p => p.state === 'alive') || players[0];
   const cam = cameraX(level, focus.x, viewW);
+  const camY = cameraY(level, focus.y, viewH);
 
   // 背景
   if (bg) ctx.drawImage(bg, 0, 0, opts.viewW, opts.viewH);
@@ -345,7 +361,7 @@ function drawFrame(ctx, opts) {
     for (let c = c0; c <= c1; c++) {
       const ch = level.grid[r][c];
       if (ch === '.') continue;
-      drawTile(ctx, ch, (c - cam) * s, r * s, s);
+      drawTile(ctx, ch, (c - cam) * s, (r - camY) * s, s);
     }
   }
 
@@ -354,7 +370,7 @@ function drawFrame(ctx, opts) {
     if (coin.taken) continue;
     if (coin.col < cam - 1 || coin.col > cam + viewW + 1) continue;
     const cx = (coin.col + 0.5 - cam) * s;
-    const cy = (coin.row + 0.5) * s;
+    const cy = (coin.row + 0.5 - camY) * s;
     // 旋转效果（用宽度变化模拟）
     const w = Math.abs(Math.sin(opts.time * 4 + coin.id)) * s * 0.3 + s * 0.08;
     ctx.fillStyle = PAL.coin;
@@ -370,7 +386,7 @@ function drawFrame(ctx, opts) {
   for (const it of level.items) {
     if (!it.active) continue;
     if (it.x < cam - 1 || it.x > cam + viewW + 1) continue;
-    const ix = (it.x - cam) * s, iy = it.y * s;
+    const ix = (it.x - cam) * s, iy = (it.y - camY) * s;
     ctx.fillStyle = '#E52521';
     ctx.beginPath();
     ctx.arc(ix, iy - s * 0.15, s * 0.3, Math.PI, 0);
@@ -388,7 +404,7 @@ function drawFrame(ctx, opts) {
   // 移动平台
   for (const pl of level.platforms) {
     if (pl.x < cam - 3 || pl.x > cam + viewW + 3) continue;
-    const px = (pl.x - cam) * s, py = pl.y * s;
+    const px = (pl.x - cam) * s, py = (pl.y - camY) * s;
     ctx.fillStyle = PAL.platform;
     ctx.fillRect(px - pl.w * s / 2, py - pl.h * s / 2, pl.w * s, pl.h * s);
     ctx.fillStyle = 'rgba(0,0,0,0.18)';
@@ -399,14 +415,14 @@ function drawFrame(ctx, opts) {
   for (const e of level.enemies) {
     if (!e.alive) continue;
     if (e.x < cam - 2 || e.x > cam + viewW + 2) continue;
-    drawEnemy(ctx, e, (e.x - cam) * s, e.y * s, s, opts.time);
+    drawEnemy(ctx, e, (e.x - cam) * s, (e.y - camY) * s, s, opts.time);
   }
 
   // 火球
   if (level.fireballs) {
     for (const f of level.fireballs) {
       if (f.x < cam - 1 || f.x > cam + viewW + 1) continue;
-      const fx = (f.x - cam) * s, fy = f.y * s;
+      const fx = (f.x - cam) * s, fy = (f.y - camY) * s;
       ctx.fillStyle = '#FF6B00';
       ctx.beginPath();
       ctx.arc(fx, fy, s * 0.22, 0, Math.PI * 2);
@@ -420,25 +436,25 @@ function drawFrame(ctx, opts) {
 
   // Boss
   if (level.boss && level.boss.hp > 0) {
-    drawBoss(ctx, level.boss, (level.boss.x - cam) * s, level.boss.y * s, s);
+    drawBoss(ctx, level.boss, (level.boss.x - cam) * s, (level.boss.y - camY) * s, s);
   }
 
   // 玩家（最后画，压在最上层）
   for (const p of players) {
     if (p.state === 'dead') continue;
     if (p.x < cam - 2 || p.x > cam + viewW + 2) continue;
-    drawPlayer(ctx, p, (p.x - cam) * s, p.y * s, s, opts.time);
+    drawPlayer(ctx, p, (p.x - cam) * s, (p.y - camY) * s, s, opts.time);
     // 玩家名牌
     ctx.fillStyle = p.seat === 1 ? PAL.playerA : PAL.playerB;
     ctx.font = 'bold ' + Math.floor(s * 0.42) + 'px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText('P' + p.seat, (p.x - cam) * s, p.y * s - s * 1.0);
+    ctx.fillText('P' + p.seat, (p.x - cam) * s, (p.y - camY) * s - s * 1.0);
   }
 }
 
 module.exports = {
   PAL, TILE,
-  cameraX, ensureBackground, drawTile,
+  cameraX, cameraY, ensureBackground, drawTile,
   drawPlayer, drawEnemy, drawBoss, drawFrame
 };

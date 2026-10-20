@@ -547,9 +547,11 @@ Page({
       // canvas 物理尺寸和 _drawBoard 的坐标系对不上，内容超出画布被切掉
       // （现象：左右两侧棋子只剩一半）。统一以 info.size.width 为准。
       // 不用 info.size（与 wxml 的 {{boardW}} 可能不同步），只用 this.data.boardW
+      // 与 _drawBoard 同一套几何：留半格边距，格距 = (bw - 2*margin)/8
       const bw = Math.round(this.data.boardW);
-      const cell = bw / (X.COLS - 1);
-      const bh = Math.round(cell * (X.ROWS - 1));
+      const margin = (bw / (X.COLS - 1)) * 0.5;
+      const cell = (bw - margin * 2) / (X.COLS - 1);
+      const bh = Math.round(cell * (X.ROWS - 1) + margin * 2);
       canvas.width = bw * dpr;
       canvas.height = bh * dpr;
       const ctx = canvas.getContext('2d');
@@ -570,8 +572,10 @@ Page({
   _hitTest(x, y) {
     const cell = this._cell;
     if (!cell) return null;
-    const c = Math.round(x / cell);
-    const r = Math.round(y / cell);
+    const ox = this._ox || 0, oy = this._oy || 0;
+    // 必须用与绘制完全相同的坐标系（含 ox/oy 偏移），否则点不中
+    const c = Math.round((x - ox) / cell);
+    const r = Math.round((y - oy) / cell);
     if (r < 0 || r >= X.ROWS || c < 0 || c >= X.COLS) return null;
     return { r, c, idx: X.idx(r, c) };
   },
@@ -579,10 +583,21 @@ Page({
   _drawBoard() {
     const ctx = this._ctx;
     if (!ctx || !this._board) return;
-    const cell = this._cell;
     // 用 _ensureCanvas 里确定的尺寸，不能用 this.data.boardW（两者可能不一致）
     const W = this._bw || this.data.boardW, H = this._bh || this.data.boardH;
-    if (!cell || !W || !H) return;
+    if (!W || !H) return;
+
+    // ==== 棋盘留边 ====
+    // 若直接用 cell = W/8，最左/最右一列棋子中心就在画布边缘（x=0 与 x=W），
+    // 半径 0.42*cell 必然被切掉半边（线上实测：左右两列"车"都成半月形）。
+    // 做法：棋盘区左右各留半格，实际格距 = (W - 2*margin) / 8，
+    // 棋盘整体居中，最外侧棋子完整显示。
+    const margin = (W / (X.COLS - 1)) * 0.5;
+    const cell = (W - margin * 2) / (X.COLS - 1);
+    const ox = margin, oy = margin;
+    this._cell = cell;
+    this._ox = ox;
+    this._oy = oy;
 
     ctx.clearRect(0, 0, W, H);
 
@@ -598,32 +613,33 @@ Page({
     ctx.lineWidth = 1;
     for (let r = 0; r < X.ROWS; r++) {
       ctx.beginPath();
-      ctx.moveTo(0, r * cell);
-      ctx.lineTo(W, r * cell);
+      ctx.moveTo(ox, oy + r * cell);
+      ctx.lineTo(ox + (X.COLS - 1) * cell, oy + r * cell);
       ctx.stroke();
     }
     for (let c = 0; c < X.COLS; c++) {
       ctx.beginPath();
+      const x = ox + c * cell;
       if (c === 0 || c === X.COLS - 1) {
         // 边线通到底
-        ctx.moveTo(c * cell, 0);
-        ctx.lineTo(c * cell, H);
+        ctx.moveTo(x, oy);
+        ctx.lineTo(x, oy + (X.ROWS - 1) * cell);
       } else {
         // 中间竖线在河界处断开（象棋特有画法）
-        ctx.moveTo(c * cell, 0);
-        ctx.lineTo(c * cell, 4 * cell);
-        ctx.moveTo(c * cell, 5 * cell);
-        ctx.lineTo(c * cell, H);
+        ctx.moveTo(x, oy);
+        ctx.lineTo(x, oy + 4 * cell);
+        ctx.moveTo(x, oy + 5 * cell);
+        ctx.lineTo(x, oy + (X.ROWS - 1) * cell);
       }
       ctx.stroke();
     }
 
     // 九宫斜线（上下两个九宫各两条对角线）
     ctx.beginPath();
-    ctx.moveTo(3 * cell, 0); ctx.lineTo(5 * cell, 2 * cell);
-    ctx.moveTo(5 * cell, 0); ctx.lineTo(3 * cell, 2 * cell);
-    ctx.moveTo(3 * cell, 7 * cell); ctx.lineTo(5 * cell, 9 * cell);
-    ctx.moveTo(5 * cell, 7 * cell); ctx.lineTo(3 * cell, 9 * cell);
+    ctx.moveTo(ox + 3 * cell, oy); ctx.lineTo(ox + 5 * cell, oy + 2 * cell);
+    ctx.moveTo(ox + 5 * cell, oy); ctx.lineTo(ox + 3 * cell, oy + 2 * cell);
+    ctx.moveTo(ox + 3 * cell, oy + 7 * cell); ctx.lineTo(ox + 5 * cell, oy + 9 * cell);
+    ctx.moveTo(ox + 5 * cell, oy + 7 * cell); ctx.lineTo(ox + 3 * cell, oy + 9 * cell);
     ctx.stroke();
 
     // 棋子
@@ -632,7 +648,7 @@ Page({
       const p = this._board[i];
       if (!p) continue;
       const r = X.rowOf(i), c = X.colOf(i);
-      const x = c * cell, y = r * cell;
+      const x = ox + c * cell, y = oy + r * cell;
       const red = X.sideOf(p) === X.RED;
 
       // 阴影
@@ -668,7 +684,7 @@ Page({
     if (this._selected !== null && this._selected !== undefined) {
       const r = X.rowOf(this._selected), c = X.colOf(this._selected);
       ctx.beginPath();
-      ctx.arc(c * cell, r * cell, radius * 1.25, 0, Math.PI * 2);
+      ctx.arc(ox + c * cell, oy + r * cell, radius * 1.25, 0, Math.PI * 2);
       ctx.lineWidth = 3;
       ctx.strokeStyle = '#FF5A5F';
       ctx.stroke();
@@ -678,7 +694,7 @@ Page({
       for (const m of moves) {
         const mr = X.rowOf(m.to), mc = X.colOf(m.to);
         ctx.beginPath();
-        ctx.arc(mc * cell, mr * cell, radius * 0.3, 0, Math.PI * 2);
+        ctx.arc(ox + mc * cell, oy + mr * cell, radius * 0.3, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255,90,95,0.55)';
         ctx.fill();
       }

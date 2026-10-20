@@ -49,8 +49,11 @@ function drawBgInto(ctx, W) {
   ctx.strokeStyle = '#8B6F47';
   ctx.lineWidth = 1;
   for (let i = 0; i < SIZE; i++) {
+    // 水平线：(0, y) → (W, y)
     ctx.beginPath(); ctx.moveTo(0, i * cell); ctx.lineTo(W, i * cell); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(i * cell, 0); ctx.lineTo(W, i * cell); ctx.stroke();
+    // 竖线：(x, 0) → (x, W)。注意终点是 (i*cell, W) 不是 (W, i*cell)，
+    // 写错会画出一束汇聚到右上角的斜线（线上实测过这个 bug）
+    ctx.beginPath(); ctx.moveTo(i * cell, 0); ctx.lineTo(i * cell, W); ctx.stroke();
   }
   const stars = [3, 7, 11];
   ctx.fillStyle = '#8B6F47';
