@@ -1,0 +1,373 @@
+.page {
+  min-height: 100vh;
+  padding: 24rpx;
+  background: #FFFDF8;
+}
+
+/* ===== 菜单 ===== */
+.menu-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 40rpx;
+}
+
+.menu-title {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: #E2547A;
+}
+
+.menu-sub {
+  text-align: center;
+  color: #A08A80;
+  font-size: 26rpx;
+  margin-top: 12rpx;
+}
+
+.menu-card {
+  margin-top: 36rpx;
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 32rpx 28rpx;
+  box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
+}
+
+.sec-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #6B4A52;
+  margin-bottom: 16rpx;
+}
+
+.opt-row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 28rpx;
+}
+
+.opt {
+  flex: 1;
+  background: #FFF8F5;
+  border: 2rpx solid #FCE8EF;
+  border-radius: 20rpx;
+  padding: 18rpx 12rpx;
+  text-align: center;
+}
+
+.opt.on {
+  border-color: #FF8FAB;
+  background: #FFF0F4;
+}
+
+.opt-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #6B4A52;
+}
+
+.opt.on .opt-name { color: #E2547A; }
+
+.opt-desc {
+  font-size: 22rpx;
+  color: #A08A80;
+  margin-top: 6rpx;
+}
+
+.big-btn {
+  background: #FFF0F4;
+  color: #E2547A;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  padding: 24rpx 0;
+}
+
+.big-btn:active { opacity: 0.85; }
+
+.big-btn.primary {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+  box-shadow: 0 8rpx 20rpx rgba(255, 90, 95, 0.28);
+}
+
+.big-btn.ghost {
+  background: #FFF8F5;
+  color: #A08A80;
+  margin-top: 20rpx;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 28rpx 0 20rpx;
+  color: #C4B5AE;
+  font-size: 24rpx;
+}
+
+.divider::before, .divider::after {
+  content: '';
+  flex: 1;
+  height: 2rpx;
+  background: #F0E4DE;
+  margin: 0 16rpx;
+}
+
+.join-row {
+  display: flex;
+  gap: 20rpx;
+  align-items: stretch;
+}
+
+.room-input {
+  flex: 1;
+  height: 96rpx;
+  background: #FFF8F5;
+  border: 2rpx solid #FCE8EF;
+  border-radius: 999rpx;
+  padding: 0 32rpx;
+  font-size: 32rpx;
+  letter-spacing: 8rpx;
+}
+
+.menu-tip {
+  text-align: center;
+  color: #C4B5AE;
+  font-size: 22rpx;
+  margin-top: 24rpx;
+  line-height: 1.7;
+}
+
+/* ===== 等待 ===== */
+.wait-card {
+  margin-top: 80rpx;
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 48rpx 32rpx;
+  box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
+  text-align: center;
+}
+
+.wait-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #6B4A52;
+}
+
+.wait-no {
+  font-size: 72rpx;
+  font-weight: 700;
+  color: #E2547A;
+  letter-spacing: 12rpx;
+  margin: 24rpx 0 12rpx;
+}
+
+.wait-tip {
+  font-size: 24rpx;
+  color: #A08A80;
+}
+
+.wait-mode {
+  display: inline-block;
+  margin-top: 24rpx;
+  background: #FFF0F4;
+  color: #E2547A;
+  font-size: 26rpx;
+  font-weight: 600;
+  padding: 12rpx 28rpx;
+  border-radius: 999rpx;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 10rpx;
+  justify-content: center;
+  margin-top: 40rpx;
+}
+
+.loading-dots .dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #FF8FAB;
+  animation: blink 1.2s infinite;
+}
+
+.loading-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes blink {
+  0%, 60%, 100% { opacity: 0.25; }
+  30% { opacity: 1; }
+}
+
+/* ===== 对局 ===== */
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #FFFFFF;
+  border-radius: 24rpx;
+  padding: 14rpx 20rpx;
+  box-shadow: 0 4rpx 16rpx rgba(74, 63, 58, 0.06);
+}
+
+.bar-side {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-width: 130rpx;
+}
+
+.seat-dot {
+  width: 26rpx;
+  height: 26rpx;
+  border-radius: 50%;
+}
+
+.seat-dot.p1 { background: #E52521; }
+.seat-dot.p2 { background: #1E90FF; }
+
+.seat-name {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #6B4A52;
+}
+
+.seat-lives {
+  font-size: 22rpx;
+  color: #A08A80;
+}
+
+.bar-mid { flex: 1; text-align: center; }
+
+.bar-status {
+  font-size: 24rpx;
+  color: #E2547A;
+  font-weight: 600;
+}
+
+.bar-meta {
+  font-size: 20rpx;
+  color: #A08A80;
+  margin-top: 2rpx;
+}
+
+/* 游戏画面 */
+.stage {
+  position: relative;
+  margin-top: 20rpx;
+  display: flex;
+  justify-content: center;
+}
+
+.gcanvas {
+  border-radius: 16rpx;
+  box-shadow: 0 6rpx 20rpx rgba(74, 63, 58, 0.14);
+  background: #5C94FC;
+}
+
+/* 结算浮层 */
+.end-mask {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.end-card {
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 40rpx 48rpx;
+  text-align: center;
+  min-width: 420rpx;
+}
+
+.end-text {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: #E2547A;
+}
+
+.end-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 28rpx;
+}
+
+.e-btn {
+  background: #FFF0F4;
+  color: #E2547A;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 28rpx;
+  font-weight: 600;
+  padding: 20rpx 48rpx;
+}
+
+.e-btn.primary {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+}
+
+.e-btn.ghost {
+  background: #FFF8F5;
+  color: #A08A80;
+}
+
+/* 虚拟按键 */
+.pad {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-top: 24rpx;
+  padding: 0 8rpx;
+}
+
+.pad-left, .pad-right {
+  display: flex;
+  gap: 20rpx;
+}
+
+.p-btn {
+  width: 110rpx;
+  height: 110rpx;
+  border-radius: 50%;
+  background: #FFFFFF;
+  color: #E2547A;
+  font-size: 40rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4rpx 14rpx rgba(74, 63, 58, 0.10);
+  user-select: none;
+}
+
+.p-btn:active {
+  background: #FFF0F4;
+  transform: scale(0.94);
+}
+
+.p-btn.jump {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+  width: 130rpx;
+  height: 130rpx;
+  font-size: 48rpx;
+}
+
+.p-btn.run {
+  background: #FFF8F5;
+  color: #A08A80;
+  font-size: 36rpx;
+}
