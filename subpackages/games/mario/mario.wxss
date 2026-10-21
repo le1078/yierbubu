@@ -262,11 +262,11 @@
   margin-top: 2rpx;
 }
 
-/* ===== 横屏主区：左画面 + 右按键 ===== */
+/* ===== 竖屏主区：画面在上、按键在下 ===== */
 .stage-row {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 20rpx;
   margin-top: 16rpx;
 }
 
@@ -290,25 +290,31 @@
   z-index: 5;
 }
 
-/* 虚拟按键：游戏内展示，横屏时在画面右侧 */
+/* 朝左走时水平翻转形象（正版马里奥行为） */
+.avatar.flip {
+  transform: scaleX(-1);
+}
+
+/* 虚拟按键：竖屏时在画面下方，左右分置（左手方向、右手动作） */
 .pad {
-  width: 250rpx;
+  width: 100%;
   display: flex;
-  flex-direction: column;
   justify-content: space-between;
   align-items: center;
-  padding: 20rpx 0;
+  margin-top: 20rpx;
+  padding: 0 12rpx;
+  box-sizing: border-box;
 }
 
 .pad-dpad, .pad-act {
   display: flex;
-  gap: 16rpx;
+  gap: 20rpx;
   align-items: center;
 }
 
 .p-btn {
-  width: 96rpx;
-  height: 96rpx;
+  width: 120rpx;
+  height: 120rpx;
   border-radius: 50%;
   background: #FFFFFF;
   color: #E2547A;
@@ -329,9 +335,9 @@
 .p-btn.jump {
   background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
   color: #FFFFFF;
-  width: 110rpx;
-  height: 110rpx;
-  font-size: 44rpx;
+  width: 140rpx;
+  height: 140rpx;
+  font-size: 40rpx;
 }
 
 .p-btn.run {

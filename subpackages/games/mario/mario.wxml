@@ -76,10 +76,11 @@
           disable-scroll="true"></canvas>
 
         <!-- 玩家形象：canvas 不支持 GIF 动画，只能用 image 组件叠加。
-             位置由 JS 每帧同步（_syncAvatars），与画布同一坐标系 -->
-        <image class="avatar av1" src="/subpackages/games/mario/img/avatar_a.gif" mode="aspectFit"
+             位置由 JS 每帧同步（_syncAvatars）。face=-1 时水平翻转，
+             让角色朝左走时形象也朝左（正版马里奥的行为）。 -->
+        <image wx:if="{{!av1.hidden}}" class="avatar av1 {{av1.face < 0 ? 'flip' : ''}}" src="/subpackages/games/mario/img/avatar_a.gif" mode="aspectFit"
           style="left: {{av1.left}}px; top: {{av1.top}}px; width: {{av1.w}}px; height: {{av1.h}}px;"/>
-        <image class="avatar av2" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"
+        <image wx:if="{{!av2.hidden}}" class="avatar av2 {{av2.face < 0 ? 'flip' : ''}}" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"
           style="left: {{av2.left}}px; top: {{av2.top}}px; width: {{av2.w}}px; height: {{av2.h}}px;"/>
 
         <!-- 结算浮层 -->
@@ -94,17 +95,17 @@
           </view>
         </view>
       </view>
+    </view>
 
-      <!-- 游戏内虚拟按键（画在游戏内，横屏时在右侧） -->
-      <view class="pad">
-        <view class="pad-dpad">
-          <view class="p-btn" data-k="l" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">◀</view>
-          <view class="p-btn" data-k="r" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">▶</view>
-        </view>
-        <view class="pad-act">
-          <view class="p-btn run" data-k="run" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">🏃</view>
-          <view class="p-btn jump" data-k="u" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">⤴</view>
-        </view>
+    <!-- 虚拟按键：竖屏时在画面下方，左右分置，拇指好按 -->
+    <view class="pad">
+      <view class="pad-dpad">
+        <view class="p-btn" data-k="l" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">◀</view>
+        <view class="p-btn" data-k="r" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">▶</view>
+      </view>
+      <view class="pad-act">
+        <view class="p-btn run" data-k="run" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">跑</view>
+        <view class="p-btn jump" data-k="u" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">跳</view>
       </view>
     </view>
 

@@ -53,8 +53,8 @@ Page({
     landscape: false,
     // 玩家形象用 <image> 叠加显示（canvas 不支持 GIF 动画，只能用 image 组件）
     // 这里是两个 image 在画布坐标系里的位置（px），每帧更新
-    av1: { left: 0, top: 0, w: 40, h: 40 },
-    av2: { left: 0, top: 0, w: 40, h: 40 }
+    av1: { left: 0, top: 0, w: 40, h: 40, face: 1, hidden: false },
+    av2: { left: 0, top: 0, w: 40, h: 40, face: 1, hidden: false }
   },
 
   onLoad(options) {
@@ -107,20 +107,17 @@ Page({
 
   _measure() {
     // 用安全取值：wx.getWindowInfo 在部分时机返回 null，直接读会崩
-    const w = roomkit.getWindowSize().windowWidth;
-    const rpx2px = w / 750;
-    // 横屏判定：屏幕宽 > 高。注意横屏时 wx.getWindowInfo 返回的
-    // windowWidth/Height 会随方向变化，这里都取一遍再比较。
     const win = roomkit.getWindowSize();
-    const landscape = win.windowWidth > win.windowHeight;
-    // 横屏：画面在左、按键在右，画布宽度要减去右侧按键区
-    const canvasW = landscape
-      ? Math.floor(w - 290 * rpx2px)      // 按键区 250rpx + 间距 20rpx + 边距
-      : Math.floor(w - 48 * rpx2px);
-    // 视口：20 格宽 × 11 格高（横屏能看到更远）
-    this._scale = canvasW / 20;
-    const canvasH = Math.floor(this._scale * 11);
-    this.setData({ canvasW, canvasH, landscape });
+    const w = win.windowWidth;
+    const rpx2px = w / 750;
+    // 竖屏布局：画面占满宽度，按键在画面下方
+    const canvasW = Math.floor(w - 32 * rpx2px);
+    // 视口 15 格宽 × 9 格高（竖屏下这对比例最舒服，能看清地面与头顶砖）
+    const cols = 15;
+    const rows = 9;
+    this._scale = canvasW / cols;
+    const canvasH = Math.floor(this._scale * rows);
+    this.setData({ canvasW, canvasH, landscape: false });
   },
 
   /* ========== 菜单 ========== */
@@ -504,26 +501,36 @@ Page({
   },
 
   // 把两个玩家的屏幕坐标同步给 wxml 的 <image>
+  // face: 1 = 朝右，-1 = 朝左。wxml 用 CSS 的 scaleX(-1) 翻转形象，
+  // 这样角色往左走时样子也朝左（正版马里奥就是这样）。
   _syncAvatars(cam, camY) {
     const s = this._scale;
+    let changed = false;
     const out = { av1: this.data.av1, av2: this.data.av2 };
     for (let i = 0; i < 2; i++) {
       const p = this._players[i];
       if (!p) continue;
-      const w = Math.max(30, Math.round(s * 1.1));
+      const w = Math.max(30, Math.round(s * 1.15));
       const x = Math.round((p.x - cam) * s - w / 2);
-      const y = Math.round((p.y - camY) * s - s * 1.0);
+      const y = Math.round((p.y - camY) * s - s * 1.05);
       const key = i === 0 ? 'av1' : 'av2';
       const cur = out[key];
-      if (cur.left !== x || cur.top !== y || cur.w !== w) {
-        out[key] = { left: x, top: y, w, h: w };
+      if (cur.left !== x || cur.top !== y || cur.w !== w || cur.face !== p.face) {
+        out[key] = { left: x, top: y, w: w, h: w, face: p.face };
+        changed = true;
       }
     }
-    if (out.av1.left !== this.data.av1.left || out.av1.top !== this.data.av1.top ||
-        out.av2.left !== this.data.av2.left || out.av2.top !== this.data.av2.top ||
-        out.av1.w !== this.data.av1.w) {
-      this.setData({ av1: out.av1, av2: out.av2 });
+    // 死亡/过关时隐藏形象
+    for (let i = 0; i < 2; i++) {
+      const p = this._players[i];
+      const key = i === 0 ? 'av1' : 'av2';
+      const hidden = !p || p.state === 'dead' || (p.state === 'dying');
+      if (out[key].hidden !== hidden) {
+        out[key] = Object.assign({}, out[key], { hidden: hidden });
+        changed = true;
+      }
     }
+    if (changed) this.setData({ av1: out.av1, av2: out.av2 });
   },
 
   _checkEnd() {
@@ -698,7 +705,7 @@ Page({
       this._canvas = canvas;
       this._ctx = ctx;
       // 每格像素与 viewW 必须同源（20 格宽）
-      this._scale = cw / 20;
+      this._scale = cw / 15;
       log.d('[mario] canvas ' + cw + 'x' + ch + ' scale=' + this._scale.toFixed(2));
       this._canvasRetry = 0;
     });

@@ -99,9 +99,14 @@ console.log('\n[3] guest 输入中继');
   i2.run = !!relayed.keys.rn;
 
   const x0 = host.players[1].x;
-  for (let i = 0; i < 60; i++) EN.stepWorld(host.level, host.players, host.inputs, DT);
+  // 记录过程中的最大水平速度（末帧可能因撞墙/摩擦归零，不能只看最后）
+  let maxVx = 0;
+  for (let i = 0; i < 60; i++) {
+    EN.stepWorld(host.level, host.players, host.inputs, DT);
+    if (host.players[1].vx > maxVx) maxVx = host.players[1].vx;
+  }
   check(host.players[1].x > x0 + 1, 'host 读到中继输入后 P2 真的移动（' + x0.toFixed(2) + ' → ' + host.players[1].x.toFixed(2) + '）');
-  check(host.players[1].vx > EN.PHYS.WALK_MAX, '中继的奔跑键生效（vx=' + host.players[1].vx.toFixed(2) + '）');
+  check(maxVx > EN.PHYS.WALK_MAX, '中继的奔跑键生效（峰值 vx=' + maxVx.toFixed(2) + '）');
 }
 
 /* ========== 4. 金币校验（防双扣/防作弊） ========== */

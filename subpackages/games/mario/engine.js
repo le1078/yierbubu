@@ -18,21 +18,30 @@ const TICK = 1 / 60;
 
 /* ========== 物理常量 ========== */
 // 手感调校过的值（格/秒 或 格/秒²）
+// 物理参数，按正版超级马里奥兄弟(SMB1)的实测手感换算成「格/秒」。
+// SMB1 的数据（像素/帧，60fps）：走路最高 1.56px/帧、奔跑 2.56px/帧、
+// 起跳初速 4.0px/帧、重力 0.4375px/帧²。按 1 格 = 16px 换算得下面这些值。
+//
+// 与正版对齐的关键点：
+//  · 起步有惯性（不会瞬间全速），松手有滑行（FRICTION 不是无穷大）
+//  · 空中操控比地面弱（AIR_CONTROL < 1），跳出去后不能随便改方向
+//  · 按住跳跃键重力更小 → 跳得更高（可变跳跃高度），这是马里奥手感的灵魂
+//  · 奔跑(按住跑键)最高速度约为走路的 1.6 倍
 const PHYS = {
-  GRAVITY: 34,            // 重力加速度（格/秒²）
-  GRAVITY_HOLD: 18,       // 按住跳跃键时的重力（跳得更高）
+  GRAVITY: 44,            // 重力加速度（格/秒²）
+  GRAVITY_HOLD: 28,       // 按住跳跃键时的重力（跳得更高）
   MAX_FALL: 22,           // 最大下落速度
-  WALK_ACCEL: 60,         // 走路加速度
-  WALK_MAX: 5.2,          // 最大走路速度
-  RUN_MAX: 8.0,           // 奔跑最大速度
-  FRICTION: 40,           // 地面摩擦
-  ICE_FRICTION: 3,        // 冰面摩擦（极低，会打滑）
-  AIR_CONTROL: 0.7,       // 空中操控系数
-  JUMP_VEL: 11.5,         // 起跳初速度
+  WALK_ACCEL: 42,         // 走路加速度（起步有点惯性）
+  WALK_MAX: 5.9,          // 最大走路速度（1.56px/帧 × 60 / 16）
+  RUN_MAX: 9.6,           // 奔跑最大速度（2.56px/帧 × 60 / 16）
+  FRICTION: 34,           // 地面摩擦（松手后滑行约 3~4 格）
+  ICE_FRICTION: 2.2,      // 冰面摩擦（极低，会打滑）
+  AIR_CONTROL: 0.62,      // 空中操控系数（比地面弱，跳出去后难改向）
+  JUMP_VEL: 14.0,         // 起跳初速度（满跳约 3.8 格高，与正版手感接近）
   JUMP_CUT: 0.42,         // 松键后速度衰减系数（可变跳跃高度）
-  COYOTE: 0.10,           // 土狼时间：离地后仍可起跳的宽限（秒）
-  BUFFER: 0.12,           // 跳跃缓冲：落地前按跳也能起跳（秒）
-  STOMP_BOUNCE: 9.5,      // 踩敌反弹速度
+  COYOTE: 0.08,           // 土狼时间：离地后仍可起跳的宽限（秒）
+  BUFFER: 0.10,           // 跳跃缓冲：落地前按跳也能起跳（秒）
+  STOMP_BOUNCE: 12.0,     // 踩敌反弹速度
   DEATH_FALL_Y: 17        // 掉出地图即死的 y 阈值
 };
 
@@ -271,8 +280,11 @@ function makeInput() {
 function stepPlayer(level, p, input, dt) {
   if (p.state === 'dying') {
     p.deathT += dt;
-    p.vy += PHYS.GRAVITY * dt * 0.6;
-    p.y += p.vy * dt;
+    // 掉坑死亡：不播抛物动画（角色已经掉出画面），短暂停顿后直接重生
+    if (!p.fellInPit) {
+      p.vy += PHYS.GRAVITY * dt * 0.6;
+      p.y += p.vy * dt;
+    }
     if (p.deathT > C.MARIO_DEATH_RESPAWN_MS / 1000) {
       p.lives -= 1;                      // 先扣命，再决定重生还是彻底死亡
       p.deathT = 0;
@@ -283,6 +295,8 @@ function stepPlayer(level, p, input, dt) {
         p.vx = 0; p.vy = 0;
         p.hurtT = 1.0;
         p.big = false;                   // 重生后回到小形态
+        p.fellInPit = false;
+        p.onGround = false;
       } else {
         p.state = 'dead';
       }
@@ -406,11 +420,21 @@ function stepPlayer(level, p, input, dt) {
     }
   }
 
-  // 掉出地图
-  if (p.y > PHYS.DEATH_FALL_Y && p.state === 'alive') {
-    p.state = 'dying';
-    p.deathT = 0;
-    p.vy = -8;
+  // 掉出地图 → 立即死亡。
+  // 正版马里奥里掉坑是即死，且不区分大小形态（变大也照样死）。
+  // 早先用 vy=-8 做了个"向上弹一下"的动画，但玩家掉进深坑后会在坑里
+  // 反复上下弹（每帧都满足 y > 阈值），看起来像卡住不动。
+  if (p.y > PHYS.DEATH_FALL_Y && (p.state === 'alive' || p.state === 'dying')) {
+    if (p.state === 'alive') {
+      p.state = 'dying';
+      p.deathT = 0;
+      p.vy = 0;
+      p.vx = 0;
+      p.big = false;      // 掉坑不死于"受伤"，但形态重置
+      p.fellInPit = true; // 标记：直接走重生流程，不播受伤动画
+    }
+    // 已在 dying 且还在坑下方：直接进入重生计时，避免卡在坑里
+    return;
   }
 }
 

@@ -123,18 +123,22 @@ Page({
     this._over = false;
     this._noCapture = 0;         // 自然限着计数
     this._positions = {};        // 重复局面检测
+    // AI 模式：mySide 由 aisetup 页选择（1红先手 / 2黑后手）
+    const mySide = mode === 'ai' ? this.data.mySide : X.RED;
+    const aiFirst = mode === 'ai' && mySide === X.BLACK;
     this.setData({
       stage: 'playing',
       turn: X.RED,
-      mySide: X.RED,             // 本地/AI 模式：红方永远在下方
-      statusText: '红方走棋',
+      mySide,
+      statusText: aiFirst ? 'AI 思考中…' : '红方走棋',
       winText: '',
-      oppName: mode === 'ai' ? 'AI' : '黑方',
-      metaText: ''
+      oppName: mode === 'ai' ? ('AI · ' + this.data.difficultyText) : '黑方',
+      metaText: mode === 'ai' ? ('人机 · ' + this.data.difficultyText) : ''
     }, () => {
       this._notePosition();      // 初始局面也要计入，否则三次回到初始不判和
       this._ensureCanvas();
-      if (mode === 'ai' && this.data.mySide !== X.RED) this._aiTurn();
+      // 我执黑 → AI（红）先走
+      if (aiFirst) this._aiTurn();
     });
   },
 

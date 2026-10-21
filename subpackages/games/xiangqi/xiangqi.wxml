@@ -36,6 +36,45 @@
     <view class="menu-tip">💡 红方先行。帅/将不可照面，困毙同样判负。</view>
   </view>
 
+  <!-- ===== 人机：选难度 / 执子 ===== -->
+  <view wx:if="{{stage === 'aisetup'}}" class="lobby">
+    <view class="lobby-hero">
+      <view class="menu-title" style="font-size:40rpx;">🤖 人机对战</view>
+    </view>
+    <view class="lobby-card">
+      <view class="sec-title">选择难度</view>
+      <view class="opt-row">
+        <view class="opt {{difficulty === 'easy' ? 'on' : ''}}" data-d="easy" bindtap="pickDifficulty">
+          <view class="opt-name">😊 简单</view>
+          <view class="opt-desc">只看一层</view>
+        </view>
+        <view class="opt {{difficulty === 'normal' ? 'on' : ''}}" data-d="normal" bindtap="pickDifficulty">
+          <view class="opt-name">😤 普通</view>
+          <view class="opt-desc">两层搜索</view>
+        </view>
+        <view class="opt {{difficulty === 'hard' ? 'on' : ''}}" data-d="hard" bindtap="pickDifficulty">
+          <view class="opt-name">😈 困难</view>
+          <view class="opt-desc">四层搜索</view>
+        </view>
+      </view>
+
+      <view class="sec-title">我执</view>
+      <view class="opt-row">
+        <view class="opt {{mySide === 1 ? 'on' : ''}}" data-s="1" bindtap="pickSide">
+          <view class="opt-name">🔴 红方</view>
+          <view class="opt-desc">我先走</view>
+        </view>
+        <view class="opt {{mySide === 2 ? 'on' : ''}}" data-s="2" bindtap="pickSide">
+          <view class="opt-name">⚫ 黑方</view>
+          <view class="opt-desc">AI 先走</view>
+        </view>
+      </view>
+
+      <view class="big-btn primary" bindtap="startAiGame">🎮 开始对局</view>
+      <view class="big-btn ghost" bindtap="backToMenu">🚪 返回</view>
+    </view>
+  </view>
+
   <!-- ===== 联机大厅 ===== -->
   <view wx:if="{{stage === 'lobby'}}" class="lobby">
     <view class="lobby-card">

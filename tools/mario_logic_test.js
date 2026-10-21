@@ -231,13 +231,19 @@ console.log('\n[6] 操作宽容度');
   const lv = EN.loadLevel(rows, { name: 'ledge', start: { col: 2, row: 13 } });
   const p = mkPlayer(lv);
   p.x = 5.5; p.y = 13; p.onGround = true;
-  // 平台只有 col 5~8，从 5.5 起步要走约 4 格才会完全离开。
-  // 走路速度 5.2 格/秒 ≈ 0.087 格/帧，50 帧约 4.3 格
-  run(lv, [p], { 1: input({ right: true }) }, 50);
-  check(p.onGround === false, '走出平台后离地（x=' + p.x.toFixed(2) + '）');
-  check(p.coyote > 0, '离地瞬间仍有土狼时间（' + p.coyote.toFixed(3) + '）');
+  // 平台只有 col 5~8。逐帧推进，在「刚离地」的那一帧检查土狼时间。
+  // 不能跑固定帧数：速度参数一变，离地时机就变了，事后检查 coyote 早已耗尽。
+  let leftGroundAt = -1;
+  for (let i = 0; i < 80; i++) {
+    EN.stepPlayer(lv, p, input({ right: true }), DT);
+    if (!p.onGround) { leftGroundAt = i; break; }
+  }
+  check(leftGroundAt >= 0, '能走出平台离地（第 ' + leftGroundAt + ' 帧）');
+  check(leftGroundAt >= 0 && p.coyote > 0,
+    '离地瞬间仍有土狼时间（' + p.coyote.toFixed(3) + '）');
+  // 离地后立刻按跳，应能起跳
   EN.stepPlayer(lv, p, input({ right: true, up: true }), DT);
-  check(p.vy < 0, '土狼时间内还能起跳');
+  check(p.vy < 0, '土狼时间内还能起跳（vy=' + p.vy.toFixed(2) + '）');
 }
 
 /* ========== 7. 踩敌 ========== */
