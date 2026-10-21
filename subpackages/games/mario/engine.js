@@ -24,7 +24,7 @@ const TICK = 1 / 60;
 
 /* ========== 物理常量 ========== */
 // 按正版 SMB1 实测数据（像素/帧 @60fps，1 格 = 16px）换算成格/秒。
-// 实测结果：满跳 3.38 格高、滞空 0.87 秒、走路跳 4.6 格 / 奔跑跳 6.9 格。
+// 实测结果：满跳 4.2 格高、走路跳约 6.3 格 / 奔跑跳约 10 格。
 const PHYS = {
   GRAVITY: 44,            // 重力加速度（格/秒²）
   GRAVITY_HOLD: 28,       // 按住跳跃键时的重力（跳得更高）
@@ -35,7 +35,7 @@ const PHYS = {
   FRICTION: 34,           // 地面摩擦（松手后滑行约 3 格）
   ICE_FRICTION: 8,        // 冰面摩擦（比地面滑，但不至于失控）
   AIR_CONTROL: 0.62,      // 空中操控系数（比地面弱，跳出去后难改向）
-  JUMP_VEL: 14.0,         // 起跳初速度（满跳约 3.8 格）
+  JUMP_VEL: 15.6,         // 起跳初速度（按住跳约 4.2 格，正版小马力欧约 4 格）
   JUMP_CUT: 0.42,         // 松键后速度衰减系数（可变跳跃高度）
   COYOTE: 0.08,           // 土狼时间：离地后仍可起跳的宽限（秒）
   BUFFER: 0.10,           // 跳跃缓冲：落地前按跳也能起跳（秒）
@@ -161,13 +161,14 @@ function boxHitsDeadly(grid, x, y, w, h) {
   return false;
 }
 
-// 是否踩在终点旗上
+// 是否碰到终点旗（旗杆本体 F 和底座 f 都算）
 function boxHitsFlag(grid, x, y, w, h) {
   const c0 = Math.floor(x), c1 = Math.floor(x + w - 0.0001);
   const r0 = Math.floor(y), r1 = Math.floor(y + h - 0.0001);
   for (let r = r0; r <= r1; r++) {
     for (let c = c0; c <= c1; c++) {
-      if (tileAt(grid, c, r) === T.FLAG) return true;
+      const ch = tileAt(grid, c, r);
+      if (ch === T.FLAG || ch === T.FLAGBASE) return true;
     }
   }
   return false;
@@ -192,6 +193,14 @@ function groundTileAt(grid, x, y, w, h) {
 function boxesOverlap(a, b) {
   return a.x - a.w / 2 < b.x + b.w / 2 && a.x + a.w / 2 > b.x - b.w / 2 &&
          a.y - a.h / 2 < b.y + b.h / 2 && a.y + a.h / 2 > b.y - b.h / 2;
+}
+
+// 玩家的 p.y 是脚底（AABB 底边），敌人/道具/火球的 y 是中心。
+// 不能直接用 boxesOverlap（它把 a.y 当中心），否则玩家从敌人头顶跳过时
+// 会被判定成撞到侧面而受伤。
+function playerOverlaps(p, b) {
+  return p.x - p.w / 2 < b.x + b.w / 2 && p.x + p.w / 2 > b.x - b.w / 2 &&
+         p.y - p.h < b.y + b.h / 2 && p.y > b.y - b.h / 2;
 }
 
 function round3(v) {
@@ -808,7 +817,7 @@ function hurtPlayer(p) {
 // 玩家与敌人：踩头 / 侧撞；乌龟有壳状态机
 function resolveEnemyHit(level, p, e) {
   if (!e.alive || p.state !== 'alive') return;
-  if (!boxesOverlap(p, e)) return;
+  if (!playerOverlaps(p, e)) return;
 
   const enemyTop = e.y - e.h / 2;
   const stompDepth = p.y - enemyTop;
@@ -882,7 +891,7 @@ function kickShell(e, p) {
 // 玩家与 Boss
 function resolveBossHit(level, p, boss) {
   if (!boss || boss.hp <= 0 || p.state !== 'alive') return;
-  if (!boxesOverlap(p, boss)) return;
+  if (!playerOverlaps(p, boss)) return;
 
   const bossTop = boss.y - boss.h / 2;
   const stompDepth = p.y - bossTop;
@@ -911,7 +920,7 @@ function resolveFireballHit(level, p) {
   if (!level.fireballs || p.state !== 'alive') return;
   for (const f of level.fireballs) {
     if (f.fromPlayer) continue;
-    if (boxesOverlap(p, f)) {
+    if (playerOverlaps(p, f)) {
       f.life = 0;
       hurtPlayer(p);
     }
@@ -936,7 +945,7 @@ function resolveCoinHit(level, p) {
 function resolveItemHit(level, p) {
   for (const it of level.items) {
     if (!it.active) continue;
-    if (boxesOverlap(p, it)) {
+    if (playerOverlaps(p, it)) {
       it.active = false;
       if (it.type === 'mushroom') {
         // 蘑菇：小 → 超级；已经是超级则加分
@@ -1098,10 +1107,13 @@ function hitHeadBlock(level, p) {
         //   小马里奥 → 蘑菇（变大）；大马里奥 → 火焰花。
         //   纯金币由「多金币砖 C」负责，不要用问号砖刷金币。
         const isBig = p.form !== FORM.SMALL;
+        // 道具出现在砖块「上方」而不是砖块内部：
+        // 砖块占 [headRow, headRow+1)，道具中心放在 headRow - 0.1，
+        // 即站在砖顶面上（正版是从砖里缓缓冒出来，这里简化为直接出现在顶上）。
         level.items.push({
           id: level.items.length,
           type: isBig ? 'flower' : 'mushroom',
-          x: c + 0.5, y: headRow + 0.5,
+          x: c + 0.5, y: headRow - 0.1,
           w: 0.7, h: 0.7,
           vx: isBig ? 0 : 1.2,
           vy: 0,
@@ -1276,7 +1288,7 @@ function worldToWire(level, players) {
 module.exports = {
   TICK, PHYS, T, E, FORM, SOLID, DEADLY, COINBRICK_MAX,
   makeGrid, gridRows, tileAt, isSolid, inGrid,
-  boxHitsSolid, boxHitsDeadly, boxHitsFlag, groundTileAt, boxesOverlap,
+  boxHitsSolid, boxHitsDeadly, boxHitsFlag, groundTileAt, boxesOverlap, playerOverlaps,
   loadLevel, makePlayer, makeInput, playerHeight, setForm,
   stepPlayer, stepEnemy, stepPlatform, stepItem, stepBoss,
   stepFireballs, stepPlayerFireballs, stepWorld,

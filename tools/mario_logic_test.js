@@ -252,9 +252,9 @@ console.log('\n[7] 踩敌');
   const lv = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
   const p = mkPlayer(lv);
   const e = lv.enemies[0];
-  // 从上方踩中：玩家盒与敌人盒重叠，且脚底在敌人顶部附近
+  // 从上方踩中：玩家脚底刚进入敌人盒顶部（敌人中心 13.5，盒顶 13.1）
   p.x = e.x;
-  p.y = e.y - 0.6;              // 敌人盒顶 = e.y-0.4，玩家盒底 = p.y
+  p.y = e.y - 0.35;             // 脚底 13.15，略低于盒顶
   p.vy = 5;
   p.onGround = false;
   EN.stepWorld(lv, [p], { 1: input() }, DT);
@@ -265,15 +265,14 @@ console.log('\n[7] 踩敌');
   check(p.vy < 0, '踩敌后玩家反弹（vy=' + p.vy.toFixed(2) + '）');
 
   // 侧面撞到 → 玩家受伤/死亡。
-  // 几何要点：敌人中心在玩家上方 0.5 格，此时玩家盒底(12.5)已深入
-  // 敌人盒中部(顶11.6/底12.4 之上)，踩入深度 0.9 > 敌人高度 0.8*0.75，
-  // 因此判为侧面相撞而不是踩头。
+  // 敌人与玩家站在同一地面，中心比玩家脚底高 0.5；
+  // 水平方向重叠但脚底已深入敌人盒中部，因此判为侧撞而不是踩头。
   const lv2 = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
   const p2 = mkPlayer(lv2);
   const e2 = lv2.enemies[0];
   e2.vx = 0; e2.vy = 0;
   e2.y = p2.y - 0.5;
-  e2.x = p2.x + 0.7;
+  e2.x = p2.x + 0.55;
   p2.vy = 0;
   p2.hurtT = 0;
   EN.stepWorld(lv2, [p2], { 1: input() }, DT);

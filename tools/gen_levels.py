@@ -108,8 +108,9 @@ def build_level_1():
     put(g, 6, 23, 'B')
     put(g, 6, 24, 'B')
 
-    # 多金币砖（正版 1-1 有个金币砖能顶 10 次）
-    put(g, 10, 27, 'C')
+    # 多金币砖：必须离管道至少 3 格。大形态身高 1.6 格，跳起头顶到 row 9，
+    # 若砖块紧贴管道，玩家跳管道时被砖挡住、跳跃速度被撞掉，上不去（实测卡死）。
+    put(g, 10, 25, 'C')
 
     # 高砖块组
     put(g, 6, 22, 'B')
@@ -165,9 +166,10 @@ def build_level_2():
     pipe(g, 45, 3)
     pipe(g, 62, 2)
 
-    # 金币砖群
-    put(g, 10, 28, 'C')
-    put(g, 10, 29, 'C')
+    # 金币砖群：与管道 col 30-31 保持 >=3 格距离，
+    # 否则大形态跳过管道时头顶会被砖挡住（和 1-1 同一个坑）
+    put(g, 10, 26, 'C')
+    put(g, 10, 27, 'C')
     put(g, 10, 68, 'C')
 
     # 阶梯
@@ -218,7 +220,9 @@ def build_level_4():
     put(g, 10, 43, '?')
 
     # 尖刺（正版城堡关有很多火焰棒，这里用尖刺代替）
-    fill(g, 13, 20, 22, 'S')
+    # 第一组：玩家从砖块走廊（col 10-16）末端跳下时落点约在 col 23，
+    # 放在 18-20 能正常越过；放在 20-22 会差半格落在最后一根上。
+    fill(g, 13, 18, 20, 'S')
     fill(g, 13, 35, 37, 'S')
     fill(g, 13, 55, 57, 'S')
 
@@ -262,8 +266,10 @@ def make_spec(kind, g):
     # 敌人：在地面段上，避开出生点和管道
     enemies = []
     ground_cols = sorted(set([c for (r, c) in collect(g, '#') if r == GROUND]))
-    pipes = [c for (c, r) in collect(g, 'P')]
+    pipes = [c for (r, c) in collect(g, 'P')]
     bricks = [c for (r, c) in collect(g, 'B')] +              [c for (r, c) in collect(g, '?')] +              [c for (r, c) in collect(g, 'C')]
+    flags = [c for (r, c) in collect(g, 'F')] + [c for (r, c) in collect(g, 'f')]
+    spikes = [c for (r, c) in collect(g, 'S')]
     placed = 0
     last_c = -10
     for c in ground_cols:
@@ -276,6 +282,12 @@ def make_spec(kind, g):
             continue
         # 避开砖块群（左右 2 格）：玩家顶砖会跳起来，撞上敌人必死
         if any(abs(c - bc) <= 2 for bc in bricks):
+            continue
+        # 避开终点旗（左右 4 格）：不然玩家冲向旗杆时被终点前的敌人撞死
+        if any(abs(c - fc) <= 4 for fc in flags):
+            continue
+        # 避开尖刺（左右 4 格）：敌人紧贴尖刺会逼玩家提前起跳，正好落到尖刺上
+        if any(abs(c - sc) <= 4 for sc in spikes):
             continue
         # 跳过坑
         if c + 1 >= W or g[GROUND][c] != '#' or g[GROUND][c + 1] != '#':

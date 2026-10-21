@@ -10,7 +10,12 @@ function check(cond, name) {
   else { fail++; console.log('  FAIL ' + name); }
 }
 
-function groundAhead(level, col) {
+function groundAhead(level, col, feetY) {
+  // 站在砖块/台阶上时（脚底高于地面），只看同高度有没有支撑；
+  // 否则会把下方地面误当成落脚点，直接从高台走到坑里/尖刺上。
+  if (feetY < 13.5) {
+    return EN.isSolid(level.grid, col, Math.floor(feetY + 0.001));
+  }
   for (let r = 14; r <= 15; r++) {
     if (EN.isSolid(level.grid, col, r)) return true;
   }
@@ -18,7 +23,9 @@ function groundAhead(level, col) {
 }
 
 function obstacleAhead(level, col) {
-  for (let r = 10; r <= 13; r++) {
+  // 只看行走高度的障碍（管道/阶梯/硬砖）。row 10 的悬空砖是头顶的砖，
+  // 玩家可以正常从下面走过去，不该触发「撞墙跳」。
+  for (let r = 11; r <= 13; r++) {
     if (EN.isSolid(level.grid, col, r)) return true;
   }
   return false;
@@ -40,6 +47,26 @@ function brickAbove(level, col, row) {
   return false;
 }
 
+// 前方一段列范围内是否有尖刺。用于避免「为了顶砖起跳，结果正好落在尖刺上」。
+function spikeBetween(level, fromCol, toCol) {
+  for (let c = fromCol; c <= toCol; c++) {
+    if (spikeAhead(level, c)) return true;
+  }
+  return false;
+}
+
+// 机器人也要躲敌人：不躲的话会径直撞上板栗仔，
+// 端到端测试就会把「机器人不会玩」误判成「关卡不可通关」。
+function enemyAhead(level, p) {
+  for (let i = 0; i < level.enemies.length; i++) {
+    const e = level.enemies[i];
+    if (!e.alive) continue;
+    const dx = e.x - (p.x + p.w / 2);
+    if (dx > 0.2 && dx < 2.8 && Math.abs(e.y - p.y) < 1.8) return true;
+  }
+  return false;
+}
+
 function playLevel(idx, maxFrames) {
   const spec = LV.LEVEL_SPECS[idx];
   const level = EN.loadLevel(LV.LEVELS[idx], spec);
@@ -52,7 +79,7 @@ function playLevel(idx, maxFrames) {
     if (c !== -1) { flag = { col: c, row: r }; break; }
   }
 
-  let maxX = p.x, deaths = 0, jumped = 0;
+  let maxX = p.x, deaths = 0, jumped = 0, wasDying = false;
   for (let f = 0; f < maxFrames; f++) {
     inp.right = true;
     inp.run = false;
@@ -63,13 +90,15 @@ function playLevel(idx, maxFrames) {
 
     if (p.onGround) {
       let needJump = false;
-      if (!groundAhead(level, colAhead)) needJump = true;
-      if (!groundAhead(level, colAhead + 1)) needJump = true;
+      if (!groundAhead(level, colAhead, p.y)) needJump = true;
+      if (!groundAhead(level, colAhead + 1, p.y)) needJump = true;
       if (obstacleAhead(level, colAhead)) needJump = true;
       if (obstacleAhead(level, colAhead + 1)) needJump = true;
       if (spikeAhead(level, colAhead)) needJump = true;
       if (spikeAhead(level, colAhead + 1)) needJump = true;
-      if (brickAbove(level, curCol, Math.floor(p.y))) needJump = true;
+      if (brickAbove(level, curCol, Math.floor(p.y)) &&
+          !spikeBetween(level, curCol, curCol + 6)) needJump = true;
+      if (enemyAhead(level, p)) needJump = true;
       if (needJump) { inp.up = true; jumped++; }
     } else if (p.vy < 0) {
       inp.up = true;
@@ -77,7 +106,8 @@ function playLevel(idx, maxFrames) {
 
     EN.stepWorld(level, [p], { 1: inp }, EN.TICK);
 
-    if (p.state === 'dying') deaths++;
+    if (p.state === 'dying' && !wasDying) deaths++;
+    wasDying = p.state === 'dying';
     if (p.x > maxX) maxX = p.x;
     if (p.state === 'done' || p.onFlag) {
       return { cleared: true, maxX: maxX, deaths: deaths, jumped: jumped, flag: flag, level: level };
@@ -130,7 +160,7 @@ console.log('[2] 地面关坑宽 <= 3 格（空中关靠平台跨越，不适用
 }
 
 console.log('');
-console.log('[3] 机器人能推进到主要进度');
+console.log('[3] 机器人端到端通关（每关都能走到终点旗）');
 {
   for (let i = 0; i < LV.LEVELS.length; i++) {
     const r = playLevel(i, 3600);
@@ -141,13 +171,10 @@ console.log('[3] 机器人能推进到主要进度');
     console.log('    第 ' + (i + 1) + ' 关 ' + spec.name +
       ' -> ' + r.maxX.toFixed(1) + '（目标 ' + target + '，' + pct + '%）' +
       '死亡 ' + r.deaths + ' 次，跳 ' + r.jumped + ' 次');
-    // 机器人不会躲敌人（撞上就死），也不会为精准上平台而调整起跳点。
-    // 这些是机器人的能力上限，不是关卡缺陷 —— 人类玩家会躲、会调整。
-    // 判定：推进到 40% 或空中关（由平台间距保证）。
-    const isSky = spec.theme === 'sky';
-    const nearEnd = r.maxX >= target * 0.4;
-    check(r.cleared || nearEnd || isSky,
-      '第 ' + (i + 1) + ' 关可玩' + (isSky ? '（空中关由平台间距保证）' : ''));
+    // 机器人会躲敌人、会跳过坑/尖刺、会从平台边缘起跳。
+    // 它现在每关都能零死亡通关，所以直接以「到达终点」作为硬性门槛；
+    // 若以后关卡改动让它走不到终点，说明出现了真实的可达性回归。
+    check(r.cleared, '第 ' + (i + 1) + ' 关可通关（机器人到达终点）');
   }
 }
 
@@ -204,6 +231,81 @@ console.log('[5] 悬浮平台间距在跳跃能力内（<= 4.6 格）');
     }
   }
   check(allOk, '所有平台间隔在跳跃能力内');
+}
+
+console.log('');
+console.log('[6] 砖块与管道保持 >=3 格（大形态跳过管道时头顶不被挡）');
+{
+  // 大形态身高 1.6 格，起跳后头顶会升到管道上方；若头顶横移路径上有砖，
+  // 会被撞停（vy 归零）掉进管道前，导致卡死。砖块与任意管道列至少隔 3 格。
+  const SAFE = 3;
+  let allOk = true;
+  for (let i = 0; i < LV.LEVELS.length; i++) {
+    const level = EN.loadLevel(LV.LEVELS[i], LV.LEVEL_SPECS[i]);
+    const pipeCols = [];
+    for (let r = 0; r < level.rowsH; r++) {
+      for (let c = 0; c < level.cols; c++) {
+        if (level.grid[r][c] === EN.T.PIPE) pipeCols.push(c);
+      }
+    }
+    if (!pipeCols.length) continue;
+    for (let r = 9; r < level.rowsH; r++) {
+      for (let c = 0; c < level.cols; c++) {
+        const ch = level.grid[r][c];
+        if (ch !== EN.T.QUESTION && ch !== EN.T.BRICK && ch !== EN.T.COINBRICK) continue;
+        let minDist = Infinity;
+        for (let k = 0; k < pipeCols.length; k++) {
+          const d = Math.abs(c - pipeCols[k]);
+          if (d < minDist) minDist = d;
+        }
+        if (minDist < SAFE) {
+          allOk = false;
+          console.log('    第 ' + (i + 1) + ' 关 砖块(row' + r + ',col' + c +
+            ') 距管道仅 ' + minDist + ' 格（要求 >= ' + SAFE + '）');
+        }
+      }
+    }
+  }
+  check(allOk, '所有砖块距管道 >= ' + SAFE + ' 格');
+}
+
+console.log('');
+console.log('[7] 跳跃高度 >= 4 格（能跳上 row 10 的砖块）');
+{
+  const level = EN.loadLevel(LV.LEVELS[0], LV.LEVEL_SPECS[0]);
+  const p = EN.makePlayer(level, 1);
+  const inp = EN.makeInput();
+  const groundY = p.y;
+  let minY = p.y;
+  for (let f = 0; f < 180; f++) {
+    inp.up = true;
+    EN.stepWorld(level, [p], { 1: inp }, EN.TICK);
+    if (p.y < minY) minY = p.y;
+    if (p.onGround && f > 3) break;
+  }
+  const height = groundY - minY;
+  console.log('    满跳高度 ' + height.toFixed(2) + ' 格');
+  check(height >= 4.0, '满跳高度 >= 4 格（实际 ' + height.toFixed(2) + '）');
+}
+
+console.log('');
+console.log('[8] 大形态能跳过 1-1 第一根管道（用户实测卡死点）');
+{
+  const level = EN.loadLevel(LV.LEVELS[0], LV.LEVEL_SPECS[0]);
+  const p = EN.makePlayer(level, 1);
+  EN.setForm(p, EN.FORM.SUPER);
+  p.x = 26.5; p.y = 14; p.vy = 0; p.onGround = true;
+  const inp = EN.makeInput();
+  let crossed = false;
+  for (let f = 0; f < 240; f++) {
+    inp.right = true;
+    // 在管道前起跳，上升阶段按住跳
+    inp.up = (p.onGround && p.x < 27.4) || (!p.onGround && p.vy < 0);
+    EN.stepWorld(level, [p], { 1: inp }, EN.TICK);
+    if (p.x > 30.5) { crossed = true; break; }
+  }
+  console.log('    大形态落点 x=' + p.x.toFixed(2) + ' y=' + p.y.toFixed(2) + ' onGround=' + p.onGround);
+  check(crossed && p.state === 'alive', '大形态成功越过管道（x > 30.5）');
 }
 
 console.log('');
