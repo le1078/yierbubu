@@ -54,17 +54,21 @@
     <view class="hud">
       <view class="hud-side">
         <image class="hud-avatar" src="/subpackages/games/mario/img/avatar_a.gif" mode="aspectFit"/>
-        <text class="hud-name">P1</text>
-        <text class="hud-lives">❤️{{p1Lives}}</text>
+        <view class="hud-info">
+          <view class="hud-row"><text class="hud-name">P1</text><text class="hud-lives">❤️{{p1Lives}}</text></view>
+          <view class="hud-row"><text class="hud-score">{{p1Score}}</text><text class="hud-coin">🪙{{p1Coins}}</text></view>
+        </view>
       </view>
       <view class="hud-mid">
         <view class="hud-status">{{statusText}}</view>
-        <view class="hud-meta">{{metaText}} · 同步 {{syncMs}}ms</view>
+        <view class="hud-meta">{{metaText}}</view>
       </view>
       <view class="hud-side">
         <image class="hud-avatar" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"/>
-        <text class="hud-name">P2</text>
-        <text class="hud-lives">❤️{{p2Lives}}</text>
+        <view class="hud-info">
+          <view class="hud-row"><text class="hud-name">P2</text><text class="hud-lives">❤️{{p2Lives}}</text></view>
+          <view class="hud-row"><text class="hud-score">{{p2Score}}</text><text class="hud-coin">🪙{{p2Coins}}</text></view>
+        </view>
       </view>
     </view>
 
@@ -104,7 +108,7 @@
         <view class="p-btn" data-k="r" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">▶</view>
       </view>
       <view class="pad-act">
-        <view class="p-btn run" data-k="run" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">跑</view>
+        <view class="p-btn run" data-k="run" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">跑/火</view>
         <view class="p-btn jump" data-k="u" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">跳</view>
       </view>
     </view>

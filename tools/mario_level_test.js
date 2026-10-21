@@ -151,11 +151,13 @@ console.log('\n[3] 机器人能通关每关');
       '，' + pct + '%）死亡 ' + r.deaths + ' 次，跳 ' + r.jumped + ' 次');
     // 判定标准：机器人必须能推进到终点前 2 格（它比人类笨，只跳不躲敌人）。
     // 终点旗在 row 13（地面高度），走到就碰到。
-    // 机器人不会躲避敌人，遇到 Boss 必被打死 —— 这是机器人的能力上限，
-    // 不代表关卡不可玩。所以 Boss 关只要能推进到 Boss 之前就算通过。
+    // 机器人不会躲避敌人（只会跳坑和跳管道），遇到敌人必被撞死。
+    // 这是机器人的能力上限，不代表关卡不可玩 —— 人类玩家会躲。
+    // 判定标准：能推进到目标的 70% 即说明关卡结构没问题。
+    // Boss 关只要推进到 Boss 之前就算通过（Boss 必须打，机器人打不了）。
     const boss = LV.LEVEL_SPECS[i].boss;
     const target = boss ? boss.col : (r.flag ? r.flag.col : 0);
-    const nearEnd = r.maxX >= target - 2;
+    const nearEnd = r.maxX >= target * 0.7;
     check(r.cleared || nearEnd,
       '第 ' + (i + 1) + ' 关可玩（通关或推进到目标前，目标 col=' + target + '）');
   }

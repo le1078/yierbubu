@@ -119,6 +119,13 @@ function drawTile(ctx, ch, x, y, s) {
       ctx.moveTo(x + s * 0.75, y + s / 2); ctx.lineTo(x + s * 0.75, y + s);
       ctx.stroke();
       break;
+    case 'U':   // 顶过的空砖（正版是深色方块）
+      ctx.fillStyle = '#8B5A2B';
+      ctx.fillRect(x, y, s, s);
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1.5, y + 1.5, s - 3, s - 3);
+      break;
     case '?':   // 问号砖
       ctx.fillStyle = PAL.question;
       ctx.fillRect(x, y, s, s);
@@ -185,7 +192,10 @@ function drawTile(ctx, ch, x, y, s) {
 // 玩家：圆头 + 身体 + 腿，seat 决定颜色
 function drawPlayer(ctx, p, x, y, s, time) {
   const color = p.seat === 1 ? PAL.playerA : PAL.playerB;
-  const big = p.big ? 1.25 : 1;
+  // 形态：0 小 / 1 超级 / 2 火焰（火焰形态用白色上衣）
+  const form = p.form !== undefined ? p.form : (p.big ? 1 : 0);
+  const big = form !== 0 ? 1.25 : 1;
+  const isFire = form === 2;
   const bodyH = s * 0.55 * big;
   const headR = s * 0.28 * big;
 
@@ -204,9 +214,14 @@ function drawPlayer(ctx, p, x, y, s, time) {
   ctx.lineTo(x + s * 0.12 - legPhase * s * 0.14, y);
   ctx.stroke();
 
-  // 身体
-  ctx.fillStyle = color;
+  // 身体（火焰形态是白底红纹）
+  ctx.fillStyle = isFire ? '#FFFFFF' : color;
   ctx.fillRect(x - s * 0.26 * big, y - bodyH - headR * 1.6, s * 0.52 * big, bodyH + headR * 0.4);
+  if (isFire) {
+    ctx.strokeStyle = PAL.playerA;
+    ctx.lineWidth = Math.max(1, s * 0.06);
+    ctx.strokeRect(x - s * 0.26 * big, y - bodyH - headR * 1.6, s * 0.52 * big, bodyH + headR * 0.4);
+  }
 
   // 头
   ctx.fillStyle = PAL.playerSkin;
@@ -253,7 +268,30 @@ function drawEnemy(ctx, e, x, y, s, time) {
     return;
   }
   if (e.type === 'turtle') {
-    // 乌龟：壳 + 头
+    // 壳状态：只画一个壳（静止壳 / 滑行壳）
+    if (e.shell === 'shell' || e.shell === 'slide') {
+      const spinning = e.shell === 'slide';
+      ctx.fillStyle = spinning ? '#1E8449' : '#27AE60';
+      ctx.beginPath();
+      ctx.ellipse(x, y, s * 0.34, s * 0.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#145A32';
+      ctx.lineWidth = Math.max(1, s * 0.05);
+      ctx.stroke();
+      // 壳上的纹路（滑行时旋转感）
+      const rot = spinning ? time * 14 : 0;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+      for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.arc(0, 0, s * 0.2, i * Math.PI / 2, i * Math.PI / 2 + 0.6);
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+    // 走路状态：壳 + 头
     ctx.fillStyle = '#27AE60';
     ctx.beginPath();
     ctx.ellipse(x, y, s * 0.32, s * 0.28, 0, 0, Math.PI * 2);
@@ -419,18 +457,19 @@ function drawFrame(ctx, opts) {
     drawEnemy(ctx, e, (e.x - cam) * s, (e.y - camY) * s, s, opts.time);
   }
 
-  // 火球
+  // 火球（玩家火球更小更亮，Boss 火球偏暗红）
   if (level.fireballs) {
     for (const f of level.fireballs) {
       if (f.x < cam - 1 || f.x > cam + viewW + 1) continue;
       const fx = (f.x - cam) * s, fy = (f.y - camY) * s;
-      ctx.fillStyle = '#FF6B00';
+      const r = f.fromPlayer ? s * 0.17 : s * 0.22;
+      ctx.fillStyle = f.fromPlayer ? '#FF3B00' : '#B33A00';
       ctx.beginPath();
-      ctx.arc(fx, fy, s * 0.22, 0, Math.PI * 2);
+      ctx.arc(fx, fy, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = '#FFD700';
+      ctx.fillStyle = f.fromPlayer ? '#FFE86B' : '#FF9B4A';
       ctx.beginPath();
-      ctx.arc(fx, fy, s * 0.11, 0, Math.PI * 2);
+      ctx.arc(fx, fy, r * 0.5, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -452,11 +491,12 @@ function drawFrame(ctx, opts) {
     ctx.textBaseline = 'bottom';
     ctx.fillText('P' + p.seat, (p.x - cam) * s, (p.y - camY) * s - s * 1.15);
     // 变大时的光圈提示
-    if (p.big) {
+    // 火焰形态加一圈火光
+    if (p.form === 2) {
       ctx.beginPath();
-      ctx.arc((p.x - cam) * s, (p.y - camY) * s - s * 0.5, s * 0.62, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,220,80,0.85)';
-      ctx.lineWidth = Math.max(2, s * 0.08);
+      ctx.arc((p.x - cam) * s, (p.y - camY) * s - s * 0.55, s * 0.66, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,140,40,0.9)';
+      ctx.lineWidth = Math.max(2, s * 0.1);
       ctx.stroke();
     }
   }

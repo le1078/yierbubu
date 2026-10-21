@@ -50,6 +50,10 @@ Page({
     canvasH: 350,
     p1Lives: C.MARIO_LIVES,
     p2Lives: C.MARIO_LIVES,
+    p1Score: 0,
+    p2Score: 0,
+    p1Coins: 0,
+    p2Coins: 0,
     landscape: false,
     // 玩家形象用 <image> 叠加显示（canvas 不支持 GIF 动画，只能用 image 组件）
     // 这里是两个 image 在画布坐标系里的位置（px），每帧更新
@@ -451,11 +455,17 @@ Page({
   // 把生命/金币同步到 UI（走 setData 数据桥，每帧一次，量很小）
   _syncHud() {
     if (!this._players) return;
-    const l1 = this._players[0].lives;
-    const l2 = this._players[1] ? this._players[1].lives : 0;
-    if (l1 !== this.data.p1Lives || l2 !== this.data.p2Lives) {
-      this.setData({ p1Lives: l1, p2Lives: l2 });
+    const a = this._players[0], b = this._players[1];
+    const patch = {};
+    if (a.lives !== this.data.p1Lives) patch.p1Lives = a.lives;
+    if (a.score !== this.data.p1Score) patch.p1Score = a.score;
+    if (a.coins !== this.data.p1Coins) patch.p1Coins = a.coins;
+    if (b) {
+      if (b.lives !== this.data.p2Lives) patch.p2Lives = b.lives;
+      if (b.score !== this.data.p2Score) patch.p2Score = b.score;
+      if (b.coins !== this.data.p2Coins) patch.p2Coins = b.coins;
     }
+    if (Object.keys(patch).length) this.setData(patch);
   },
 
   // 帧间插值：把 _tx/_ty 目标值向当前值靠近，掩盖 watch 推送的阶梯感
@@ -510,9 +520,11 @@ Page({
     for (let i = 0; i < 2; i++) {
       const p = this._players[i];
       if (!p) continue;
-      const w = Math.max(30, Math.round(s * 1.15));
+      // 形态越大形象越大（小 1.0 / 超级 1.35 / 火焰 1.35）
+      const scale = p.form === 0 ? 1.0 : 1.35;
+      const w = Math.max(30, Math.round(s * 1.15 * scale));
       const x = Math.round((p.x - cam) * s - w / 2);
-      const y = Math.round((p.y - camY) * s - s * 1.05);
+      const y = Math.round((p.y - camY) * s - w * 0.92);
       const key = i === 0 ? 'av1' : 'av2';
       const cur = out[key];
       if (cur.left !== x || cur.top !== y || cur.w !== w || cur.face !== p.face) {
@@ -520,13 +532,19 @@ Page({
         changed = true;
       }
     }
-    // 死亡/过关时隐藏形象
+    // 死亡/过关时隐藏；无敌时闪烁；火焰形态加光晕
     for (let i = 0; i < 2; i++) {
       const p = this._players[i];
       const key = i === 0 ? 'av1' : 'av2';
-      const hidden = !p || p.state === 'dead' || (p.state === 'dying');
-      if (out[key].hidden !== hidden) {
-        out[key] = Object.assign({}, out[key], { hidden: hidden });
+      let hidden = !p || p.state === 'dead';
+      // 无敌闪烁：每 0.1 秒交替显隐（正版受伤后就是这样闪）
+      if (p && p.hurtT > 0) {
+        hidden = hidden || (Math.floor(p.hurtT * 10) % 2 === 0);
+      }
+      const fire = !!(p && p.form === 2);
+      const dying = !!(p && p.state === 'dying');
+      if (out[key].hidden !== hidden || out[key].fire !== fire || out[key].dying !== dying) {
+        out[key] = Object.assign({}, out[key], { hidden: hidden, fire: fire, dying: dying });
         changed = true;
       }
     }

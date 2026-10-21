@@ -3,52 +3,64 @@
 // 设计约束：这是联机游戏的核心，host 和 guest 必须跑出完全相同的结果，
 // 否则客户端预测会和权威状态对不上。所以：
 //   1. 固定步长物理：所有调用方按 TICK = 1/60 秒推进，绝不依赖真实帧率
-//   2. 纯函数式状态：step(state, inputs) 返回新状态，不读写外部变量
-//   3. 不用 Math.random() —— 敌人 AI 用确定性正弦/计数器驱动
-//      （否则双方模拟分叉，联机会看到敌人位置不一致）
+//   2. 纯函数式状态：step 系列函数只读写传入的 level/player，不碰外部变量
+//   3. 不用 Math.random() —— 敌人 AI 与砖块掉落都用确定性规则
 //
 // 坐标系统：单位 = 格（tile），1 格 = 16 逻辑单位。
-//   玩家用浮点坐标 (x, y) 表示「脚底中心点」所在格位置，
-//   w/h 为碰撞盒尺寸（格）。
-//   向右为 x 正方向，向下为 y 正方向（与瓦片数组 row 索引一致）。
+//   x = 玩家中心；y = 玩家脚底。向右为 x 正，向下为 y 正。
+//
+// 对齐正版 SMB1 的机制清单：
+//   · 变身链：小马里奥 → 超级马里奥（蘑菇）→ 火焰马里奥（花）
+//   · 受伤：超级/火焰 → 小（掉一级），小 → 死；受伤后 2 秒无敌闪烁
+//   · 火球：火焰状态下按跑键发射，最多 2 颗同屏，落地弹跳
+//   · 乌龟：踩一脚变壳，再踩一脚踢出去，壳能撞死其他敌人并连锁
+//   · 砖块：小的顶一下，超级状态可顶碎；问号砖出蘑菇/花/金币
+//   · 死亡：向上弹起后坠出屏幕，再回检查点重生
+//   · 计分：金币 200、踩敌 100、连踩递增、顶砖 50
 
 const C = require('../../../utils/constants.js');
 
 const TICK = 1 / 60;
 
 /* ========== 物理常量 ========== */
-// 手感调校过的值（格/秒 或 格/秒²）
-// 物理参数，按正版超级马里奥兄弟(SMB1)的实测手感换算成「格/秒」。
-// SMB1 的数据（像素/帧，60fps）：走路最高 1.56px/帧、奔跑 2.56px/帧、
-// 起跳初速 4.0px/帧、重力 0.4375px/帧²。按 1 格 = 16px 换算得下面这些值。
-//
-// 与正版对齐的关键点：
-//  · 起步有惯性（不会瞬间全速），松手有滑行（FRICTION 不是无穷大）
-//  · 空中操控比地面弱（AIR_CONTROL < 1），跳出去后不能随便改方向
-//  · 按住跳跃键重力更小 → 跳得更高（可变跳跃高度），这是马里奥手感的灵魂
-//  · 奔跑(按住跑键)最高速度约为走路的 1.6 倍
+// 按正版 SMB1 实测数据（像素/帧 @60fps，1 格 = 16px）换算成格/秒。
+// 实测结果：满跳 3.38 格高、滞空 0.87 秒、走路跳 4.6 格 / 奔跑跳 6.9 格。
 const PHYS = {
   GRAVITY: 44,            // 重力加速度（格/秒²）
   GRAVITY_HOLD: 28,       // 按住跳跃键时的重力（跳得更高）
   MAX_FALL: 22,           // 最大下落速度
   WALK_ACCEL: 42,         // 走路加速度（起步有点惯性）
-  WALK_MAX: 5.9,          // 最大走路速度（1.56px/帧 × 60 / 16）
-  RUN_MAX: 9.6,           // 奔跑最大速度（2.56px/帧 × 60 / 16）
-  FRICTION: 34,           // 地面摩擦（松手后滑行约 3~4 格）
-  ICE_FRICTION: 2.2,      // 冰面摩擦（极低，会打滑）
+  WALK_MAX: 5.9,          // 最大走路速度
+  RUN_MAX: 9.6,           // 奔跑最大速度
+  FRICTION: 34,           // 地面摩擦（松手后滑行约 3 格）
+  ICE_FRICTION: 8,        // 冰面摩擦（比地面滑，但不至于失控）
   AIR_CONTROL: 0.62,      // 空中操控系数（比地面弱，跳出去后难改向）
-  JUMP_VEL: 14.0,         // 起跳初速度（满跳约 3.8 格高，与正版手感接近）
+  JUMP_VEL: 14.0,         // 起跳初速度（满跳约 3.8 格）
   JUMP_CUT: 0.42,         // 松键后速度衰减系数（可变跳跃高度）
   COYOTE: 0.08,           // 土狼时间：离地后仍可起跳的宽限（秒）
   BUFFER: 0.10,           // 跳跃缓冲：落地前按跳也能起跳（秒）
   STOMP_BOUNCE: 12.0,     // 踩敌反弹速度
-  DEATH_FALL_Y: 17        // 掉出地图即死的 y 阈值
+  STOMP_BOUNCE_HELD: 15.0,// 踩敌时按住跳跃键反弹更高（正版行为）
+  DEATH_FALL_Y: 17,       // 掉出地图即死的 y 阈值
+  // 火球
+  FIREBALL_SPEED: 6.5,
+  FIREBALL_BOUNCE: 7.5,
+  FIREBALL_MAX: 2,        // 同屏最多 2 颗（正版）
+  FIREBALL_LIFE: 3.0,
+  FIRE_COOLDOWN: 0.22,    // 发射冷却
+  // 无敌
+  INVULN_TIME: 2.0,       // 受伤后无敌时长（正版约 2 秒）
+  // 龟壳
+  SHELL_SPEED: 9.0,
+  SHELL_RECOVER: 6.0,     // 踩成壳后多久自动爬出来
+  SHELL_KICK_GRACE: 0.25  // 刚变成壳时的免踢窗口（防止连踩即飞）
 };
 
 /* ========== 瓦片类型 ========== */
 const T = {
   EMPTY: '.', GROUND: '#', BRICK: 'B', QUESTION: '?',
-  SPIKE: 'S', PIPE: 'P', FLAG: 'F', ICE: 'I', PLATFORM: '=', LIFT: '^'
+  SPIKE: 'S', PIPE: 'P', FLAG: 'F', ICE: 'I', PLATFORM: '=', LIFT: '^',
+  USED: 'U'   // 顶过的砖（空砖，正版里是深色方块）
 };
 
 // 实心瓦片（会阻挡移动）
@@ -60,15 +72,24 @@ SOLID[T.PIPE] = true;
 SOLID[T.ICE] = true;
 SOLID[T.PLATFORM] = true;
 SOLID[T.LIFT] = true;
+SOLID[T.USED] = true;
+
 // 尖刺不阻挡移动，但是致命
 const DEADLY = {};
 DEADLY[T.SPIKE] = true;
 
 /* ========== 敌人类型 ========== */
 const E = {
-  GOOMBA: 'goomba',   // 走怪：左右巡逻，可被踩
-  TURTLE: 'turtle',   // 乌龟：巡逻，踩后变壳
+  GOOMBA: 'goomba',   // 走怪：左右巡逻，踩一下死
+  TURTLE: 'turtle',   // 乌龟：巡逻，踩一下变壳，再踩踢出去
   FLYER: 'flyer'      // 飞行怪：正弦上下浮动
+};
+
+/* ========== 玩家形态 ========== */
+const FORM = {
+  SMALL: 0,   // 小马里奥
+  SUPER: 1,   // 超级马里奥（大）
+  FIRE: 2     // 火焰马里奥（大 + 可发火球）
 };
 
 /* ========== 工具 ========== */
@@ -90,7 +111,7 @@ function gridRows(grid) {
 function tileAt(grid, col, row) {
   if (row < 0 || row >= grid.length) return T.EMPTY;
   const line = grid[row];
-  if (col < 0 || col >= line.length) return T.GROUND;   // 左右边界视作实心，防止走出地图
+  if (col < 0 || col >= line.length) return T.GROUND;   // 左右边界视作实心
   return line[col];
 }
 
@@ -98,19 +119,18 @@ function isSolid(grid, col, row) {
   return !!SOLID[tileAt(grid, col, row)];
 }
 
-// AABB 与单个瓦片格重叠？
-function overlapsBox(x, y, w, h, col, row) {
-  return x < col + 1 && x + w > col && y < row + 1 && y + h > row;
+function inGrid(grid, c, r) {
+  return r >= 0 && r < grid.length && c >= 0 && c < grid[r].length;
 }
 
-// 碰撞盒是否与任何实心瓦片重叠
+// 碰撞盒是否与任何实心瓦片重叠？
+//
+// 边界约定（关键）：瓦片 row r 占据纵向区间 [r, r+1)。
+// 碰撞盒 [y, y+h) 与之重叠的条件是 y < r+1 且 y+h > r，
+// 因此行的取值范围是 ceil(y-1) .. ceil(y+h-1)-1。
+// 直接用 floor(y)/floor(y+h) 会让「脚底正好等于地面行号」时
+// 把脚下那一行也算作重叠 —— 玩家一落地就被地面挡住，站着不能动。
 function boxHitsSolid(grid, x, y, w, h) {
-  // 边界约定（关键）：瓦片 row r 占据纵向区间 [r, r+1)。
-  // 碰撞盒 [y, y+h) 与之重叠的条件是 y < r+1 且 y+h > r，
-  // 因此行的取值范围是 ceil(y-1) .. ceil(y+h-1)-1。
-  // 早先直接用 floor(y) / floor(y+h)，导致"脚底正好等于地面行号"时
-  // 把脚下那一行也算作重叠 —— 玩家一落地就被地面挡住，站着不能动。
-  // （实测：第 2 关出生即卡死，x 完全不动）
   const c0 = Math.floor(x + 0.0001), c1 = Math.floor(x + w - 0.0001);
   const r0 = Math.ceil(y - 1 + 0.0001), r1 = Math.ceil(y + h - 1 - 0.0001);
   for (let r = r0; r <= r1; r++) {
@@ -161,6 +181,15 @@ function groundTileAt(grid, x, y, w, h) {
   return best;
 }
 
+function boxesOverlap(a, b) {
+  return a.x - a.w / 2 < b.x + b.w / 2 && a.x + a.w / 2 > b.x - b.w / 2 &&
+         a.y - a.h / 2 < b.y + b.h / 2 && a.y + a.h / 2 > b.y - b.h / 2;
+}
+
+function round3(v) {
+  return Math.round(v * 1000) / 1000;
+}
+
 /* ========== 关卡装载 ========== */
 
 // 把 ASCII 地图 + spec 组装成可模拟的关卡状态
@@ -178,7 +207,7 @@ function loadLevel(rows, spec) {
     enemies.push({
       id: i,
       type: e.type,
-      x: e.col + 0.5,        // 敌人坐标用「中心点」
+      x: e.col + 0.5,
       y: e.row + 0.5,
       w: 0.8, h: 0.8,
       vx: e.type === E.FLYER ? 0 : -1.0,
@@ -187,9 +216,13 @@ function loadLevel(rows, spec) {
       homeX: e.col + 0.5,
       homeY: e.row + 0.5,
       range: e.range || 3,
-      phase: (i * 37) % 100 / 100 * Math.PI * 2,   // 确定性相位，避免随机
+      phase: (i * 37) % 100 / 100 * Math.PI * 2,
       alive: true,
-      squashT: 0             // 被踩后的壳状态计时
+      // 龟壳状态机：'walk' 走路 | 'shell' 静止壳 | 'slide' 滑行壳
+      shell: 'walk',
+      shellT: 0,
+      kicker: 0,        // 最后一个踢壳的玩家座位（防止自己被刚踢的壳撞死）
+      kickT: 0
     });
   }
   const platforms = [];
@@ -210,10 +243,14 @@ function loadLevel(rows, spec) {
   for (let i = 0; i < iList.length; i++) {
     const it = iList[i];
     items.push({
-      id: i, type: it.type,
+      id: i,
+      type: it.type,          // 'mushroom' | 'flower'
       x: it.col + 0.5, y: it.row + 0.5,
       w: 0.7, h: 0.7,
-      vx: 1.2, vy: 0, active: true
+      vx: it.type === 'flower' ? 0 : 1.2,   // 花不动
+      vy: 0,
+      active: true,
+      emerge: it.type === 'flower' ? 0.5 : 0  // 花从砖里冒出来的过程（简化：直接出现）
     });
   }
   const boss = spec.boss
@@ -222,7 +259,8 @@ function loadLevel(rows, spec) {
         w: 2.0, h: 1.8,
         hp: spec.boss.hp, phase: 1,
         vx: 0, vy: 0, dir: -1,
-        hurtT: 0, tick: 0
+        hurtT: 0, tick: 0,
+        fireCd: 0
       }
     : null;
 
@@ -232,7 +270,8 @@ function loadLevel(rows, spec) {
     cols: grid[0].length,
     rowsH: grid.length,
     coins, enemies, platforms, items, boss,
-    start: spec.start || { col: 2, row: 12 },
+    fireballs: [],
+    start: spec.start || { col: 2, row: 14 },
     checkpoints: spec.checkpoints || [],
     name: spec.name || '',
     time: 0
@@ -244,59 +283,79 @@ function loadLevel(rows, spec) {
 function makePlayer(level, seat) {
   return {
     seat,
-    // 坐标约定：x 是中心，y 是脚底。
-    // start.row 表示「站立的地面行」——脚底恰好落在该行的上边界，
-    // 即 y = start.row。早先用 start.row + 0.5 会让玩家陷进地面半格，
-    // 结果卡住不能动（实测第 2 关出生即卡死）。
+    // 坐标约定：x 是中心，y 是脚底。start.row 是「站立的地面行」，脚底 y = start.row
     x: level.start.col + 0.5,
     y: level.start.row,
     w: 0.7, h: 0.9,
     vx: 0, vy: 0,
     face: 1,
     onGround: false,
-    big: false,             // 是否变大（吃到蘑菇）
-    hurtT: 0,               // 受伤无敌时间
-    coyote: 0,              // 土狼计时
-    buffer: 0,              // 跳跃缓冲计时
+    form: FORM.SMALL,       // 0 小 / 1 超级 / 2 火焰
+    hurtT: 0,               // 无敌时间（受伤后闪烁）
+    coyote: 0,
+    buffer: 0,
     jumpHeld: false,
+    jumpPressT: 0,          // 跳跃键按下多久（控制踩敌反弹高度）
     lives: C.MARIO_LIVES,
     coins: 0,
+    score: 0,
+    combo: 0,               // 连踩计数（不落地连续踩敌）
     state: 'alive',         // alive | dying | dead | done
     deathT: 0,
+    fellInPit: false,
+    fireCd: 0,
     respawnX: level.start.col + 0.5,
     respawnY: level.start.row,
-    finishT: 0
+    finishT: 0,
+    // 变大/变小时的过渡动画（正版有短暂定格式的变换过程）
+    growT: 0
   };
 }
 
-// 玩家输入（联机时就是云端同步的东西）
 function makeInput() {
   return { left: false, right: false, up: false, down: false, run: false };
 }
 
-/* ========== 单人物理步进 ========== */
+// 玩家当前高度（小形态 0.9 格，大形态 1.6 格）
+function playerHeight(form) {
+  return form === FORM.SMALL ? 0.9 : 1.6;
+}
 
-// 只推进一个玩家的物理（不含敌人/金币交互，那些在世界层处理）
+/* ========== 玩家物理 ========== */
+
+// 形态变化时调整碰撞盒高度，保持脚底不动（正版变大时是向上长的）
+function setForm(p, form) {
+  const oldH = p.h;
+  p.form = form;
+  p.h = playerHeight(form);
+  // 脚底 y 不变，头顶自然上移
+  p.growT = 0.35;
+  return oldH;
+}
+
 function stepPlayer(level, p, input, dt) {
   if (p.state === 'dying') {
     p.deathT += dt;
-    // 掉坑死亡：不播抛物动画（角色已经掉出画面），短暂停顿后直接重生
+    // 正版死亡动画：先向上弹起，再加速下坠出屏幕。
+    // 掉坑死亡不播这个动画（角色已经在屏幕外了）。
     if (!p.fellInPit) {
-      p.vy += PHYS.GRAVITY * dt * 0.6;
+      p.vy += PHYS.GRAVITY * 0.55 * dt;
       p.y += p.vy * dt;
     }
     if (p.deathT > C.MARIO_DEATH_RESPAWN_MS / 1000) {
-      p.lives -= 1;                      // 先扣命，再决定重生还是彻底死亡
+      p.lives -= 1;
       p.deathT = 0;
       if (p.lives > 0) {
         p.state = 'alive';
         p.x = p.respawnX;
         p.y = p.respawnY;
         p.vx = 0; p.vy = 0;
-        p.hurtT = 1.0;
-        p.big = false;                   // 重生后回到小形态
+        p.hurtT = 1.2;
+        p.form = FORM.SMALL;
+        p.h = playerHeight(FORM.SMALL);
         p.fellInPit = false;
         p.onGround = false;
+        p.combo = 0;
       } else {
         p.state = 'dead';
       }
@@ -306,6 +365,8 @@ function stepPlayer(level, p, input, dt) {
   if (p.state === 'dead' || p.state === 'done') return;
 
   if (p.hurtT > 0) p.hurtT -= dt;
+  if (p.growT > 0) p.growT -= dt;
+  if (p.fireCd > 0) p.fireCd -= dt;
 
   const onIce = p.onGround && groundTileAt(level.grid, p.x - p.w / 2, p.y - p.h, p.w, p.h) === T.ICE;
 
@@ -319,22 +380,22 @@ function stepPlayer(level, p, input, dt) {
     p.vx += accel * dt;
     p.face = 1;
   } else if (p.onGround) {
-    // 摩擦减速
     const f = (onIce ? PHYS.ICE_FRICTION : PHYS.FRICTION) * dt;
     if (p.vx > 0) p.vx = Math.max(0, p.vx - f);
     else if (p.vx < 0) p.vx = Math.min(0, p.vx + f);
   }
-  // 限速
   if (p.vx > maxSpeed) p.vx = Math.max(maxSpeed, p.vx - accel * dt * 2);
   if (p.vx < -maxSpeed) p.vx = Math.min(-maxSpeed, p.vx + accel * dt * 2);
 
-  // 跳跃：土狼时间 + 输入缓冲，让操作手感宽容
-  if (input.up && !p.jumpHeld) p.buffer = PHYS.BUFFER;
+  // 跳跃：土狼时间 + 输入缓冲
+  if (input.up && !p.jumpHeld) {
+    p.buffer = PHYS.BUFFER;
+    p.jumpPressT = 0;
+  }
+  if (input.up) p.jumpPressT += dt;
   p.jumpHeld = input.up;
   if (p.buffer > 0) p.buffer -= dt;
   if (p.coyote > 0) p.coyote -= dt;
-  // 站在地面上时土狼时间始终是满的（这次才真正实现"土狼"语义：
-  // 只有刚离开地面的那一小段时间仍允许起跳）
   if (p.onGround) p.coyote = PHYS.COYOTE;
 
   if (p.buffer > 0 && p.coyote > 0) {
@@ -349,13 +410,12 @@ function stepPlayer(level, p, input, dt) {
   p.vy += g * dt;
   if (p.vy > PHYS.MAX_FALL) p.vy = PHYS.MAX_FALL;
 
-  // ---- 移动 + 碰撞（分轴解算，避免卡进墙里）----
+  // ---- 移动 + 碰撞（分轴解算）----
   const grid = level.grid;
 
   // X 轴
   let nx = p.x + p.vx * dt;
   if (boxHitsSolid(grid, nx - p.w / 2, p.y - p.h, p.w, p.h)) {
-    // 贴住障碍：二分回退到刚好接触
     let lo = 0, hi = p.vx * dt;
     for (let i = 0; i < 8; i++) {
       const mid = (lo + hi) / 2;
@@ -378,9 +438,9 @@ function stepPlayer(level, p, input, dt) {
       else lo = mid;
     }
     if (p.vy > 0) {
-      landed = true;   // 向下撞 → 落地
+      landed = true;
     } else {
-      // 向上撞 → 顶到头顶的瓦片。若是问号砖就顶出东西
+      // 向上撞 → 顶到头顶的瓦片（问号砖/砖块）
       hitHeadBlock(level, p);
     }
     ny = p.y + lo;
@@ -388,10 +448,7 @@ function stepPlayer(level, p, input, dt) {
   }
   p.y = ny;
 
-  // 落地状态与土狼时间。
-  // 语义：本帧向下碰撞 → landed=true；否则探测脚下是否仍有实心支撑。
-  // 注意 hasSupport 必须是一条极薄的探针（不是整个身体）：
-  // 若用身体盒去探，走出平台边缘时身体仍可能与身前的墙重叠，被误判为站在地上。
+  // 落地状态（脚下薄探针）
   const supportRow = Math.floor(p.y + 0.02);
   const c0 = Math.floor(p.x - p.w / 2 + 0.02);
   const c1 = Math.floor(p.x + p.w / 2 - 0.02);
@@ -400,52 +457,96 @@ function stepPlayer(level, p, input, dt) {
     if (isSolid(grid, c, supportRow)) { hasSupport = true; break; }
   }
   if (landed || hasSupport) {
+    if (!p.onGround) p.combo = 0;   // 落地清空连踩
     p.onGround = true;
     p.coyote = PHYS.COYOTE;
   } else {
     p.onGround = false;
   }
 
-  // 检查点：经过就记录复活点
-  // （关卡 spec 的 checkpoints 一直定义了但引擎没实现，导致玩家掉坑后
-  //   只能回出生点重来，第 2 关这种连续小坑会变成无限循环）
+  // 检查点
   if (level.checkpoints && p.state === 'alive') {
     for (const cp of level.checkpoints) {
       if (Math.abs(p.x - (cp.col + 0.5)) < 0.9 && Math.abs(p.y - (cp.row + 0.5)) < 2.0) {
         p.respawnX = cp.col + 0.5;
-        // respawnY = cp.row（站立地面行，脚底 y）。用 cp.row + 0.5 会让玩家
-        // 复活时陷进地面半格，站着不能动 —— 实测第 2 关因此反复死在同一处。
         p.respawnY = cp.row;
       }
     }
   }
 
-  // 掉出地图 → 立即死亡。
-  // 正版马里奥里掉坑是即死，且不区分大小形态（变大也照样死）。
-  // 早先用 vy=-8 做了个"向上弹一下"的动画，但玩家掉进深坑后会在坑里
-  // 反复上下弹（每帧都满足 y > 阈值），看起来像卡住不动。
-  if (p.y > PHYS.DEATH_FALL_Y && (p.state === 'alive' || p.state === 'dying')) {
-    if (p.state === 'alive') {
-      p.state = 'dying';
-      p.deathT = 0;
-      p.vy = 0;
-      p.vx = 0;
-      p.big = false;      // 掉坑不死于"受伤"，但形态重置
-      p.fellInPit = true; // 标记：直接走重生流程，不播受伤动画
-    }
-    // 已在 dying 且还在坑下方：直接进入重生计时，避免卡在坑里
-    return;
+  // 掉出地图 → 立即死亡（不区分大小形态）
+  if (p.y > PHYS.DEATH_FALL_Y && p.state === 'alive') {
+    p.state = 'dying';
+    p.deathT = 0;
+    p.vy = 0;
+    p.vx = 0;
+    p.fellInPit = true;
+    p.combo = 0;
   }
+}
+
+/* ========== 火球（玩家发射） ========== */
+
+function spawnFireball(level, p) {
+  if (p.form !== FORM.FIRE || p.fireCd > 0) return false;
+  const own = level.fireballs.filter(f => f.owner === p.seat).length;
+  if (own >= PHYS.FIREBALL_MAX) return false;
+  level.fireballs.push({
+    x: p.x + p.face * 0.5,
+    y: p.y - p.h * 0.5,
+    w: 0.35, h: 0.35,
+    vx: p.face * PHYS.FIREBALL_SPEED,
+    vy: 2,
+    life: PHYS.FIREBALL_LIFE,
+    owner: p.seat,
+    fromPlayer: true
+  });
+  p.fireCd = PHYS.FIRE_COOLDOWN;
+  return true;
+}
+
+function stepPlayerFireballs(level, dt) {
+  const keep = [];
+  for (const f of level.fireballs) {
+    if (!f.fromPlayer) { keep.push(f); continue; }
+    f.life -= dt;
+    f.vy += PHYS.GRAVITY * 0.75 * dt;
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+    // 撞墙：反弹（正版火球撞墙会弹回来）
+    if (boxHitsSolid(level.grid, f.x - f.w / 2, f.y - f.h / 2, f.w, f.h)) {
+      f.x -= f.vx * dt;
+      f.vx = -f.vx;
+    }
+    // 落地弹起
+    const belowSolid = boxHitsSolid(level.grid, f.x - f.w / 2, f.y - f.h / 2 + 0.08, f.w, f.h);
+    if (f.vy > 0 && belowSolid) {
+      f.y -= f.vy * dt;
+      f.vy = -PHYS.FIREBALL_BOUNCE;
+    }
+    if (f.life > 0 && f.y < PHYS.DEATH_FALL_Y) keep.push(f);
+  }
+  level.fireballs = keep;
 }
 
 /* ========== 敌人 ========== */
 
 function stepEnemy(level, e, dt) {
   if (!e.alive) return;
-  e.tick = (e.tick || 0) + dt;
+
+  // 龟壳：静止壳计时后自动爬出来；滑行壳撞墙反弹
+  if (e.shell === 'shell') {
+    e.shellT += dt;
+    if (e.shellT > PHYS.SHELL_RECOVER) {
+      e.shell = 'walk';
+      e.shellT = 0;
+      e.vx = -PHYS.SHELL_SPEED * 0.25;
+      e.dir = -1;
+    }
+    return;   // 静止壳不动
+  }
 
   if (e.type === E.FLYER) {
-    // 飞行怪：水平巡逻 + 正弦上下，全部确定性计算
     e.x += e.vx * dt;
     if (Math.abs(e.x - e.homeX) > e.range) {
       e.vx = -e.vx;
@@ -455,7 +556,7 @@ function stepEnemy(level, e, dt) {
     return;
   }
 
-  // 走怪 / 乌龟：受重力、撞墙转向
+  // 走怪 / 乌龟 / 滑行壳：受重力、撞墙转向
   e.vy += PHYS.GRAVITY * dt;
   if (e.vy > PHYS.MAX_FALL) e.vy = PHYS.MAX_FALL;
 
@@ -465,8 +566,8 @@ function stepEnemy(level, e, dt) {
     e.dir = e.vx > 0 ? 1 : -1;
     nx = e.x;
   }
-  // 巡逻范围限制（防止走太远掉坑里没人管）
-  if (Math.abs(nx - e.homeX) > e.range) {
+  // 巡逻范围限制（滑行壳不受限）
+  if (e.shell !== 'slide' && Math.abs(nx - e.homeX) > e.range) {
     e.vx = -e.vx;
     e.dir = e.vx > 0 ? 1 : -1;
     nx = e.x;
@@ -486,23 +587,40 @@ function stepEnemy(level, e, dt) {
   }
   e.y = ny;
 
-  // 掉坑
   if (e.y > PHYS.DEATH_FALL_Y) e.alive = false;
 }
 
-function stepPlatform(level, pl, dt) {
-  pl.t += dt;
-  const period = (pl.len * 2) / pl.speed;
-  const u = (pl.t % period) / period;
-  // 三角波 0→1→0
-  const tri = u < 0.5 ? u * 2 : 2 - u * 2;
-  const off = (tri - 0.5) * pl.len;
-  if (pl.axis === 'h') pl.x = pl.homeX + off;
-  else pl.y = pl.homeY + off;
+// 滑行壳碾压其他敌人（正版：一壳可连撞多个，每个都有分）
+function resolveShellHits(level, players) {
+  const shells = level.enemies.filter(e => e.alive && e.shell === 'slide');
+  for (const sh of shells) {
+    for (const other of level.enemies) {
+      if (!other.alive || other === sh) continue;
+      if (!boxesOverlap(sh, other)) continue;
+      other.alive = false;
+      // 给踢壳的人加分
+      const owner = players[sh.kicker - 1];
+      if (owner) owner.score += 200;
+    }
+  }
+  // 滑行壳也能干掉 Boss 的火球
+  for (const sh of shells) {
+    if (!level.fireballs) break;
+    for (const f of level.fireballs) {
+      if (f.fromPlayer) continue;
+      if (boxesOverlap(sh, f)) f.life = 0;
+    }
+  }
 }
+
+/* ========== 蘑菇 / 花 ========== */
 
 function stepItem(level, it, dt) {
   if (!it.active) return;
+  if (it.type === 'flower') {
+    // 花不动（简化：从砖里直接出现）
+    return;
+  }
   it.vy += PHYS.GRAVITY * dt;
   let nx = it.x + it.vx * dt;
   if (boxHitsSolid(level.grid, nx - it.w / 2, it.y - it.h / 2, it.w, it.h)) it.vx = -it.vx;
@@ -516,275 +634,19 @@ function stepItem(level, it, dt) {
   if (it.y > PHYS.DEATH_FALL_Y) it.active = false;
 }
 
-/* ========== Boss ========== */
+/* ========== 移动平台 ========== */
 
-// Boss 三阶段：1 火球弹幕 → 2 冲撞 → 3 虚弱（可被踩）
-function stepBoss(level, boss, players, dt) {
-  if (!boss || boss.hp <= 0) return;
-  boss.tick += dt;
-  if (boss.hurtT > 0) boss.hurtT -= dt;
-
-  // 阶段随血量切换
-  if (boss.phase === 1 && boss.hp <= 2) boss.phase = 2;
-  if (boss.phase === 2 && boss.hp <= 1) boss.phase = 3;
-
-  if (boss.phase === 1) {
-    // 缓慢横向移动 + 定期喷火球
-    boss.x += boss.vx * dt;
-    if (Math.abs(boss.x - 30.5) > 4) boss.vx = -boss.vx;
-    if (boss.vx === 0) boss.vx = 1.0;
-    // 每 2 秒在玩家位置生成一个火球（确定性：按 tick 计数触发）
-    if (!boss.fireCd) boss.fireCd = 0;
-    boss.fireCd -= dt;
-    if (boss.fireCd <= 0) {
-      boss.fireCd = 2.0;
-      const target = nearestPlayer(players, boss.x);
-      if (target) {
-        if (!level.fireballs) level.fireballs = [];
-        level.fireballs.push({
-          x: boss.x, y: boss.y - 0.5,
-          vx: (target.x - boss.x) > 0 ? 3 : -3,
-          vy: -1.5, life: 3
-        });
-      }
-    }
-  } else if (boss.phase === 2) {
-    // 冲撞：朝最近的玩家高速冲
-    const target = nearestPlayer(players, boss.x);
-    if (target) boss.vx = (target.x - boss.x) > 0 ? 5.5 : -5.5;
-    boss.x += boss.vx * dt;
-  } else {
-    // 虚弱：原地颤抖，可被踩
-    boss.vx = 0;
-    boss.x = boss.homeXOf ? boss.homeXOf : boss.x;
-  }
-
-  // 限制在关卡内
-  const cols = level.cols;
-  if (boss.x < 26) boss.x = 26;
-  if (boss.x > cols - 4) boss.x = cols - 4;
+function stepPlatform(level, pl, dt) {
+  pl.t += dt;
+  const period = (pl.len * 2) / pl.speed;
+  const u = (pl.t % period) / period;
+  const tri = u < 0.5 ? u * 2 : 2 - u * 2;
+  const off = (tri - 0.5) * pl.len;
+  if (pl.axis === 'h') pl.x = pl.homeX + off;
+  else pl.y = pl.homeY + off;
 }
 
-function nearestPlayer(players, x) {
-  let best = null, bd = Infinity;
-  for (const p of players) {
-    if (p.state !== 'alive') continue;
-    const d = Math.abs(p.x - x);
-    if (d < bd) { bd = d; best = p; }
-  }
-  return best;
-}
-
-function stepFireballs(level, dt) {
-  if (!level.fireballs) return;
-  const keep = [];
-  for (const f of level.fireballs) {
-    f.life -= dt;
-    // 火球没有 w/h 会域，补默认值（否则 boxesOverlap 全为 false，永远打不中玩家）
-    if (f.w === undefined) { f.w = 0.5; f.h = 0.5; }
-    f.vy += PHYS.GRAVITY * 0.35 * dt;
-    f.x += f.vx * dt;
-    f.y += f.vy * dt;
-    if (f.life > 0 && f.y < PHYS.DEATH_FALL_Y) keep.push(f);
-  }
-  level.fireballs = keep;
-}
-
-/* ========== 交互 ========== */
-
-function boxesOverlap(a, b) {
-  return a.x - a.w / 2 < b.x + b.w / 2 && a.x + a.w / 2 > b.x - b.w / 2 &&
-         a.y - a.h / 2 < b.y + b.h / 2 && a.y + a.h / 2 > b.y - b.h / 2;
-}
-
-// 玩家与敌人的碰撞：踩头 / 被撞。
-// 判据说明：p.y 是玩家「脚底」，e.y - e.h/2 是敌人「头顶」。
-// 踩头的充要条件是「脚底落在敌人头顶附近且深度不大」——深度用玩家盒底
-// 与敌人盒底的距离衡量：若玩家盒底已经掉到敌人盒底以下，那就是侧面/下方撞到。
-// 早期版本只写「脚底 >= 敌人顶 - 0.25」，容差太松，玩家从侧面甚至下方蹭到
-// 都会被判成踩头，敌人白死。现在用「踩入深度 < 敌人半高」严格判定。
-function resolveEnemyHit(level, p, e) {
-  if (!e.alive || p.state !== 'alive') return;
-  if (!boxesOverlap(p, e)) return;
-
-  const enemyTop = e.y - e.h / 2;
-  const enemyBottom = e.y + e.h / 2;
-  const feetAboveEnemyTop = p.y >= enemyTop - 0.15;
-  const stompDepth = p.y - enemyTop;              // 脚底踩进敌人盒多深
-  const notTooDeep = stompDepth < e.h * 0.75;     // 深度小于敌人 3/4 高度算踩
-  const falling = p.vy > 0.5;
-
-  if (feetAboveEnemyTop && notTooDeep && (falling || !p.onGround)) {
-    // 踩中：敌人死，玩家反弹
-    e.alive = false;
-    p.vy = -PHYS.STOMP_BOUNCE;
-    p.onGround = false;
-    return;
-  }
-  // 侧面/下方撞到：受伤或死亡
-  if (p.hurtT <= 0) {
-    if (p.big) {
-      p.big = false;
-      p.hurtT = 1.5;
-    } else {
-      p.state = 'dying';
-      p.deathT = 0;
-      p.vy = -8;
-    }
-  }
-}
-
-// 玩家与 Boss 的碰撞。踩头判据同 resolveEnemyHit：
-// 脚底落在 Boss 头顶附近且踩入深度不大，才算踩头。
-function resolveBossHit(level, p, boss) {
-  if (!boss || boss.hp <= 0 || p.state !== 'alive') return;
-  if (!boxesOverlap(p, boss)) return;
-
-  const bossTop = boss.y - boss.h / 2;
-  const stompDepth = p.y - bossTop;
-  const feetAboveBossTop = p.y >= bossTop - 0.15;
-  const notTooDeep = stompDepth < boss.h * 0.75;
-  const falling = p.vy > 0.5;
-  const fromAbove = feetAboveBossTop && notTooDeep && (falling || !p.onGround);
-
-  if (fromAbove && boss.phase === 3) {
-    // 虚弱期才能被踩掉血
-    boss.hp -= 1;
-    boss.hurtT = 0.8;
-    p.vy = -PHYS.STOMP_BOUNCE;
-    p.onGround = false;
-    return;
-  }
-  if (fromAbove) {
-    // 非虚弱期踩到也会弹，但 Boss 不掉血；玩家反而可能受伤
-    p.vy = -PHYS.STOMP_BOUNCE;
-    p.onGround = false;
-    if (p.hurtT <= 0) {
-      if (p.big) { p.big = false; p.hurtT = 1.5; }
-      else {
-        p.state = 'dying';
-        p.deathT = 0;
-        p.vy = -8;
-      }
-    }
-    return;
-  }
-  // 侧面撞 Boss
-  if (p.hurtT <= 0) {
-    if (p.big) { p.big = false; p.hurtT = 1.5; }
-    else {
-      p.state = 'dying';
-      p.deathT = 0;
-      p.vy = -8;
-    }
-  }
-}
-
-function resolveFireballHit(level, p) {
-  if (!level.fireballs || p.state !== 'alive') return;
-  for (const f of level.fireballs) {
-    if (boxesOverlap(p, f) && p.hurtT <= 0) {
-      f.life = 0;
-      if (p.big) { p.big = false; p.hurtT = 1.5; }
-      else {
-        p.state = 'dying';
-        p.deathT = 0;
-        p.vy = -8;
-      }
-    }
-  }
-}
-
-function resolveCoinHit(level, p) {
-  for (const c of level.coins) {
-    if (c.taken) continue;
-    if (Math.abs(p.x - (c.col + 0.5)) < 0.6 && Math.abs(p.y - (c.row + 0.5)) < 0.8) {
-      c.taken = true;
-      p.coins += 1;
-    }
-  }
-}
-
-function resolveItemHit(level, p) {
-  for (const it of level.items) {
-    if (!it.active) continue;
-    if (boxesOverlap(p, it)) {
-      it.active = false;
-      p.big = true;
-      p.hurtT = 0.6;
-    }
-  }
-}
-
-function resolveHazards(level, p) {
-  if (p.state !== 'alive') return;
-  if (boxHitsDeadly(level.grid, p.x - p.w / 2, p.y - p.h, p.w, p.h)) {
-    p.state = 'dying';
-    p.deathT = 0;
-    p.vy = -8;
-    return;
-  }
-  if (boxHitsFlag(level.grid, p.x - p.w / 2, p.y - p.h, p.w, p.h)) {
-    p.state = 'done';
-    p.finishT = level.time;
-  }
-}
-
-// 玩家向上撞到头顶瓦片：若是问号砖就顶出东西（金币/蘑菇），并把 ? 换成 B
-// （用过的砖）。若是普通砖，马里奥版里也允许顶（顶成 B，不掉东西）。
-// 约定：顶出物的类型由「砖块在关卡中的列号」确定性决定，避免随机数导致
-// host/guest 模拟分叉。
-function hitHeadBlock(level, p) {
-  const grid = level.grid;
-  // 头顶所在行：玩家盒顶再上移一点点。
-  // 向上撞到实心瓦片时，碰撞解算已把玩家停在"刚好接触"的位置，
-  // 头顶可能仍略低于砖块所在行（差值 < 1 格）。所以要向上多探 1 行，
-  // 否则会漏判 —— 实测问号砖在 row10、玩家顶到 row11 时就漏了。
-  const headY = p.y - p.h;
-  const c0 = Math.floor(p.x - p.w / 2 + 0.02);
-  const c1 = Math.floor(p.x + p.w / 2 - 0.02);
-  for (let rowOff = 0; rowOff <= 1; rowOff++) {
-    const headRow = Math.floor(headY - 0.02) - rowOff;
-    for (let c = c0; c <= c1; c++) {
-      if (!inGrid(grid, c, headRow)) continue;
-      const ch = grid[headRow][c];
-      if (ch !== T.QUESTION && ch !== T.BRICK) continue;
-      // 用过的砖：问号砖变普通砖，普通砖保留（不破坏砖块，保持简洁）
-      if (ch === T.QUESTION) {
-        grid[headRow][c] = T.BRICK;
-        // 确定性决定掉落物：按列号奇偶 + 行号，保证 host/guest 一致
-        const dropCoin = ((c + headRow) % 2 === 0);
-        if (dropCoin) {
-          // 直接给玩家加金币（免得再加一个飞出物实体，简化同步）
-          p.coins += 1;
-        } else {
-          // 掉一个蘑菇道具，位置在砖块正下方
-          level.items.push({
-            id: level.items.length,
-            type: 'mushroom',
-            x: c + 0.5, y: headRow + 1.5,
-            w: 0.7, h: 0.7,
-            vx: 1.2, vy: 0,
-            active: true
-          });
-        }
-      }
-      return;   // 只顶一个
-    }
-  }
-}
-
-// 边界安全：grid 索引
-function inGrid(grid, c, r) {
-  return r >= 0 && r < grid.length && c >= 0 && c < grid[r].length;
-}
-
-// 移动平台承载玩家：站在平台上时跟着平台一起动，且被平台"接住"。
-// 判定要宽松：平台每帧在动，玩家下落速度也可能很快（最多 22 格/秒 ≈ 0.37 格/帧），
-// 所以容差取 0.45 格（略大于单帧最大下落位移），否则高速下落会穿过平台。
-//
-// 注意：平台承载必须「带着玩家走」，否则玩家站在水平平台上会原地打滑
-// （平台跑了自己没动，几帧后就掉下来）。做法是把平台本帧位移叠加到玩家 x/y 上。
+// 移动平台承载玩家
 function resolvePlatformRide(level, p, dt) {
   if (p.state !== 'alive') return;
   for (const pl of level.platforms) {
@@ -796,19 +658,354 @@ function resolvePlatformRide(level, p, dt) {
       p.vy = 0;
       p.onGround = true;
       p.coyote = PHYS.COYOTE;
-      // 记录平台位移量，让玩家跟着走（首次接触时无上次位置，跳过）
-      if (pl.px !== undefined) {
-        p.x += (pl.x - pl.px);
+      if (pl.px !== undefined) p.x += (pl.x - pl.px);
+    }
+    pl.px = pl.x;
+  }
+}
+
+/* ========== Boss ========== */
+
+function nearestPlayer(players, x) {
+  let best = null, bd = Infinity;
+  for (const p of players) {
+    if (p.state !== 'alive') continue;
+    const d = Math.abs(p.x - x);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
+}
+
+function stepBoss(level, boss, players, dt) {
+  if (!boss || boss.hp <= 0) return;
+  boss.tick += dt;
+  if (boss.hurtT > 0) boss.hurtT -= dt;
+
+  if (boss.phase === 1 && boss.hp <= 2) boss.phase = 2;
+  if (boss.phase === 2 && boss.hp <= 1) boss.phase = 3;
+
+  if (boss.phase === 1) {
+    if (boss.vx === 0) boss.vx = 1.0;
+    boss.x += boss.vx * dt;
+    if (Math.abs(boss.x - 30.5) > 4) boss.vx = -boss.vx;
+    if (!boss.fireCd) boss.fireCd = 0;
+    boss.fireCd -= dt;
+    if (boss.fireCd <= 0) {
+      boss.fireCd = 2.0;
+      const target = nearestPlayer(players, boss.x);
+      if (target) {
+        if (!level.fireballs) level.fireballs = [];
+        level.fireballs.push({
+          x: boss.x, y: boss.y - 0.5,
+          w: 0.5, h: 0.5,
+          vx: (target.x - boss.x) > 0 ? 3 : -3,
+          vy: -1.5, life: 3,
+          fromPlayer: false
+        });
       }
     }
-    pl.px = pl.x;   // 供下一帧计算位移
+  } else if (boss.phase === 2) {
+    const target = nearestPlayer(players, boss.x);
+    if (target) boss.vx = (target.x - boss.x) > 0 ? 5.5 : -5.5;
+    boss.x += boss.vx * dt;
+  } else {
+    boss.vx = 0;
+  }
+
+  if (boss.x < 26) boss.x = 26;
+  if (boss.x > level.cols - 4) boss.x = level.cols - 4;
+}
+
+function stepFireballs(level, dt) {
+  if (!level.fireballs) return;
+  const keep = [];
+  for (const f of level.fireballs) {
+    if (f.fromPlayer) continue;   // 玩家火球由 stepPlayerFireballs 处理
+    f.life -= dt;
+    if (f.w === undefined) { f.w = 0.5; f.h = 0.5; }
+    f.vy += PHYS.GRAVITY * 0.35 * dt;
+    f.x += f.vx * dt;
+    f.y += f.vy * dt;
+    if (f.life > 0 && f.y < PHYS.DEATH_FALL_Y) keep.push(f);
+  }
+  // 保留玩家火球
+  for (const f of level.fireballs) {
+    if (f.fromPlayer) keep.push(f);
+  }
+  level.fireballs = keep;
+}
+
+/* ========== 玩家火球命中敌人 ========== */
+
+function resolvePlayerFireballHits(level, players) {
+  const shooters = {};
+  for (const p of players) shooters[p.seat] = p;
+  for (const f of level.fireballs) {
+    if (!f.fromPlayer || f.life <= 0) continue;
+    for (const e of level.enemies) {
+      if (!e.alive) continue;
+      if (!boxesOverlap(f, e)) continue;
+      e.alive = false;
+      f.life = 0;
+      const owner = shooters[f.owner];
+      if (owner) owner.score += 100;
+    }
+    // 火球打 Boss
+    if (level.boss && level.boss.hp > 0 && boxesOverlap(f, level.boss)) {
+      level.boss.hp -= 1;
+      level.boss.hurtT = 0.5;
+      f.life = 0;
+    }
+  }
+}
+
+/* ========== 碰撞与交互 ========== */
+
+// 玩家受伤：超级/火焰 → 变小；小 → 死
+function hurtPlayer(p) {
+  if (p.hurtT > 0 || p.state !== 'alive') return;
+  if (p.form !== FORM.SMALL) {
+    setForm(p, FORM.SMALL);
+    p.hurtT = PHYS.INVULN_TIME;    // 变小后无敌闪烁
+  } else {
+    p.state = 'dying';
+    p.deathT = 0;
+    p.vy = -9;                     // 正版死亡动画：向上弹起
+    p.fellInPit = false;
+  }
+  p.combo = 0;
+}
+
+// 玩家与敌人：踩头 / 侧撞；乌龟有壳状态机
+function resolveEnemyHit(level, p, e) {
+  if (!e.alive || p.state !== 'alive') return;
+  if (!boxesOverlap(p, e)) return;
+
+  const enemyTop = e.y - e.h / 2;
+  const stompDepth = p.y - enemyTop;
+  const feetAboveEnemyTop = p.y >= enemyTop - 0.15;
+  const notTooDeep = stompDepth < e.h * 0.75;
+  const falling = p.vy > 0.5;
+  const stomping = feetAboveEnemyTop && notTooDeep && (falling || !p.onGround);
+
+  // 滑行壳：只有侧面撞才受伤，踩上去会停住（正版行为）
+  if (e.shell === 'slide') {
+    if (stomping) {
+      // 踩住滑行壳 → 变静止壳
+      e.shell = 'shell';
+      e.shellT = 0;
+      e.vx = 0;
+      p.vy = p.jumpHeld ? -PHYS.STOMP_BOUNCE_HELD : -PHYS.STOMP_BOUNCE;
+      p.onGround = false;
+      p.score += 100;
+      return;
+    }
+    // 侧面撞：如果刚被自己踢出，短暂保护不受伤
+    if (e.kicker === p.seat && e.kickT > 0) return;
+    hurtPlayer(p);
+    return;
+  }
+
+  if (stomping) {
+    // 踩中
+    p.vy = p.jumpHeld ? -PHYS.STOMP_BOUNCE_HELD : -PHYS.STOMP_BOUNCE;
+    p.onGround = false;
+    p.combo += 1;
+    // 连踩加分：100/200/400/500/800/1000...
+    const comboScore = [100, 200, 400, 500, 800, 1000];
+    p.score += comboScore[Math.min(p.combo - 1, comboScore.length - 1)];
+
+    if (e.type === E.TURTLE && e.shell === 'walk') {
+      // 乌龟第一次被踩 → 变壳
+      e.shell = 'shell';
+      e.shellT = 0;
+      e.vx = 0;
+      e.kicker = 0;
+    } else if (e.shell === 'shell') {
+      // 再踩静止壳 → 踢出去
+      kickShell(e, p);
+    } else {
+      e.alive = false;
+    }
+    return;
+  }
+
+  // 侧面撞到静止壳 → 踢出去
+  if (e.shell === 'shell') {
+    kickShell(e, p);
+    return;
+  }
+
+  hurtPlayer(p);
+}
+
+function kickShell(e, p) {
+  // 从玩家中心指向壳的方向决定踢出方向（贴边也能踢对）
+  const dir = (e.x >= p.x) ? 1 : -1;
+  e.shell = 'slide';
+  e.vx = dir * PHYS.SHELL_SPEED;
+  e.dir = dir;
+  e.kicker = p.seat;
+  e.kickT = 0.35;
+  p.score += 100;
+}
+
+// 玩家与 Boss
+function resolveBossHit(level, p, boss) {
+  if (!boss || boss.hp <= 0 || p.state !== 'alive') return;
+  if (!boxesOverlap(p, boss)) return;
+
+  const bossTop = boss.y - boss.h / 2;
+  const stompDepth = p.y - bossTop;
+  const fromAbove = p.y >= bossTop - 0.15 && stompDepth < boss.h * 0.75 &&
+                    (p.vy > 0.5 || !p.onGround);
+
+  if (fromAbove && boss.phase === 3) {
+    boss.hp -= 1;
+    boss.hurtT = 0.8;
+    p.vy = -PHYS.STOMP_BOUNCE;
+    p.onGround = false;
+    p.score += 500;
+    return;
+  }
+  if (fromAbove) {
+    p.vy = -PHYS.STOMP_BOUNCE;
+    p.onGround = false;
+    hurtPlayer(p);
+    return;
+  }
+  hurtPlayer(p);
+}
+
+// 玩家撞上敌人的火球
+function resolveFireballHit(level, p) {
+  if (!level.fireballs || p.state !== 'alive') return;
+  for (const f of level.fireballs) {
+    if (f.fromPlayer) continue;
+    if (boxesOverlap(p, f)) {
+      f.life = 0;
+      hurtPlayer(p);
+    }
+  }
+}
+
+// 吃金币
+function resolveCoinHit(level, p) {
+  for (const c of level.coins) {
+    if (c.taken) continue;
+    if (Math.abs(p.x - (c.col + 0.5)) < 0.6 && Math.abs(p.y - (c.row + 0.5)) < 0.8) {
+      c.taken = true;
+      p.coins += 1;
+      p.score += 200;
+      // 每 100 金币 +1 命（正版机制，这里保留）
+      if (p.coins % 100 === 0) p.lives += 1;
+    }
+  }
+}
+
+// 吃蘑菇/花
+function resolveItemHit(level, p) {
+  for (const it of level.items) {
+    if (!it.active) continue;
+    if (boxesOverlap(p, it)) {
+      it.active = false;
+      if (it.type === 'mushroom') {
+        // 蘑菇：小 → 超级；已经是超级则加分
+        if (p.form === FORM.SMALL) {
+          setForm(p, FORM.SUPER);
+          p.hurtT = 0.5;
+        }
+        p.score += 1000;
+      } else {
+        // 花：小/超级 → 火焰
+        setForm(p, FORM.FIRE);
+        p.hurtT = 0.5;
+        p.score += 1000;
+      }
+    }
+  }
+}
+
+// 尖刺 + 终点旗
+function resolveHazards(level, p) {
+  if (p.state !== 'alive') return;
+  if (boxHitsDeadly(level.grid, p.x - p.w / 2, p.y - p.h, p.w, p.h)) {
+    // 尖刺：直接死亡（正版里尖刺是即死，不管大小）
+    p.state = 'dying';
+    p.deathT = 0;
+    p.vy = -9;
+    p.fellInPit = false;
+    return;
+  }
+  if (boxHitsFlag(level.grid, p.x - p.w / 2, p.y - p.h, p.w, p.h)) {
+    p.state = 'done';
+    p.finishT = level.time;
+    // 过关加分：剩余时间换算（简化：固定奖励）
+    p.score += 5000;
+  }
+}
+
+/* ========== 顶砖块 / 问号砖 ========== */
+
+// 玩家向上撞到头顶瓦片。
+// 正版规则：
+//   · 问号砖 → 出道具（小马里奥出蘑菇、超级/火焰出花；有些砖只出金币）
+//   · 普通砖 → 小马里奥只顶一下（砖块弹动），超级/火焰直接顶碎
+//   · 顶碎/顶过的砖变成 USED（空砖）
+function hitHeadBlock(level, p) {
+  const grid = level.grid;
+  const headY = p.y - p.h;
+  const c0 = Math.floor(p.x - p.w / 2 + 0.02);
+  const c1 = Math.floor(p.x + p.w / 2 - 0.02);
+
+  for (let rowOff = 0; rowOff <= 1; rowOff++) {
+    const headRow = Math.floor(headY - 0.02) - rowOff;
+    for (let c = c0; c <= c1; c++) {
+      if (!inGrid(grid, c, headRow)) continue;
+      const ch = grid[headRow][c];
+      if (ch !== T.QUESTION && ch !== T.BRICK) continue;
+
+      if (ch === T.QUESTION) {
+        grid[headRow][c] = T.USED;
+        p.score += 200;
+        // 确定性决定内容：按列+行奇偶。
+        //   偶数 → 金币（直接加）
+        //   奇数 → 道具（小马里奥给蘑菇，大马里奥给花）
+        const isCoin = ((c + headRow) % 2 === 0);
+        if (isCoin) {
+          p.coins += 1;
+          p.score += 200;
+          if (p.coins % 100 === 0) p.lives += 1;
+        } else {
+          const isBig = p.form !== FORM.SMALL;
+          level.items.push({
+            id: level.items.length,
+            type: isBig ? 'flower' : 'mushroom',
+            x: c + 0.5, y: headRow + 0.5,
+            w: 0.7, h: 0.7,
+            vx: isBig ? 0 : 1.2,
+            vy: 0,
+            active: true,
+            emerge: 0.3
+          });
+        }
+      } else {
+        // 普通砖：大马里奥顶碎，小马里奥只顶一下（砖块保留）
+        if (p.form !== FORM.SMALL) {
+          grid[headRow][c] = T.EMPTY;   // 顶碎
+          p.score += 50;
+        } else {
+          p.score += 10;
+        }
+      }
+      return;
+    }
   }
 }
 
 /* ========== 世界步进 ========== */
 
-// 推进整个世界一帧。
-// inputs: { seat: input }，缺省的座位用空输入（保持重力等物理继续跑）
+// inputs: { seat: input }，缺省的座位用空输入
 function stepWorld(level, players, inputs, dt) {
   level.time += dt;
 
@@ -817,12 +1014,17 @@ function stepWorld(level, players, inputs, dt) {
   for (const it of level.items) stepItem(level, it, dt);
   for (const e of level.enemies) stepEnemy(level, e, dt);
   stepFireballs(level, dt);
+  stepPlayerFireballs(level, dt);
 
   // 玩家物理
   for (const p of players) {
     const inp = inputs[p.seat] || makeInput();
     stepPlayer(level, p, inp, dt);
     resolvePlatformRide(level, p, dt);
+    // 跑键连发火球（正版是单按一次发一颗，这里用冷却控制节奏）
+    if (p.form === FORM.FIRE && inp.run && p.state === 'alive' && p.fireCd <= 0) {
+      spawnFireball(level, p);
+    }
   }
 
   // 交互
@@ -836,12 +1038,19 @@ function stepWorld(level, players, inputs, dt) {
     resolveHazards(level, p);
   }
 
+  resolveShellHits(level, players);
+  resolvePlayerFireballHits(level, players);
+
+  // 敌人自己的计时（滑行壳被踢后的保护时间）
+  for (const e of level.enemies) {
+    if (e.kickT > 0) e.kickT -= dt;
+  }
+
   if (level.boss) stepBoss(level, level.boss, players, dt);
 }
 
 /* ========== 胜负判定 ========== */
 
-// 合作模式：所有人都到终点才算过关
 function isLevelCleared(level, players) {
   for (const p of players) {
     if (p.state !== 'done') return false;
@@ -849,7 +1058,6 @@ function isLevelCleared(level, players) {
   return true;
 }
 
-// 竞速模式：第一个到终点的人赢
 function raceWinner(level, players) {
   let best = null, bt = Infinity;
   for (const p of players) {
@@ -858,7 +1066,6 @@ function raceWinner(level, players) {
   return best ? best.seat : 0;
 }
 
-// 是否全部结束（无人还能继续）
 function isGameOver(level, players) {
   for (const p of players) {
     if (p.state !== 'dead' && p.state !== 'done') return false;
@@ -866,24 +1073,21 @@ function isGameOver(level, players) {
   return true;
 }
 
-/* ========== 序列化（联机同步用） ========== */
+/* ========== 序列化（联机同步） ========== */
 
 function playerToWire(p) {
   return {
     x: round3(p.x), y: round3(p.y), vx: round3(p.vx), vy: round3(p.vy),
-    f: p.face, g: p.onGround ? 1 : 0, b: p.big ? 1 : 0,
-    st: p.state, lv: p.lives, cn: p.coins
+    f: p.face, g: p.onGround ? 1 : 0,
+    fm: p.form,
+    st: p.state, lv: p.lives, cn: p.coins, sc: p.score
   };
-}
-
-function round3(v) {
-  return Math.round(v * 1000) / 1000;
 }
 
 function worldToWire(level, players) {
   const es = [];
   for (const e of level.enemies) {
-    es.push([e.id, e.alive ? 1 : 0, round3(e.x), round3(e.y)]);
+    es.push([e.id, e.alive ? 1 : 0, round3(e.x), round3(e.y), e.shell]);
   }
   const cs = [];
   for (const c of level.coins) if (!c.taken) cs.push(c.id);
@@ -897,17 +1101,17 @@ function worldToWire(level, players) {
   };
 }
 
-/* ========== 导出 ========== */
-
 module.exports = {
-  TICK, PHYS, T, E, SOLID, DEADLY,
-  makeGrid, gridRows, tileAt, isSolid,
-  boxHitsSolid, boxHitsDeadly, boxHitsFlag, groundTileAt, overlapsBox, boxesOverlap,
-  loadLevel, makePlayer, makeInput,
-  stepPlayer, stepEnemy, stepPlatform, stepItem, stepBoss, stepFireballs,
-  stepWorld,
+  TICK, PHYS, T, E, FORM, SOLID, DEADLY,
+  makeGrid, gridRows, tileAt, isSolid, inGrid,
+  boxHitsSolid, boxHitsDeadly, boxHitsFlag, groundTileAt, boxesOverlap,
+  loadLevel, makePlayer, makeInput, playerHeight, setForm,
+  stepPlayer, stepEnemy, stepPlatform, stepItem, stepBoss,
+  stepFireballs, stepPlayerFireballs, stepWorld,
   resolveEnemyHit, resolveBossHit, resolveFireballHit,
-  resolveCoinHit, resolveItemHit, resolveHazards, resolvePlatformRide, hitHeadBlock,
+  resolveCoinHit, resolveItemHit, resolveHazards, resolvePlatformRide,
+  resolveShellHits, resolvePlayerFireballHits,
+  hitHeadBlock, hurtPlayer, kickShell, spawnFireball,
   isLevelCleared, raceWinner, isGameOver,
   playerToWire, worldToWire, round3
 };

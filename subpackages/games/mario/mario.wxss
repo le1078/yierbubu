@@ -237,15 +237,39 @@
   border: 2rpx solid #FCE8EF;
 }
 
+.hud-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+}
+
+.hud-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
 .hud-name {
-  font-size: 24rpx;
+  font-size: 22rpx;
   font-weight: 700;
   color: #6B4A52;
 }
 
 .hud-lives {
-  font-size: 22rpx;
+  font-size: 20rpx;
   color: #A08A80;
+}
+
+.hud-score {
+  font-size: 20rpx;
+  font-weight: 600;
+  color: #E2547A;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-coin {
+  font-size: 20rpx;
+  color: #C9A227;
 }
 
 .hud-mid { flex: 1; text-align: center; }

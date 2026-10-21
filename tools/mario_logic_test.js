@@ -258,7 +258,10 @@ console.log('\n[7] 踩敌');
   p.vy = 5;
   p.onGround = false;
   EN.stepWorld(lv, [p], { 1: input() }, DT);
-  check(e.alive === false, '从上方撞到 → 敌人被踩死');
+  // 走怪踩死；乌龟踩了变壳（正版行为）
+  const dead = e.alive === false;
+  const becameShell = e.alive === true && e.shell === 'shell';
+  check(dead || becameShell, '从上方撞到 → 敌人死亡或变壳（' + e.type + '）');
   check(p.vy < 0, '踩敌后玩家反弹（vy=' + p.vy.toFixed(2) + '）');
 
   // 侧面撞到 → 玩家受伤/死亡。
@@ -294,7 +297,7 @@ console.log('\n[8] 收集与危险');
   const it = lv2.items[0];
   p2.x = it.x; p2.y = it.y;
   EN.stepWorld(lv2, [p2], { 1: input() }, DT);
-  check(p2.big === true, '吃到蘑菇变大');
+  check(p2.form === EN.FORM.SUPER, '吃到蘑菇变超级形态');
   check(it.active === false, '蘑菇被消耗');
 
   // 变大后被撞 → 变小而不是死。
@@ -304,7 +307,7 @@ console.log('\n[8] 收集与危险');
   const itb = lv2b.items[0];
   p2b.x = itb.x; p2b.y = itb.y;
   EN.stepWorld(lv2b, [p2b], { 1: input() }, DT);
-  check(p2b.big === true, '再次确认吃到蘑菇变大');
+  check(p2b.form === EN.FORM.SUPER, '再次确认吃到蘑菇变超级形态');
   run(lv2b, [p2b], { 1: input() }, 45);      // 等 hurtT 过期（0.6s = 36 帧）
   check(p2b.hurtT <= 0, '无敌时间已过');
   const eb = lv2b.enemies[0];
@@ -313,8 +316,9 @@ console.log('\n[8] 收集与危险');
   eb.x = p2b.x + 0.7;
   p2b.vy = 0;
   EN.stepWorld(lv2b, [p2b], { 1: input() }, DT);
-  check(p2b.big === false, '变大时被撞 → 变小');
-  check(p2b.state === 'alive', '变大时被撞不会死');
+  check(p2b.form === EN.FORM.SMALL, '超级形态被撞 → 退回小形态');
+  check(p2b.state === 'alive', '超级形态被撞不会死');
+  check(p2b.hurtT > 0, '受伤后进入无敌闪烁');
 
   // 尖刺致死（尖刺现在在 Boss 关，全关卡扫描找）
   let spike = null, spikeLv = null;
@@ -544,7 +548,7 @@ console.log("\n[15] 问号砖");
   check(lv.grid[q.row][q.col] === '?', '顶砖前是问号砖');
   p.x = q.col + 0.5; p.y = q.row + 1.2;
   EN.hitHeadBlock(lv, p);
-  check(lv.grid[q.row][q.col] === 'B', '顶过之后变成普通砖 B');
+  check(lv.grid[q.row][q.col] === 'U', '顶过之后变成空砖 U');
   const gained = (p.coins - coins0) + (lv.items.length - items0);
   check(gained === 1, '顶出 1 个东西（金币或蘑菇），实际 ' + gained);
 
