@@ -199,3 +199,18 @@ node tools/mario_page_check.js    # 页面-引擎一致性 14 项
 | 马里奥 `onGround` 用身体盒探测 | 走出平台边缘仍判落地 | 改用脚下一行薄探针 |
 | 马里奥踩头容差过松 | 侧面蹭到也判踩头，敌人白死 | 加「踩入深度 < 敌人高度 3/4」 |
 | 移动平台不承载玩家 | 站上去几帧就掉 | 记录平台上帧位移，叠加到玩家坐标 |
+
+---
+
+## 十、开发者工具里的三条「吓人但无害」的报错
+
+在开发者工具 3.17.2 + Windows 上，热重载/重新编译时常见这三条，**都不是本项目代码抛的**：
+
+| 报错 | 结论 | 怎么确认/处理 |
+|---|---|---|
+| `Cannot read properties of null (reading 'screenHeight')` | 基础库内部错误。调用栈全在 `WAServiceMainContext.js`；项目里没有任何地方直接读 `screenHeight`，所有 `getWindowInfo/getSystemInfoSync` 调用都有 try/catch + 空值兜底（`wx_page_check.js` 会拦） | 关闭「自动热重载」后重新编译；或换调试基础库 3.7.x / 3.8.x |
+| `Page route 错误(system error)` | 热重载时旧 webview 还没销毁，基础库收尾失败 | 同上。功能正常时可直接忽略 |
+| `routeDone with a webviewId N is not found` | 与上一条同源；项目里只有五子棋会主动 `navigateBack`，且已改成 `safeBackToLobby`（先查页面栈、失败延迟 60ms 再 switchTab），马里奥/象棋页面没有任何 `navigateBack` 调用 | 关闭自动热重载；若仍出现，确认页面是否还能正常操作，能则为基础库噪音 |
+
+判断标准：**报错弹出时功能是否正常**（能建房间、能走、能顶砖）。功能正常就不用管；如果功能也卡住，再把控制台完整日志发出来。
+
