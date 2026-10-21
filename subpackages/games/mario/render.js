@@ -7,44 +7,37 @@
 //   2. 静态背景（天空渐变 + 远景山）用离屏 canvas 缓存，尺寸与视口相同
 //   3. 瓦片按类型分色绘制，问号砖加「?」字，尖刺画三角
 //   4. 玩家优先用 GIF 抽帧的 PNG 直接画进 canvas（图片未就绪时退回矢量小人）
-//   5. 整体配色为可爱温馨风：奶油、蜜桃、薄荷、浅樱
+//   5. 整体配色为正版 SMB1 经典配色：蓝天、红砖、绿管、棕土
 
 const TILE = 16;        // 每格像素（逻辑尺寸，实际乘 scale）
 
-// 调色板：可爱温馨风 —— 奶油、蜜桃、薄荷、浅樱
+// 调色板：正版 SMB1 经典配色（红砖 / 绿管 / 蓝天 / 棕土）
 const PAL = {
-  sky0: '#FFE7EE',        // 天空顶部：浅樱粉
-  sky1: '#FFF7E8',        // 天空底部：奶油白
-  cloud: '#FFFFFF',
-  hill0: '#D8EBC8',
-  hill1: '#C3E2B2',
-  sun: '#FFE3A3',
-  ground: '#B9DCA8',      // 地面：薄荷绿
-  groundTop: '#DFF0CE',   // 地面顶部：奶油绿
-  brick: '#F0B48C',       // 砖块：蜜桃陶土
-  brickLine: 'rgba(176,112,80,0.42)',
-  question: '#FFD782',    // 问号砖：蜂蜜黄
-  questionDark: '#E2A245',
-  spike: '#B9A3C9',       // 尖刺：柔和薰衣草
-  spikeTip: '#F6EDFA',
-  pipe: '#9BD9B5',        // 管道：薄荷绿
-  pipeDark: '#69BE94',
-  pipeLight: '#C9F0DC',
-  ice: '#CFEFFF',
-  iceTop: '#F2FCFF',
-  flag: '#FF9DB6',
-  flagPole: '#C9A88F',
-  platform: '#F4C98F',
-  coin: '#FFCB5C',
-  coinDark: '#DFA02F',
-  playerA: '#FF8FA3',     // 玩家 1（蜜桃粉）
-  playerB: '#7FC8E8',     // 玩家 2（薄荷蓝）
-  playerSkin: '#FFE3C7',
-  enemy: '#D79A72',       // 走怪：奶咖色
-  enemyDark: '#A66E4C',
-  boss: '#A987C4',        // Boss：香芋紫
-  bossHurt: '#FF8C8C',
-  shadow: 'rgba(130,92,74,0.16)',
+  sky0: '#5C94FC',
+  sky1: '#9BD1FF',
+  ground: '#C84C0C',
+  groundTop: '#E89040',
+  brick: '#B5451B',
+  question: '#F8B800',
+  questionDark: '#C07800',
+  spike: '#7A7A7A',
+  pipe: '#00A800',
+  pipeDark: '#007800',
+  ice: '#A8D8F0',
+  iceTop: '#E0F4FF',
+  flag: '#00C000',
+  flagPole: '#888888',
+  platform: '#D8A050',
+  coin: '#FFD700',
+  coinDark: '#C8A000',
+  playerA: '#E52521',
+  playerB: '#1E90FF',
+  playerSkin: '#FFCC99',
+  enemy: '#8B4513',
+  enemyDark: '#5C2E0B',
+  boss: '#2C3E50',
+  bossHurt: '#E74C3C',
+  shadow: 'rgba(0,0,0,0.18)',
   tagBg: 'rgba(255,255,255,0.82)'
 };
 
@@ -89,38 +82,16 @@ function ensureBackground(cache, w, h) {
   c.fillStyle = g;
   c.fillRect(0, 0, w, h);
 
-  // 暖阳：右上角一团奶油色光晕
-  c.fillStyle = 'rgba(255,227,163,0.55)';
-  c.beginPath();
-  c.arc(w * 0.82, h * 0.16, Math.min(w, h) * 0.1, 0, Math.PI * 2);
-  c.fill();
-
-  // 远处的小山丘（薄荷绿，营造温馨的郊野感）
-  const hills = [[0.2, 0.24, PAL.hill0], [0.62, 0.3, PAL.hill1], [0.92, 0.2, PAL.hill0]];
-  for (let i = 0; i < hills.length; i++) {
-    const hx = hills[i][0] * w, hr = hills[i][1] * w, col = hills[i][2];
-    c.fillStyle = col;
-    c.beginPath();
-    c.arc(hx, h * 1.02, hr, Math.PI, 0);
-    c.fill();
-  }
-
-  // 云朵：白色软团 + 淡粉底影
-  const clouds = [[0.15, 0.18, 1.0], [0.45, 0.27, 0.7], [0.75, 0.13, 1.2], [0.92, 0.32, 0.8]];
+  // 正版 SMB1 的白云（确定性位置，不用随机）
+  c.fillStyle = 'rgba(255,255,255,0.88)';
+  const clouds = [[0.15, 0.15, 1.0], [0.45, 0.25, 0.7], [0.75, 0.12, 1.2], [0.9, 0.3, 0.8]];
   for (let i = 0; i < clouds.length; i++) {
     const cl = clouds[i];
-    const cx = cl[0] * w, cy = cl[1] * h, s = cl[2];
-    c.fillStyle = 'rgba(255,214,226,0.55)';
+    const cx = cl[0] * w, cy = cl[1] * h, cs = cl[2];
     c.beginPath();
-    c.arc(cx, cy + 4 * s, 15 * s, 0, Math.PI * 2);
-    c.arc(cx + 16 * s, cy - 2 * s, 12 * s, 0, Math.PI * 2);
-    c.arc(cx + 31 * s, cy + 4 * s, 14 * s, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = 'rgba(255,255,255,0.92)';
-    c.beginPath();
-    c.arc(cx, cy, 14 * s, 0, Math.PI * 2);
-    c.arc(cx + 16 * s, cy - 6 * s, 11 * s, 0, Math.PI * 2);
-    c.arc(cx + 30 * s, cy, 13 * s, 0, Math.PI * 2);
+    c.arc(cx, cy, 14 * cs, 0, Math.PI * 2);
+    c.arc(cx + 16 * cs, cy - 6 * cs, 11 * cs, 0, Math.PI * 2);
+    c.arc(cx + 30 * cs, cy, 13 * cs, 0, Math.PI * 2);
     c.fill();
   }
   cache.canvas = bg;
@@ -142,10 +113,7 @@ function drawTile(ctx, ch, x, y, s) {
     case 'B':   // 砖块
       ctx.fillStyle = PAL.brick;
       ctx.fillRect(x, y, s, s);
-      // 奶油色高光，让砖块看起来软乎乎
-      ctx.fillStyle = 'rgba(255,246,232,0.55)';
-      ctx.fillRect(x + s * 0.08, y + s * 0.08, s * 0.84, s * 0.12);
-      ctx.strokeStyle = PAL.brickLine;
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
       ctx.beginPath();
@@ -155,12 +123,10 @@ function drawTile(ctx, ch, x, y, s) {
       ctx.moveTo(x + s * 0.75, y + s / 2); ctx.lineTo(x + s * 0.75, y + s);
       ctx.stroke();
       break;
-    case 'X':   // 硬砖（阶梯/城堡/顶棚）—— 奶油灰
-      ctx.fillStyle = '#DCCBB0';
+    case 'X':   // 硬砖（阶梯/城堡/顶棚）—— 砖纹但偏灰
+      ctx.fillStyle = '#9A7B5A';
       ctx.fillRect(x, y, s, s);
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.fillRect(x + s * 0.08, y + s * 0.08, s * 0.84, s * 0.1);
-      ctx.strokeStyle = 'rgba(150,120,90,0.45)';
+      ctx.strokeStyle = 'rgba(60,40,20,0.5)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
       ctx.beginPath();
@@ -170,23 +136,23 @@ function drawTile(ctx, ch, x, y, s) {
     case 'C':   // 多金币砖（金色发光边框）
       ctx.fillStyle = PAL.question;
       ctx.fillRect(x, y, s, s);
-      ctx.strokeStyle = '#FFF0BD';
+      ctx.strokeStyle = '#FFE86B';
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 1, y + 1, s - 2, s - 2);
       // 中间画个小金币
-      ctx.fillStyle = PAL.coinDark;
+      ctx.fillStyle = '#C8A000';
       ctx.beginPath();
       ctx.ellipse(x + s / 2, y + s / 2, s * 0.16, s * 0.22, 0, 0, Math.PI * 2);
       ctx.fill();
       break;
     case 'f':   // 旗杆底座
-      ctx.fillStyle = '#B99C84';
+      ctx.fillStyle = '#5A5A5A';
       ctx.fillRect(x + s * 0.35, y + s * 0.5, s * 0.3, s * 0.5);
       break;
-    case 'U':   // 顶过的空砖
-      ctx.fillStyle = '#DFC9AE';
+    case 'U':   // 顶过的空砖（正版是深色方块）
+      ctx.fillStyle = '#8B5A2B';
       ctx.fillRect(x, y, s, s);
-      ctx.strokeStyle = 'rgba(176,142,112,0.65)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 1.5, y + 1.5, s - 3, s - 3);
       break;
@@ -202,7 +168,7 @@ function drawTile(ctx, ch, x, y, s) {
       ctx.textBaseline = 'middle';
       ctx.fillText('?', x + s / 2, y + s / 2 + 1);
       break;
-    case 'S':   // 尖刺（柔和薰衣草 + 白色尖尖）
+    case 'S':   // 尖刺
       ctx.fillStyle = PAL.spike;
       const n = 3, w = s / n;
       for (let i = 0; i < n; i++) {
@@ -212,21 +178,14 @@ function drawTile(ctx, ch, x, y, s) {
         ctx.lineTo(x + (i + 1) * w, y + s);
         ctx.closePath();
         ctx.fill();
-        ctx.fillStyle = PAL.spikeTip;
-        ctx.beginPath();
-        ctx.arc(x + i * w + w / 2, y + s * 0.28, s * 0.045, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = PAL.spike;
       }
       break;
-    case 'P':   // 管道（薄荷绿 + 奶油高光）
+    case 'P':   // 管道
       ctx.fillStyle = PAL.pipe;
       ctx.fillRect(x, y, s, s);
-      ctx.fillStyle = PAL.pipeLight;
-      ctx.fillRect(x + s * 0.18, y, s * 0.18, s);
       ctx.fillStyle = PAL.pipeDark;
-      ctx.fillRect(x, y, s * 0.16, s);
-      ctx.fillRect(x + s * 0.84, y, s * 0.16, s);
+      ctx.fillRect(x, y, s * 0.2, s);
+      ctx.fillRect(x + s * 0.8, y, s * 0.2, s);
       break;
     case 'I':   // 冰面
       ctx.fillStyle = PAL.ice;
@@ -246,7 +205,7 @@ function drawTile(ctx, ch, x, y, s) {
       ctx.fillStyle = PAL.flagPole;
       ctx.fillRect(x + s * 0.45, y, s * 0.1, s);
       // 杆顶小球（只在最顶端那格画）
-      ctx.fillStyle = '#FFE38A';
+      ctx.fillStyle = '#FFD700';
       ctx.beginPath();
       ctx.arc(x + s * 0.5, y + s * 0.08, s * 0.12, 0, Math.PI * 2);
       ctx.fill();
@@ -386,11 +345,11 @@ function drawEnemy(ctx, e, x, y, s, time) {
   if (e.type === 'flyer') {
     // 飞行怪：椭圆身 + 翅膀
     const flap = Math.sin(time * 10 + e.phase) * 0.4 + 0.6;
-    ctx.fillStyle = '#E8A07C';
+    ctx.fillStyle = '#C0392B';
     ctx.beginPath();
     ctx.ellipse(x, y, s * 0.3, s * 0.24, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#F3BFA0';
+    ctx.fillStyle = '#E74C3C';
     ctx.beginPath();
     ctx.ellipse(x - s * 0.2, y - s * 0.1 * flap, s * 0.18, s * 0.1, -0.5, 0, Math.PI * 2);
     ctx.fill();
@@ -409,11 +368,11 @@ function drawEnemy(ctx, e, x, y, s, time) {
     // 壳状态：只画一个壳（静止壳 / 滑行壳）
     if (e.shell === 'shell' || e.shell === 'slide') {
       const spinning = e.shell === 'slide';
-      ctx.fillStyle = spinning ? '#5FB394' : '#8FD3B6';
+      ctx.fillStyle = spinning ? '#1E8449' : '#27AE60';
       ctx.beginPath();
       ctx.ellipse(x, y, s * 0.34, s * 0.3, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#3E8C6D';
+      ctx.strokeStyle = '#145A32';
       ctx.lineWidth = Math.max(1, s * 0.05);
       ctx.stroke();
       // 壳上的纹路（滑行时旋转感）
@@ -430,15 +389,15 @@ function drawEnemy(ctx, e, x, y, s, time) {
       return;
     }
     // 走路状态：壳 + 头
-    ctx.fillStyle = '#8FD3B6';
+    ctx.fillStyle = '#27AE60';
     ctx.beginPath();
     ctx.ellipse(x, y, s * 0.32, s * 0.28, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#5FB394';
+    ctx.fillStyle = '#1E8449';
     ctx.beginPath();
     ctx.ellipse(x + e.dir * s * 0.28, y - s * 0.05, s * 0.14, s * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#3E8C6D';
+    ctx.fillStyle = '#145A32';
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
       ctx.arc(x, y - s * 0.12 + i * s * 0.12, s * 0.08, 0, Math.PI * 2);
@@ -479,7 +438,7 @@ function drawBoss(ctx, boss, x, y, s) {
   ctx.closePath();
   ctx.fill();
   // 眼
-  ctx.fillStyle = '#FFE9A8';
+  ctx.fillStyle = '#FFE000';
   ctx.beginPath();
   ctx.arc(x - w * 0.18, y - h * 0.1, s * 0.14, 0, Math.PI * 2);
   ctx.arc(x + w * 0.18, y - h * 0.1, s * 0.14, 0, Math.PI * 2);
@@ -567,14 +526,14 @@ function drawFrame(ctx, opts) {
     const ix = (it.x - cam) * s, iy = (it.y - camY) * s;
     if (it.type === 'flower') {
       // 火焰花：橙色花瓣 + 白色花心 + 绿茎
-      ctx.strokeStyle = '#7CBF9A';
+      ctx.strokeStyle = '#27AE60';
       ctx.lineWidth = Math.max(2, s * 0.08);
       ctx.beginPath();
       ctx.moveTo(ix, iy + s * 0.1);
       ctx.lineTo(ix, iy + s * 0.32);
       ctx.stroke();
       // 花瓣（四个椭圆）
-      ctx.fillStyle = '#FFA07A';
+      ctx.fillStyle = '#FF6B00';
       for (let k = 0; k < 4; k++) {
         const ang = k * Math.PI / 2;
         ctx.beginPath();
@@ -589,7 +548,7 @@ function drawFrame(ctx, opts) {
       ctx.fill();
     } else {
       // 蘑菇：红伞白点 + 米色菌柄
-      ctx.fillStyle = '#FF8FA3';
+      ctx.fillStyle = '#E52521';
       ctx.beginPath();
       ctx.arc(ix, iy - s * 0.15, s * 0.3, Math.PI, 0);
       ctx.fill();
@@ -627,11 +586,11 @@ function drawFrame(ctx, opts) {
       if (f.x < cam - 1 || f.x > cam + viewW + 1) continue;
       const fx = (f.x - cam) * s, fy = (f.y - camY) * s;
       const r = f.fromPlayer ? s * 0.17 : s * 0.22;
-      ctx.fillStyle = f.fromPlayer ? '#FF9E6B' : '#E88FA0';
+      ctx.fillStyle = f.fromPlayer ? '#FF3B00' : '#B33A00';
       ctx.beginPath();
       ctx.arc(fx, fy, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = f.fromPlayer ? '#FFD9A8' : '#FFC0CB';
+      ctx.fillStyle = f.fromPlayer ? '#FFE86B' : '#FF9B4A';
       ctx.beginPath();
       ctx.arc(fx, fy, r * 0.5, 0, Math.PI * 2);
       ctx.fill();
@@ -679,7 +638,7 @@ function drawFrame(ctx, opts) {
     drawPlayerAvatar(ctx, p, px, py, s, time,
       sprites ? sprites[p.seat] : null);
 
-    // 名牌：奶油色小药丸，粉色描边，可爱一点
+    // 名牌：白色小药丸，玩家色描边
     const label = 'P' + p.seat;
     const color = p.seat === 1 ? PAL.playerA : PAL.playerB;
     const ty = py - s * 1.42;

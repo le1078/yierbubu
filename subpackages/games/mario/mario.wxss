@@ -1,7 +1,7 @@
 .page {
   min-height: 100vh;
   padding: 24rpx;
-  background: linear-gradient(180deg, #FFF7F0 0%, #FFF0F4 55%, #FFFDF8 100%);
+  background: #FFFDF8;
   box-sizing: border-box;
 }
 
@@ -215,7 +215,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: linear-gradient(135deg, #FFFFFF, #FFF7F4);
+  background: #FFFFFF;
   border-radius: 20rpx;
   padding: 10rpx 20rpx;
   box-shadow: 0 4rpx 16rpx rgba(74, 63, 58, 0.06);
@@ -315,9 +315,9 @@
 }
 
 .gcanvas {
-  border-radius: 20rpx;
-  box-shadow: 0 8rpx 24rpx rgba(200, 120, 140, 0.16);
-  background: #FFF7E8;
+  border-radius: 14rpx;
+  box-shadow: 0 6rpx 20rpx rgba(74, 63, 58, 0.14);
+  background: #5C94FC;
 }
 
 /* 虚拟按键：竖屏时在画面下方，左右分置（左手方向、右手动作） */
