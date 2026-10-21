@@ -120,6 +120,23 @@ console.log('\n[5] 自检工具能抓到「竖线终点写错」这类 bug');
   check(isDiag, '错误写法确实产生斜线段（dx=' + dx.toFixed(1) + ' dy=' + dy.toFixed(1) + '）');
 }
 
+
+// ============================================
+// [8] 象棋 lastMove 标记：必须含 ox/oy 偏移
+// ============================================
+console.log('\n[8] 象棋 lastMove 标记偏移（漏 ox/oy 会让标记整体错位）');
+{
+  const fs = require('fs');
+  const srcFile = fs.readFileSync(path.join(ROOT, 'subpackages/games/xiangqi/xiangqi.js'), 'utf8');
+  const lmIdx = srcFile.indexOf('this._lastMove && this._lastMove.from');
+  check(lmIdx !== -1, '象棋源码含 lastMove 绘制');
+  const seg = srcFile.slice(lmIdx, lmIdx + 800);
+  const arcs = seg.match(/ctx\.arc\([^)]*\)/g) || [];
+  const missingOx = arcs.filter(function(a) { return a.indexOf('ox +') === -1; });
+  check(arcs.length >= 2, 'lastMove 绘制有起点/终点两个 arc（实际 ' + arcs.length + '）');
+  check(missingOx.length === 0, '所有 lastMove arc 都含 ox 偏移（缺 ox 的 ' + missingOx.length + ' 个）');
+}
+
 console.log('\n========================================');
 console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 if (fail > 0) {

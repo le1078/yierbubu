@@ -192,7 +192,17 @@ Page({
         return;
       }
       if (this._destroyed) return;
-      let dpr = Math.min(C.SCRATCH_MAX_DPR, (wx.getWindowInfo && wx.getWindowInfo().pixelRatio) || 2);
+      // wx.getWindowInfo() 在部分时机返回 null，直接读 .pixelRatio 会崩
+      // （Cannot read properties of null (reading 'screenHeight')）
+      let dpr = 2;
+      try {
+        const info = wx.getWindowInfo ? wx.getWindowInfo() : null;
+        if (info && typeof info.pixelRatio === 'number' && info.pixelRatio > 0) {
+          dpr = Math.min(C.SCRATCH_MAX_DPR, info.pixelRatio);
+        }
+      } catch (e) {
+        dpr = 2;
+      }
       const cards = this.data.scratchCards.slice();
       this._scratch = [];
       let drewAny = false;

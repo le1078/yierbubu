@@ -72,8 +72,14 @@ Page({
 
   onReady() {
     // 计算棋盘尺寸：屏幕宽度 - 页面左右边距 24rpx*2 - board-wrap 内边距 20rpx*2
-    const sys = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
-    const w = sys.windowWidth;
+    // wx.getWindowInfo() 在部分时机返回 null，需防御
+    let sys = null;
+    try {
+      sys = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync();
+    } catch (e) {
+      sys = null;
+    }
+    const w = (sys && typeof sys.windowWidth === 'number' && sys.windowWidth > 0) ? sys.windowWidth : 375;
     // rpx 转 px：1rpx = w/750 px
     const rpx2px = w / 750;
     const boardW = Math.floor(w - 88 * rpx2px); // 24*2 + 20*2 = 88rpx
@@ -1022,7 +1028,16 @@ Page({
         return;
       }
       const canvas = info.node;
-      const dpr = Math.min((wx.getWindowInfo ? wx.getWindowInfo().pixelRatio : 2) || 2, 2);
+      // wx.getWindowInfo() 返回 null 时不能直接读 pixelRatio
+      let dpr = 2;
+      try {
+        const info2 = wx.getWindowInfo ? wx.getWindowInfo() : null;
+        if (info2 && typeof info2.pixelRatio === 'number' && info2.pixelRatio > 0) {
+          dpr = Math.min(info2.pixelRatio, 2);
+        }
+      } catch (e) {
+        dpr = 2;
+      }
       // 用 onReady 计算的 boardW 作为 canvas 实际尺寸，确保坐标基准一致
       const boardW = this.data.boardW;
       canvas.width = boardW * dpr;

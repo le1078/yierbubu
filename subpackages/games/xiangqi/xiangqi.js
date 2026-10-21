@@ -699,17 +699,18 @@ Page({
       }
     }
 
-    // 最后一手标记
+    // 最后一手标记（起点圈 + 终点圈）
+    // 必须加 ox/oy 偏移，与棋盘同一坐标系，否则标记会整体偏移一个 margin
     if (this._lastMove && this._lastMove.from !== undefined) {
       const fr = X.rowOf(this._lastMove.from), fc = X.colOf(this._lastMove.from);
       const tr = X.rowOf(this._lastMove.to), tc = X.colOf(this._lastMove.to);
       ctx.strokeStyle = '#2980B9';
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(fc * cell, fr * cell, radius * 0.9, 0, Math.PI * 2);
+      ctx.arc(ox + fc * cell, oy + fr * cell, radius * 0.9, 0, Math.PI * 2);
       ctx.stroke();
       ctx.beginPath();
-      ctx.arc(tc * cell, tr * cell, radius * 0.9, 0, Math.PI * 2);
+      ctx.arc(ox + tc * cell, oy + tr * cell, radius * 0.9, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
