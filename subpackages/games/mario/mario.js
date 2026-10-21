@@ -55,11 +55,7 @@ Page({
     p1Coins: 0,
     p2Coins: 0,
     timeLeft: 400,
-    landscape: false,
-    // 玩家形象用 <image> 叠加显示（canvas 不支持 GIF 动画，只能用 image 组件）
-    // 这里是两个 image 在画布坐标系里的位置（px），每帧更新
-    av1: { left: 0, top: 0, w: 40, h: 40, face: 1, hidden: false },
-    av2: { left: 0, top: 0, w: 40, h: 40, face: 1, hidden: false }
+    landscape: false
   },
 
   onLoad(options) {
@@ -519,52 +515,25 @@ Page({
       scale: this._scale,
       bgCache: this._bgCache || (this._bgCache = { canvas: null, w: 0, h: 0 }),
       cam,
-      camY
+      camY,
+      // 玩家形象帧（PNG）：直接画进 canvas，避免 <image> 被原生画布盖住
+      sprites: this._sprites
     });
-
-    // 玩家形象（GIF）：用 image 组件叠加，跟随摄像机位置
-    this._syncAvatars(cam, camY);
   },
 
-  // 把两个玩家的屏幕坐标同步给 wxml 的 <image>
-  // face: 1 = 朝右，-1 = 朝左。wxml 用 CSS 的 scaleX(-1) 翻转形象，
-  // 这样角色往左走时样子也朝左（正版马里奥就是这样）。
-  _syncAvatars(cam, camY) {
-    const s = this._scale;
-    let changed = false;
-    const out = { av1: this.data.av1, av2: this.data.av2 };
-    for (let i = 0; i < 2; i++) {
-      const p = this._players[i];
-      if (!p) continue;
-      // 形态越大形象越大（小 1.0 / 超级 1.35 / 火焰 1.35）
-      const scale = p.form === 0 ? 1.0 : 1.35;
-      const w = Math.max(30, Math.round(s * 1.15 * scale));
-      const x = Math.round((p.x - cam) * s - w / 2);
-      const y = Math.round((p.y - camY) * s - w * 0.92);
-      const key = i === 0 ? 'av1' : 'av2';
-      const cur = out[key];
-      if (cur.left !== x || cur.top !== y || cur.w !== w || cur.face !== p.face) {
-        out[key] = { left: x, top: y, w: w, h: w, face: p.face };
-        changed = true;
-      }
-    }
-    // 死亡/过关时隐藏；无敌时闪烁；火焰形态加光晕
-    for (let i = 0; i < 2; i++) {
-      const p = this._players[i];
-      const key = i === 0 ? 'av1' : 'av2';
-      let hidden = !p || p.state === 'dead';
-      // 无敌闪烁：每 0.1 秒交替显隐（正版受伤后就是这样闪）
-      if (p && p.hurtT > 0) {
-        hidden = hidden || (Math.floor(p.hurtT * 10) % 2 === 0);
-      }
-      const fire = !!(p && p.form === 2);
-      const dying = !!(p && p.state === 'dying');
-      if (out[key].hidden !== hidden || out[key].fire !== fire || out[key].dying !== dying) {
-        out[key] = Object.assign({}, out[key], { hidden: hidden, fire: fire, dying: dying });
-        changed = true;
-      }
-    }
-    if (changed) this.setData({ av1: out.av1, av2: out.av2 });
+  // 把两个玩家的 GIF 抽帧 PNG 载入为 canvas image。
+  // 图片异步加载，未就绪时渲染层会退回矢量小人，角色不会消失。
+  _loadSprites(canvas) {
+    if (this._sprites || !canvas || !canvas.createImage) return;
+    const make = (src) => {
+      const img = canvas.createImage();
+      img.src = src;
+      return img;
+    };
+    const a = [], b = [];
+    for (let i = 0; i < 2; i++) a.push(make('/subpackages/games/mario/img/avatar_a_' + i + '.png'));
+    for (let i = 0; i < 6; i++) b.push(make('/subpackages/games/mario/img/avatar_b_' + i + '.png'));
+    this._sprites = { 1: a, 2: b };
   },
 
   _checkEnd() {
@@ -738,6 +707,8 @@ Page({
       ctx.scale(dpr, dpr);
       this._canvas = canvas;
       this._ctx = ctx;
+      // 载入玩家形象帧（异步；未就绪时渲染层用矢量兜底）
+      this._loadSprites(canvas);
       // 每格像素与 viewW 必须同源（20 格宽）
       this._scale = cw / 15;
       log.d('[mario] canvas ' + cw + 'x' + ch + ' scale=' + this._scale.toFixed(2));

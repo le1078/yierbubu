@@ -163,8 +163,12 @@ node tools/wx_require_check.js    # 分包 require 相对路径（少写一级�
 node tools/gomoku_ai_test.js      # 五子棋 AI 27 项（含 AI vs AI 自我对局）
 node tools/xiangqi_logic_test.js  # 象棋规则 133 项
 node tools/xiangqi_ai_test.js     # 象棋 AI 22 项
-node tools/mario_logic_test.js    # 马里奥引擎 85 项（含双跑确定性）
+node tools/mario_logic_test.js    # 马里奥引擎 94 项（含双跑确定性）
 node tools/mario_sync_test.js     # 马里奥联机同步 25 项
+node tools/mario_level_test.js    # 马里奥关卡 12 项（含 5 关端到端通关）
+node tools/mario_mechanics_test.js # 马里奥机制 48 项
+node tools/mario_render_test.js   # 马里奥渲染 7 项（角色必须画出来）
+node tools/mario_page_check.js    # 页面-引擎一致性 14 项
 ```
 
 所有测试都是纯 node 可跑，不需要开微信开发者工具。

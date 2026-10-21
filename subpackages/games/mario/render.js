@@ -6,37 +6,46 @@
 //   1. 摄像机跟随玩家，只画视口内的瓦片（80 格宽的关卡不用全画）
 //   2. 静态背景（天空渐变 + 远景山）用离屏 canvas 缓存，尺寸与视口相同
 //   3. 瓦片按类型分色绘制，问号砖加「?」字，尖刺画三角
-//   4. 玩家/敌人/Boss 用矢量图形（圆 + 矩形）拼，零素材依赖
-//      —— 日后要换皮只需替换 drawPlayer/drawEnemy 里的贴图调用
+//   4. 玩家优先用 GIF 抽帧的 PNG 直接画进 canvas（图片未就绪时退回矢量小人）
+//   5. 整体配色为可爱温馨风：奶油、蜜桃、薄荷、浅樱
 
 const TILE = 16;        // 每格像素（逻辑尺寸，实际乘 scale）
 
-// 调色板（沿用项目粉色系做 UI，游戏内用经典马里奥配色）
+// 调色板：可爱温馨风 —— 奶油、蜜桃、薄荷、浅樱
 const PAL = {
-  sky0: '#5C94FC',
-  sky1: '#9BD1FF',
-  ground: '#C84C0C',
-  groundTop: '#E89040',
-  brick: '#B5451B',
-  question: '#F8B800',
-  questionDark: '#C07800',
-  spike: '#7A7A7A',
-  pipe: '#00A800',
-  pipeDark: '#007800',
-  ice: '#A8D8F0',
-  iceTop: '#E0F4FF',
-  flag: '#00C000',
-  flagPole: '#888888',
-  platform: '#D8A050',
-  coin: '#FFD700',
-  coinDark: '#C8A000',
-  playerA: '#E52521',     // 玩家 1（红）
-  playerB: '#1E90FF',     // 玩家 2（蓝）
-  playerSkin: '#FFCC99',
-  enemy: '#8B4513',
-  enemyDark: '#5C2E0B',
-  boss: '#2C3E50',
-  bossHurt: '#E74C3C'
+  sky0: '#FFE7EE',        // 天空顶部：浅樱粉
+  sky1: '#FFF7E8',        // 天空底部：奶油白
+  cloud: '#FFFFFF',
+  hill0: '#D8EBC8',
+  hill1: '#C3E2B2',
+  sun: '#FFE3A3',
+  ground: '#B9DCA8',      // 地面：薄荷绿
+  groundTop: '#DFF0CE',   // 地面顶部：奶油绿
+  brick: '#F0B48C',       // 砖块：蜜桃陶土
+  brickLine: 'rgba(176,112,80,0.42)',
+  question: '#FFD782',    // 问号砖：蜂蜜黄
+  questionDark: '#E2A245',
+  spike: '#B9A3C9',       // 尖刺：柔和薰衣草
+  spikeTip: '#F6EDFA',
+  pipe: '#9BD9B5',        // 管道：薄荷绿
+  pipeDark: '#69BE94',
+  pipeLight: '#C9F0DC',
+  ice: '#CFEFFF',
+  iceTop: '#F2FCFF',
+  flag: '#FF9DB6',
+  flagPole: '#C9A88F',
+  platform: '#F4C98F',
+  coin: '#FFCB5C',
+  coinDark: '#DFA02F',
+  playerA: '#FF8FA3',     // 玩家 1（蜜桃粉）
+  playerB: '#7FC8E8',     // 玩家 2（薄荷蓝）
+  playerSkin: '#FFE3C7',
+  enemy: '#D79A72',       // 走怪：奶咖色
+  enemyDark: '#A66E4C',
+  boss: '#A987C4',        // Boss：香芋紫
+  bossHurt: '#FF8C8C',
+  shadow: 'rgba(130,92,74,0.16)',
+  tagBg: 'rgba(255,255,255,0.82)'
 };
 
 /* ========== 摄像机 ========== */
@@ -79,11 +88,35 @@ function ensureBackground(cache, w, h) {
   g.addColorStop(1, PAL.sky1);
   c.fillStyle = g;
   c.fillRect(0, 0, w, h);
-  // 简单的云（确定性位置，不用随机）
-  c.fillStyle = 'rgba(255,255,255,0.85)';
-  const clouds = [[0.15, 0.15, 1.0], [0.45, 0.25, 0.7], [0.75, 0.12, 1.2], [0.9, 0.3, 0.8]];
-  for (const cl of clouds) {
+
+  // 暖阳：右上角一团奶油色光晕
+  c.fillStyle = 'rgba(255,227,163,0.55)';
+  c.beginPath();
+  c.arc(w * 0.82, h * 0.16, Math.min(w, h) * 0.1, 0, Math.PI * 2);
+  c.fill();
+
+  // 远处的小山丘（薄荷绿，营造温馨的郊野感）
+  const hills = [[0.2, 0.24, PAL.hill0], [0.62, 0.3, PAL.hill1], [0.92, 0.2, PAL.hill0]];
+  for (let i = 0; i < hills.length; i++) {
+    const hx = hills[i][0] * w, hr = hills[i][1] * w, col = hills[i][2];
+    c.fillStyle = col;
+    c.beginPath();
+    c.arc(hx, h * 1.02, hr, Math.PI, 0);
+    c.fill();
+  }
+
+  // 云朵：白色软团 + 淡粉底影
+  const clouds = [[0.15, 0.18, 1.0], [0.45, 0.27, 0.7], [0.75, 0.13, 1.2], [0.92, 0.32, 0.8]];
+  for (let i = 0; i < clouds.length; i++) {
+    const cl = clouds[i];
     const cx = cl[0] * w, cy = cl[1] * h, s = cl[2];
+    c.fillStyle = 'rgba(255,214,226,0.55)';
+    c.beginPath();
+    c.arc(cx, cy + 4 * s, 15 * s, 0, Math.PI * 2);
+    c.arc(cx + 16 * s, cy - 2 * s, 12 * s, 0, Math.PI * 2);
+    c.arc(cx + 31 * s, cy + 4 * s, 14 * s, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.92)';
     c.beginPath();
     c.arc(cx, cy, 14 * s, 0, Math.PI * 2);
     c.arc(cx + 16 * s, cy - 6 * s, 11 * s, 0, Math.PI * 2);
@@ -109,7 +142,10 @@ function drawTile(ctx, ch, x, y, s) {
     case 'B':   // 砖块
       ctx.fillStyle = PAL.brick;
       ctx.fillRect(x, y, s, s);
-      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      // 奶油色高光，让砖块看起来软乎乎
+      ctx.fillStyle = 'rgba(255,246,232,0.55)';
+      ctx.fillRect(x + s * 0.08, y + s * 0.08, s * 0.84, s * 0.12);
+      ctx.strokeStyle = PAL.brickLine;
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
       ctx.beginPath();
@@ -119,10 +155,12 @@ function drawTile(ctx, ch, x, y, s) {
       ctx.moveTo(x + s * 0.75, y + s / 2); ctx.lineTo(x + s * 0.75, y + s);
       ctx.stroke();
       break;
-    case 'X':   // 硬砖（阶梯/城堡/顶棚）—— 砖纹但偏灰
-      ctx.fillStyle = '#9A7B5A';
+    case 'X':   // 硬砖（阶梯/城堡/顶棚）—— 奶油灰
+      ctx.fillStyle = '#DCCBB0';
       ctx.fillRect(x, y, s, s);
-      ctx.strokeStyle = 'rgba(60,40,20,0.5)';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillRect(x + s * 0.08, y + s * 0.08, s * 0.84, s * 0.1);
+      ctx.strokeStyle = 'rgba(150,120,90,0.45)';
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
       ctx.beginPath();
@@ -132,23 +170,23 @@ function drawTile(ctx, ch, x, y, s) {
     case 'C':   // 多金币砖（金色发光边框）
       ctx.fillStyle = PAL.question;
       ctx.fillRect(x, y, s, s);
-      ctx.strokeStyle = '#FFE86B';
+      ctx.strokeStyle = '#FFF0BD';
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 1, y + 1, s - 2, s - 2);
       // 中间画个小金币
-      ctx.fillStyle = '#C8A000';
+      ctx.fillStyle = PAL.coinDark;
       ctx.beginPath();
       ctx.ellipse(x + s / 2, y + s / 2, s * 0.16, s * 0.22, 0, 0, Math.PI * 2);
       ctx.fill();
       break;
     case 'f':   // 旗杆底座
-      ctx.fillStyle = '#5A5A5A';
+      ctx.fillStyle = '#B99C84';
       ctx.fillRect(x + s * 0.35, y + s * 0.5, s * 0.3, s * 0.5);
       break;
-    case 'U':   // 顶过的空砖（正版是深色方块）
-      ctx.fillStyle = '#8B5A2B';
+    case 'U':   // 顶过的空砖
+      ctx.fillStyle = '#DFC9AE';
       ctx.fillRect(x, y, s, s);
-      ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+      ctx.strokeStyle = 'rgba(176,142,112,0.65)';
       ctx.lineWidth = 2;
       ctx.strokeRect(x + 1.5, y + 1.5, s - 3, s - 3);
       break;
@@ -164,7 +202,7 @@ function drawTile(ctx, ch, x, y, s) {
       ctx.textBaseline = 'middle';
       ctx.fillText('?', x + s / 2, y + s / 2 + 1);
       break;
-    case 'S':   // 尖刺
+    case 'S':   // 尖刺（柔和薰衣草 + 白色尖尖）
       ctx.fillStyle = PAL.spike;
       const n = 3, w = s / n;
       for (let i = 0; i < n; i++) {
@@ -174,14 +212,21 @@ function drawTile(ctx, ch, x, y, s) {
         ctx.lineTo(x + (i + 1) * w, y + s);
         ctx.closePath();
         ctx.fill();
+        ctx.fillStyle = PAL.spikeTip;
+        ctx.beginPath();
+        ctx.arc(x + i * w + w / 2, y + s * 0.28, s * 0.045, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = PAL.spike;
       }
       break;
-    case 'P':   // 管道
+    case 'P':   // 管道（薄荷绿 + 奶油高光）
       ctx.fillStyle = PAL.pipe;
       ctx.fillRect(x, y, s, s);
+      ctx.fillStyle = PAL.pipeLight;
+      ctx.fillRect(x + s * 0.18, y, s * 0.18, s);
       ctx.fillStyle = PAL.pipeDark;
-      ctx.fillRect(x, y, s * 0.2, s);
-      ctx.fillRect(x + s * 0.8, y, s * 0.2, s);
+      ctx.fillRect(x, y, s * 0.16, s);
+      ctx.fillRect(x + s * 0.84, y, s * 0.16, s);
       break;
     case 'I':   // 冰面
       ctx.fillStyle = PAL.ice;
@@ -201,7 +246,7 @@ function drawTile(ctx, ch, x, y, s) {
       ctx.fillStyle = PAL.flagPole;
       ctx.fillRect(x + s * 0.45, y, s * 0.1, s);
       // 杆顶小球（只在最顶端那格画）
-      ctx.fillStyle = '#FFD700';
+      ctx.fillStyle = '#FFE38A';
       ctx.beginPath();
       ctx.arc(x + s * 0.5, y + s * 0.08, s * 0.12, 0, Math.PI * 2);
       ctx.fill();
@@ -213,58 +258,127 @@ function drawTile(ctx, ch, x, y, s) {
 
 /* ========== 角色 ========== */
 
-// 玩家：圆头 + 身体 + 腿，seat 决定颜色
+// 玩家（矢量兜底）：圆滚滚的小动物，座位 1 是奶咖小熊，座位 2 是薄荷熊猫
 function drawPlayer(ctx, p, x, y, s, time) {
   const color = p.seat === 1 ? PAL.playerA : PAL.playerB;
-  // 形态：0 小 / 1 超级 / 2 火焰（火焰形态用白色上衣）
   const form = p.form !== undefined ? p.form : (p.big ? 1 : 0);
-  const big = form !== 0 ? 1.25 : 1;
+  const big = form !== 0 ? 1.28 : 1;
   const isFire = form === 2;
-  const bodyH = s * 0.55 * big;
-  const headR = s * 0.28 * big;
+  const bodyH = s * 0.5 * big;
+  const headR = s * 0.3 * big;
 
   // 受伤闪烁
   if (p.hurtT > 0 && Math.floor(p.hurtT * 12) % 2 === 0) return;
 
-  // 腿（走路时交替）
-  const walking = Math.abs(p.vx) > 0.5 && p.onGround;
-  const legPhase = walking ? Math.sin(time * 14) : 0;
-  ctx.strokeStyle = '#3A2A1A';
-  ctx.lineWidth = Math.max(2, s * 0.1);
+  // 落地阴影
+  ctx.fillStyle = PAL.shadow;
   ctx.beginPath();
-  ctx.moveTo(x - s * 0.12, y - bodyH);
-  ctx.lineTo(x - s * 0.12 + legPhase * s * 0.14, y);
-  ctx.moveTo(x + s * 0.12, y - bodyH);
-  ctx.lineTo(x + s * 0.12 - legPhase * s * 0.14, y);
+  ctx.ellipse(x, y, s * 0.3 * big, s * 0.1 * big, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 走路时轻微上下浮动
+  const walking = Math.abs(p.vx) > 0.5 && p.onGround;
+  const bob = walking ? Math.abs(Math.sin(time * 10)) * s * 0.04 : 0;
+  const by = y - bob;
+
+  // 腿
+  const legPhase = walking ? Math.sin(time * 12) : 0;
+  ctx.strokeStyle = '#8A6A58';
+  ctx.lineWidth = Math.max(2, s * 0.09);
+  ctx.beginPath();
+  ctx.moveTo(x - s * 0.11, by - bodyH * 0.35);
+  ctx.lineTo(x - s * 0.11 + legPhase * s * 0.1, by);
+  ctx.moveTo(x + s * 0.11, by - bodyH * 0.35);
+  ctx.lineTo(x + s * 0.11 - legPhase * s * 0.1, by);
   ctx.stroke();
 
-  // 身体（火焰形态是白底红纹）
-  ctx.fillStyle = isFire ? '#FFFFFF' : color;
-  ctx.fillRect(x - s * 0.26 * big, y - bodyH - headR * 1.6, s * 0.52 * big, bodyH + headR * 0.4);
+  // 身体（火焰形态是奶油白 + 粉色围兜）
+  ctx.fillStyle = isFire ? '#FFF8EE' : color;
+  ctx.beginPath();
+  ctx.ellipse(x, by - bodyH * 0.6, s * 0.26 * big, bodyH * 0.62, 0, 0, Math.PI * 2);
+  ctx.fill();
   if (isFire) {
-    ctx.strokeStyle = PAL.playerA;
-    ctx.lineWidth = Math.max(1, s * 0.06);
-    ctx.strokeRect(x - s * 0.26 * big, y - bodyH - headR * 1.6, s * 0.52 * big, bodyH + headR * 0.4);
+    ctx.fillStyle = PAL.playerA;
+    ctx.beginPath();
+    ctx.ellipse(x, by - bodyH * 0.55, s * 0.17 * big, bodyH * 0.26, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  // 头
-  ctx.fillStyle = PAL.playerSkin;
-  ctx.beginPath();
-  ctx.arc(x, y - bodyH - headR * 1.5, headR, 0, Math.PI * 2);
-  ctx.fill();
-
-  // 帽子（朝向前方）
+  // 耳朵
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.arc(x, y - bodyH - headR * 1.6, headR, Math.PI, 0);
+  ctx.arc(x - headR * 0.62, by - bodyH - headR * 1.55, headR * 0.36, 0, Math.PI * 2);
+  ctx.arc(x + headR * 0.62, by - bodyH - headR * 1.55, headR * 0.36, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillRect(x + (p.face > 0 ? 0 : -s * 0.3), y - bodyH - headR * 1.7, s * 0.3, headR * 0.35);
+  ctx.fillStyle = 'rgba(255,220,210,0.75)';
+  ctx.beginPath();
+  ctx.arc(x - headR * 0.62, by - bodyH - headR * 1.55, headR * 0.18, 0, Math.PI * 2);
+  ctx.arc(x + headR * 0.62, by - bodyH - headR * 1.55, headR * 0.18, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 头
+  ctx.fillStyle = isFire ? '#FFF8EE' : PAL.playerSkin;
+  ctx.beginPath();
+  ctx.arc(x, by - bodyH - headR * 1.15, headR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 腮红
+  ctx.fillStyle = 'rgba(255,150,170,0.45)';
+  ctx.beginPath();
+  ctx.arc(x - headR * 0.58, by - bodyH - headR * 0.95, headR * 0.18, 0, Math.PI * 2);
+  ctx.arc(x + headR * 0.58, by - bodyH - headR * 0.95, headR * 0.18, 0, Math.PI * 2);
+  ctx.fill();
 
   // 眼睛
-  ctx.fillStyle = '#1A1A1A';
+  ctx.fillStyle = '#5A4038';
   ctx.beginPath();
-  ctx.arc(x + p.face * headR * 0.35, y - bodyH - headR * 1.45, headR * 0.13, 0, Math.PI * 2);
+  ctx.arc(x + p.face * headR * 0.32, by - bodyH - headR * 1.2, headR * 0.11, 0, Math.PI * 2);
+  ctx.arc(x - p.face * headR * 0.18, by - bodyH - headR * 1.2, headR * 0.11, 0, Math.PI * 2);
   ctx.fill();
+  // 高光
+  ctx.fillStyle = '#FFFFFF';
+  ctx.beginPath();
+  ctx.arc(x + p.face * headR * 0.35, by - bodyH - headR * 1.24, headR * 0.04, 0, Math.PI * 2);
+  ctx.arc(x - p.face * headR * 0.15, by - bodyH - headR * 1.24, headR * 0.04, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// 玩家形象：优先画 GIF 抽取出来的 PNG 帧（保留项目的小熊/熊猫形象），
+// 图片还没加载完时退回上面的矢量小人，保证角色永远不会消失。
+function drawPlayerAvatar(ctx, p, x, y, s, time, frames) {
+  if (p.hurtT > 0 && Math.floor(p.hurtT * 12) % 2 === 0) return;
+  const big = p.form !== 0;
+  const box = s * (big ? 1.7 : 1.3);
+
+  const img = frames && frames.length ? frames[0] : null;
+  if (!img || !img.width) {
+    drawPlayer(ctx, p, x, y, s, time);
+    return;
+  }
+
+  // 落地阴影
+  ctx.fillStyle = PAL.shadow;
+  ctx.beginPath();
+  ctx.ellipse(x, y, s * (big ? 0.4 : 0.32), s * 0.11, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 走路时逐帧播放，跳跃时停在第一帧
+  const walking = Math.abs(p.vx) > 0.4 && p.onGround;
+  let fi = walking ? Math.floor(time * 8) % frames.length : 0;
+  const frame = frames[fi] && frames[fi].width ? frames[fi] : img;
+
+  const bob = walking ? Math.abs(Math.sin(time * 8)) * s * 0.05 : 0;
+  const tilt = !p.onGround ? (p.vy < 0 ? -0.06 : 0.06) : 0;
+  // 素材是方形透明背景，内容底边并不在 100% 处：
+  // 小熊在 84%、熊猫在 94%，按这个比例把脚底对齐地面，避免悬空。
+  const footRatio = p.seat === 1 ? 0.84 : 0.94;
+
+  ctx.save();
+  ctx.translate(x, y - bob);
+  if (p.face < 0) ctx.scale(-1, 1);
+  ctx.rotate(tilt);
+  ctx.drawImage(frame, -box / 2, -box + box * (1 - footRatio), box, box);
+  ctx.restore();
 }
 
 // 敌人
@@ -272,11 +386,11 @@ function drawEnemy(ctx, e, x, y, s, time) {
   if (e.type === 'flyer') {
     // 飞行怪：椭圆身 + 翅膀
     const flap = Math.sin(time * 10 + e.phase) * 0.4 + 0.6;
-    ctx.fillStyle = '#C0392B';
+    ctx.fillStyle = '#E8A07C';
     ctx.beginPath();
     ctx.ellipse(x, y, s * 0.3, s * 0.24, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#E74C3C';
+    ctx.fillStyle = '#F3BFA0';
     ctx.beginPath();
     ctx.ellipse(x - s * 0.2, y - s * 0.1 * flap, s * 0.18, s * 0.1, -0.5, 0, Math.PI * 2);
     ctx.fill();
@@ -295,11 +409,11 @@ function drawEnemy(ctx, e, x, y, s, time) {
     // 壳状态：只画一个壳（静止壳 / 滑行壳）
     if (e.shell === 'shell' || e.shell === 'slide') {
       const spinning = e.shell === 'slide';
-      ctx.fillStyle = spinning ? '#1E8449' : '#27AE60';
+      ctx.fillStyle = spinning ? '#5FB394' : '#8FD3B6';
       ctx.beginPath();
       ctx.ellipse(x, y, s * 0.34, s * 0.3, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#145A32';
+      ctx.strokeStyle = '#3E8C6D';
       ctx.lineWidth = Math.max(1, s * 0.05);
       ctx.stroke();
       // 壳上的纹路（滑行时旋转感）
@@ -316,15 +430,15 @@ function drawEnemy(ctx, e, x, y, s, time) {
       return;
     }
     // 走路状态：壳 + 头
-    ctx.fillStyle = '#27AE60';
+    ctx.fillStyle = '#8FD3B6';
     ctx.beginPath();
     ctx.ellipse(x, y, s * 0.32, s * 0.28, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#1E8449';
+    ctx.fillStyle = '#5FB394';
     ctx.beginPath();
     ctx.ellipse(x + e.dir * s * 0.28, y - s * 0.05, s * 0.14, s * 0.12, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#145A32';
+    ctx.fillStyle = '#3E8C6D';
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
       ctx.arc(x, y - s * 0.12 + i * s * 0.12, s * 0.08, 0, Math.PI * 2);
@@ -365,7 +479,7 @@ function drawBoss(ctx, boss, x, y, s) {
   ctx.closePath();
   ctx.fill();
   // 眼
-  ctx.fillStyle = '#FFE000';
+  ctx.fillStyle = '#FFE9A8';
   ctx.beginPath();
   ctx.arc(x - w * 0.18, y - h * 0.1, s * 0.14, 0, Math.PI * 2);
   ctx.arc(x + w * 0.18, y - h * 0.1, s * 0.14, 0, Math.PI * 2);
@@ -395,6 +509,7 @@ function drawFrame(ctx, opts) {
   const level = opts.level;
   const players = opts.players;
   const s = opts.scale;                       // 每格像素
+  const time = opts.time || 0;                // 动画时钟（秒）
   const viewW = opts.viewW / s;               // 视口宽（格）
   const viewH = opts.viewH / s;               // 视口高（格）
   const bg = ensureBackground(opts.bgCache, opts.viewW, opts.viewH);
@@ -452,14 +567,14 @@ function drawFrame(ctx, opts) {
     const ix = (it.x - cam) * s, iy = (it.y - camY) * s;
     if (it.type === 'flower') {
       // 火焰花：橙色花瓣 + 白色花心 + 绿茎
-      ctx.strokeStyle = '#27AE60';
+      ctx.strokeStyle = '#7CBF9A';
       ctx.lineWidth = Math.max(2, s * 0.08);
       ctx.beginPath();
       ctx.moveTo(ix, iy + s * 0.1);
       ctx.lineTo(ix, iy + s * 0.32);
       ctx.stroke();
       // 花瓣（四个椭圆）
-      ctx.fillStyle = '#FF6B00';
+      ctx.fillStyle = '#FFA07A';
       for (let k = 0; k < 4; k++) {
         const ang = k * Math.PI / 2;
         ctx.beginPath();
@@ -474,7 +589,7 @@ function drawFrame(ctx, opts) {
       ctx.fill();
     } else {
       // 蘑菇：红伞白点 + 米色菌柄
-      ctx.fillStyle = '#E52521';
+      ctx.fillStyle = '#FF8FA3';
       ctx.beginPath();
       ctx.arc(ix, iy - s * 0.15, s * 0.3, Math.PI, 0);
       ctx.fill();
@@ -512,11 +627,11 @@ function drawFrame(ctx, opts) {
       if (f.x < cam - 1 || f.x > cam + viewW + 1) continue;
       const fx = (f.x - cam) * s, fy = (f.y - camY) * s;
       const r = f.fromPlayer ? s * 0.17 : s * 0.22;
-      ctx.fillStyle = f.fromPlayer ? '#FF3B00' : '#B33A00';
+      ctx.fillStyle = f.fromPlayer ? '#FF9E6B' : '#E88FA0';
       ctx.beginPath();
       ctx.arc(fx, fy, r, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = f.fromPlayer ? '#FFE86B' : '#FF9B4A';
+      ctx.fillStyle = f.fromPlayer ? '#FFD9A8' : '#FFC0CB';
       ctx.beginPath();
       ctx.arc(fx, fy, r * 0.5, 0, Math.PI * 2);
       ctx.fill();
@@ -551,23 +666,44 @@ function drawFrame(ctx, opts) {
     drawBoss(ctx, level.boss, (level.boss.x - cam) * s, (level.boss.y - camY) * s, s);
   }
 
-  // 玩家本体由 <image> 组件叠加绘制（GIF 形象，canvas 不支持 GIF 动画）。
-  // 这里只画名牌和状态标记，位置与 image 组件一致。
+  // 玩家：优先用 GIF 抽取的 PNG 帧直接画在 canvas 上。
+  // 之前用 <image> 叠加在 canvas 上，在部分基础库/开发者工具里会被
+  // 原生 canvas 盖住（只看得见名牌，看不到角色）——画进 canvas 最稳。
+  const sprites = opts.sprites || null;
   for (const p of players) {
     if (p.state === 'dead') continue;
     if (p.x < cam - 2 || p.x > cam + viewW + 2) continue;
-    // 名牌
-    ctx.fillStyle = p.seat === 1 ? PAL.playerA : PAL.playerB;
-    ctx.font = 'bold ' + Math.floor(s * 0.42) + 'px sans-serif';
+    const px = (p.x - cam) * s;
+    const py = (p.y - camY) * s;
+
+    drawPlayerAvatar(ctx, p, px, py, s, time,
+      sprites ? sprites[p.seat] : null);
+
+    // 名牌：奶油色小药丸，粉色描边，可爱一点
+    const label = 'P' + p.seat;
+    const color = p.seat === 1 ? PAL.playerA : PAL.playerB;
+    const ty = py - s * 1.42;
+    const pw = s * 0.82, ph = s * 0.46, r = ph / 2;
+    ctx.fillStyle = PAL.tagBg;
+    ctx.beginPath();
+    ctx.moveTo(px - pw / 2 + r, ty - ph / 2);
+    ctx.lineTo(px + pw / 2 - r, ty - ph / 2);
+    ctx.arc(px + pw / 2 - r, ty, r, -Math.PI / 2, Math.PI / 2);
+    ctx.lineTo(px - pw / 2 + r, ty + ph / 2);
+    ctx.arc(px - pw / 2 + r, ty, r, Math.PI / 2, -Math.PI / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.font = 'bold ' + Math.floor(s * 0.34) + 'px sans-serif';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
-    ctx.fillText('P' + p.seat, (p.x - cam) * s, (p.y - camY) * s - s * 1.15);
-    // 变大时的光圈提示
-    // 火焰形态加一圈火光
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, px, ty + s * 0.02);
+
+    // 火焰形态加一圈暖光
     if (p.form === 2) {
       ctx.beginPath();
-      ctx.arc((p.x - cam) * s, (p.y - camY) * s - s * 0.55, s * 0.66, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,140,40,0.9)';
+      ctx.arc(px, py - s * 0.55, s * 0.66, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,170,90,0.85)';
       ctx.lineWidth = Math.max(2, s * 0.1);
       ctx.stroke();
     }
@@ -577,5 +713,5 @@ function drawFrame(ctx, opts) {
 module.exports = {
   PAL, TILE,
   cameraX, cameraY, ensureBackground, drawTile,
-  drawPlayer, drawEnemy, drawBoss, drawFrame
+  drawPlayer, drawPlayerAvatar, drawEnemy, drawBoss, drawFrame
 };

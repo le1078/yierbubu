@@ -79,13 +79,9 @@
           style="width: {{canvasW}}px; height: {{canvasH}}px;"
           disable-scroll="true"></canvas>
 
-        <!-- 玩家形象：canvas 不支持 GIF 动画，只能用 image 组件叠加。
-             位置由 JS 每帧同步（_syncAvatars）。face=-1 时水平翻转，
-             让角色朝左走时形象也朝左（正版马里奥的行为）。 -->
-        <image wx:if="{{!av1.hidden}}" class="avatar av1 {{av1.face < 0 ? 'flip' : ''}}" src="/subpackages/games/mario/img/avatar_a.gif" mode="aspectFit"
-          style="left: {{av1.left}}px; top: {{av1.top}}px; width: {{av1.w}}px; height: {{av1.h}}px;"/>
-        <image wx:if="{{!av2.hidden}}" class="avatar av2 {{av2.face < 0 ? 'flip' : ''}}" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"
-          style="left: {{av2.left}}px; top: {{av2.top}}px; width: {{av2.w}}px; height: {{av2.h}}px;"/>
+        <!-- 玩家形象直接画在 canvas 上（GIF 抽帧 PNG）。
+             不再用 <image> 叠加：部分基础库会把原生 canvas 盖在 image 上层，
+             表现为只看得见名牌、看不见角色。 -->
 
         <!-- 结算浮层 -->
         <view wx:if="{{stage === 'ended'}}" class="end-mask">
