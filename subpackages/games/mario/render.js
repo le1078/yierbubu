@@ -339,9 +339,10 @@ function drawFrame(ctx, opts) {
 
   // 摄像机：跟随 seat 1（host），合作模式下最直观。
   // x 和 y 都要跟随，否则纵向视口太短时地面/人物会画到画布外。
+  // 调用方可以传入已算好的 cam/camY（页面要同步 GIF 形象位置，用同一份值）
   const focus = players.find(p => p.state === 'alive') || players[0];
-  const cam = cameraX(level, focus.x, viewW);
-  const camY = cameraY(level, focus.y, viewH);
+  const cam = (opts.cam !== undefined) ? opts.cam : cameraX(level, focus.x, viewW);
+  const camY = (opts.camY !== undefined) ? opts.camY : cameraY(level, focus.y, viewH);
 
   // 背景
   if (bg) ctx.drawImage(bg, 0, 0, opts.viewW, opts.viewH);
@@ -439,17 +440,25 @@ function drawFrame(ctx, opts) {
     drawBoss(ctx, level.boss, (level.boss.x - cam) * s, (level.boss.y - camY) * s, s);
   }
 
-  // 玩家（最后画，压在最上层）
+  // 玩家本体由 <image> 组件叠加绘制（GIF 形象，canvas 不支持 GIF 动画）。
+  // 这里只画名牌和状态标记，位置与 image 组件一致。
   for (const p of players) {
     if (p.state === 'dead') continue;
     if (p.x < cam - 2 || p.x > cam + viewW + 2) continue;
-    drawPlayer(ctx, p, (p.x - cam) * s, (p.y - camY) * s, s, opts.time);
-    // 玩家名牌
+    // 名牌
     ctx.fillStyle = p.seat === 1 ? PAL.playerA : PAL.playerB;
     ctx.font = 'bold ' + Math.floor(s * 0.42) + 'px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
-    ctx.fillText('P' + p.seat, (p.x - cam) * s, (p.y - camY) * s - s * 1.0);
+    ctx.fillText('P' + p.seat, (p.x - cam) * s, (p.y - camY) * s - s * 1.15);
+    // 变大时的光圈提示
+    if (p.big) {
+      ctx.beginPath();
+      ctx.arc((p.x - cam) * s, (p.y - camY) * s - s * 0.5, s * 0.62, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,220,80,0.85)';
+      ctx.lineWidth = Math.max(2, s * 0.08);
+      ctx.stroke();
+    }
   }
 }
 

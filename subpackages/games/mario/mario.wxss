@@ -2,6 +2,7 @@
   min-height: 100vh;
   padding: 24rpx;
   background: #FFFDF8;
+  box-sizing: border-box;
 }
 
 /* ===== 菜单 ===== */
@@ -9,7 +10,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-top: 40rpx;
+  margin-top: 30rpx;
 }
 
 .menu-title {
@@ -26,10 +27,10 @@
 }
 
 .menu-card {
-  margin-top: 36rpx;
+  margin-top: 30rpx;
   background: #FFFFFF;
   border-radius: 28rpx;
-  padding: 32rpx 28rpx;
+  padding: 30rpx 28rpx;
   box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
 }
 
@@ -43,7 +44,7 @@
 .opt-row {
   display: flex;
   gap: 16rpx;
-  margin-bottom: 28rpx;
+  margin-bottom: 24rpx;
 }
 
 .opt {
@@ -51,7 +52,7 @@
   background: #FFF8F5;
   border: 2rpx solid #FCE8EF;
   border-radius: 20rpx;
-  padding: 18rpx 12rpx;
+  padding: 16rpx 12rpx;
   text-align: center;
 }
 
@@ -81,7 +82,7 @@
   text-align: center;
   font-size: 30rpx;
   font-weight: 600;
-  padding: 24rpx 0;
+  padding: 22rpx 0;
 }
 
 .big-btn:active { opacity: 0.85; }
@@ -95,14 +96,14 @@
 .big-btn.ghost {
   background: #FFF8F5;
   color: #A08A80;
-  margin-top: 20rpx;
+  margin-top: 18rpx;
 }
 
 .divider {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 28rpx 0 20rpx;
+  margin: 24rpx 0 18rpx;
   color: #C4B5AE;
   font-size: 24rpx;
 }
@@ -123,7 +124,7 @@
 
 .room-input {
   flex: 1;
-  height: 96rpx;
+  height: 88rpx;
   background: #FFF8F5;
   border: 2rpx solid #FCE8EF;
   border-radius: 999rpx;
@@ -136,16 +137,16 @@
   text-align: center;
   color: #C4B5AE;
   font-size: 22rpx;
-  margin-top: 24rpx;
+  margin-top: 20rpx;
   line-height: 1.7;
 }
 
 /* ===== 等待 ===== */
 .wait-card {
-  margin-top: 80rpx;
+  margin-top: 50rpx;
   background: #FFFFFF;
   border-radius: 28rpx;
-  padding: 48rpx 32rpx;
+  padding: 40rpx 32rpx;
   box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
   text-align: center;
 }
@@ -157,11 +158,11 @@
 }
 
 .wait-no {
-  font-size: 72rpx;
+  font-size: 68rpx;
   font-weight: 700;
   color: #E2547A;
   letter-spacing: 12rpx;
-  margin: 24rpx 0 12rpx;
+  margin: 20rpx 0 10rpx;
 }
 
 .wait-tip {
@@ -171,12 +172,12 @@
 
 .wait-mode {
   display: inline-block;
-  margin-top: 24rpx;
+  margin-top: 20rpx;
   background: #FFF0F4;
   color: #E2547A;
   font-size: 26rpx;
   font-weight: 600;
-  padding: 12rpx 28rpx;
+  padding: 10rpx 26rpx;
   border-radius: 999rpx;
 }
 
@@ -184,7 +185,7 @@
   display: flex;
   gap: 10rpx;
   justify-content: center;
-  margin-top: 40rpx;
+  margin-top: 32rpx;
 }
 
 .loading-dots .dot {
@@ -203,153 +204,114 @@
   30% { opacity: 1; }
 }
 
-/* ===== 对局 ===== */
-.bar {
+/* ===== 对局 HUD ===== */
+.hud {
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: #FFFFFF;
-  border-radius: 24rpx;
-  padding: 14rpx 20rpx;
+  border-radius: 20rpx;
+  padding: 10rpx 20rpx;
   box-shadow: 0 4rpx 16rpx rgba(74, 63, 58, 0.06);
 }
 
-.bar-side {
+.hud-side {
   display: flex;
   align-items: center;
-  gap: 8rpx;
-  min-width: 130rpx;
+  gap: 10rpx;
+  min-width: 180rpx;
 }
 
-.seat-dot {
-  width: 26rpx;
-  height: 26rpx;
+/* 玩家形象：用现有 GIF 素材 */
+.hud-avatar {
+  width: 54rpx;
+  height: 54rpx;
   border-radius: 50%;
+  background: #FFF6F8;
+  border: 2rpx solid #FCE8EF;
 }
 
-.seat-dot.p1 { background: #E52521; }
-.seat-dot.p2 { background: #1E90FF; }
-
-.seat-name {
-  font-size: 26rpx;
+.hud-name {
+  font-size: 24rpx;
   font-weight: 700;
   color: #6B4A52;
 }
 
-.seat-lives {
+.hud-lives {
   font-size: 22rpx;
   color: #A08A80;
 }
 
-.bar-mid { flex: 1; text-align: center; }
+.hud-mid { flex: 1; text-align: center; }
 
-.bar-status {
+.hud-status {
   font-size: 24rpx;
   color: #E2547A;
   font-weight: 600;
 }
 
-.bar-meta {
+.hud-meta {
   font-size: 20rpx;
   color: #A08A80;
   margin-top: 2rpx;
 }
 
-/* 游戏画面 */
+/* ===== 横屏主区：左画面 + 右按键 ===== */
+.stage-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  margin-top: 16rpx;
+}
+
 .stage {
   position: relative;
-  margin-top: 20rpx;
+  flex: 1;
   display: flex;
   justify-content: center;
 }
 
 .gcanvas {
-  border-radius: 16rpx;
+  border-radius: 14rpx;
   box-shadow: 0 6rpx 20rpx rgba(74, 63, 58, 0.14);
   background: #5C94FC;
 }
 
-/* 结算浮层 */
-.end-mask {
+/* 玩家形象（GIF 叠加层）：绝对定位在画布上，位置由 JS 每帧同步 */
+.avatar {
   position: absolute;
-  left: 0;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.45);
-  border-radius: 16rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
 }
 
-.end-card {
-  background: #FFFFFF;
-  border-radius: 28rpx;
-  padding: 40rpx 48rpx;
-  text-align: center;
-  min-width: 420rpx;
-}
-
-.end-text {
-  font-size: 38rpx;
-  font-weight: 700;
-  color: #E2547A;
-}
-
-.end-btns {
+/* 虚拟按键：游戏内展示，横屏时在画面右侧 */
+.pad {
+  width: 250rpx;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
-  margin-top: 28rpx;
-}
-
-.e-btn {
-  background: #FFF0F4;
-  color: #E2547A;
-  border-radius: 999rpx;
-  text-align: center;
-  font-size: 28rpx;
-  font-weight: 600;
-  padding: 20rpx 48rpx;
-}
-
-.e-btn.primary {
-  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
-  color: #FFFFFF;
-}
-
-.e-btn.ghost {
-  background: #FFF8F5;
-  color: #A08A80;
-}
-
-/* 虚拟按键 */
-.pad {
-  display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  margin-top: 24rpx;
-  padding: 0 8rpx;
+  align-items: center;
+  padding: 20rpx 0;
 }
 
-.pad-left, .pad-right {
+.pad-dpad, .pad-act {
   display: flex;
-  gap: 20rpx;
+  gap: 16rpx;
+  align-items: center;
 }
 
 .p-btn {
-  width: 110rpx;
-  height: 110rpx;
+  width: 96rpx;
+  height: 96rpx;
   border-radius: 50%;
   background: #FFFFFF;
   color: #E2547A;
-  font-size: 40rpx;
+  font-size: 38rpx;
   font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4rpx 14rpx rgba(74, 63, 58, 0.10);
+  box-shadow: 0 4rpx 14rpx rgba(74, 63, 58, 0.12);
   user-select: none;
 }
 
@@ -361,13 +323,67 @@
 .p-btn.jump {
   background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
   color: #FFFFFF;
-  width: 130rpx;
-  height: 130rpx;
-  font-size: 48rpx;
+  width: 110rpx;
+  height: 110rpx;
+  font-size: 44rpx;
 }
 
 .p-btn.run {
   background: #FFF8F5;
   color: #A08A80;
-  font-size: 36rpx;
+  font-size: 34rpx;
+}
+
+/* ===== 结算浮层 ===== */
+.end-mask {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.end-card {
+  background: #FFFFFF;
+  border-radius: 24rpx;
+  padding: 30rpx 40rpx;
+  text-align: center;
+  min-width: 380rpx;
+}
+
+.end-text {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #E2547A;
+}
+
+.end-btns {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 22rpx;
+}
+
+.e-btn {
+  background: #FFF0F4;
+  color: #E2547A;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 26rpx;
+  font-weight: 600;
+  padding: 16rpx 32rpx;
+}
+
+.e-btn.primary {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+}
+
+.e-btn.ghost {
+  background: #FFF8F5;
+  color: #A08A80;
 }

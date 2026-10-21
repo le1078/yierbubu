@@ -1,4 +1,6 @@
 {
   "navigationBarTitleText": "小笨马里奥",
-  "enableShareAppMessage": true
+  "enableShareAppMessage": true,
+  "pageOrientation": "landscape",
+  "navigationStyle": "custom"
 }

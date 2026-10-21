@@ -252,3 +252,323 @@
   background: #FFF8F5;
   color: #A08A80;
 }
+
+/* ===== 模式选择（从象棋页同步） ===== */
+/* ===== 模式选择 ===== */
+.menu-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 40rpx;
+}
+
+.menu-title {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: #E2547A;
+}
+
+.menu-sub {
+  text-align: center;
+  color: #A08A80;
+  font-size: 26rpx;
+  margin-top: 12rpx;
+}
+
+.menu-card {
+  margin-top: 40rpx;
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 28rpx;
+  box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
+}
+
+.opt {
+  display: flex;
+  align-items: center;
+  background: #FFF8F5;
+  border: 2rpx solid #FCE8EF;
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 20rpx;
+}
+
+.opt.primary {
+  border-color: #FF8FAB;
+  background: #FFF0F4;
+}
+
+.opt:active { opacity: 0.85; }
+
+.opt-icon {
+  font-size: 48rpx;
+  margin-right: 20rpx;
+}
+
+.opt-body { flex: 1; }
+
+.opt-name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #6B4A52;
+}
+
+.opt.primary .opt-name { color: #E2547A; }
+
+.opt-desc {
+  font-size: 24rpx;
+  color: #A08A80;
+  margin-top: 6rpx;
+}
+
+.menu-tip {
+  text-align: center;
+  color: #C4B5AE;
+  font-size: 22rpx;
+  margin-top: 24rpx;
+}
+
+
+/* ===== 联机大厅（从象棋页同步） ===== */
+/* ===== 联机大厅 ===== */
+.lobby-card {
+  margin-top: 48rpx;
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 40rpx 32rpx;
+  box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
+}
+
+.big-btn {
+  background: #FFF0F4;
+  color: #E2547A;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  padding: 24rpx 0;
+}
+
+.big-btn:active { opacity: 0.85; }
+
+.big-btn.primary {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+  box-shadow: 0 8rpx 20rpx rgba(255, 90, 95, 0.28);
+}
+
+.big-btn.ghost {
+  background: #FFF8F5;
+  color: #A08A80;
+  margin-top: 20rpx;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 36rpx 0 20rpx;
+  color: #C4B5AE;
+  font-size: 24rpx;
+}
+
+.divider::before, .divider::after {
+  content: '';
+  flex: 1;
+  height: 2rpx;
+  background: #F0E4DE;
+  margin: 0 16rpx;
+}
+
+.join-row {
+  display: flex;
+  gap: 20rpx;
+  align-items: stretch;
+}
+
+.room-input {
+  flex: 1;
+  height: 96rpx;
+  background: #FFF8F5;
+  border: 2rpx solid #FCE8EF;
+  border-radius: 999rpx;
+  padding: 0 32rpx;
+  font-size: 32rpx;
+  letter-spacing: 8rpx;
+}
+
+.hint {
+  color: #A08A80;
+  font-size: 22rpx;
+  margin-top: 24rpx;
+  line-height: 1.6;
+}
+
+
+/* ===== 等待（从象棋页同步） ===== */
+/* ===== 等待 ===== */
+.wait-card {
+  margin-top: 60rpx;
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 48rpx 32rpx;
+  box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
+  text-align: center;
+}
+
+.wait-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #6B4A52;
+}
+
+.wait-no {
+  font-size: 72rpx;
+  font-weight: 700;
+  color: #E2547A;
+  letter-spacing: 12rpx;
+  margin: 24rpx 0 12rpx;
+}
+
+.wait-tip {
+  font-size: 24rpx;
+  color: #A08A80;
+}
+
+.wait-side {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 40rpx;
+}
+
+.ws-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 140rpx;
+}
+
+.ws-item.dim { opacity: 0.5; }
+
+.ws-dot {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+}
+
+.ws-dot.red {
+  background: radial-gradient(circle at 35% 35%, #E74C3C, #922B21);
+}
+
+.ws-dot.black {
+  background: radial-gradient(circle at 35% 35%, #5D6D7E, #1B2631);
+}
+
+.ws-dot.placeholder {
+  background: #F0E4DE;
+  color: #A08A80;
+  font-size: 32rpx;
+  text-align: center;
+  line-height: 48rpx;
+}
+
+.ws-name {
+  font-size: 24rpx;
+  color: #6B4A52;
+  margin-top: 10rpx;
+  font-weight: 600;
+}
+
+.ws-vs {
+  font-size: 28rpx;
+  font-weight: 700;
+  color: #FF8FAB;
+  margin: 0 24rpx;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 10rpx;
+  justify-content: center;
+  margin-top: 40rpx;
+}
+
+.loading-dots .dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #FF8FAB;
+  animation: blink 1.2s infinite;
+}
+
+.loading-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes blink {
+  0%, 60%, 100% { opacity: 0.25; }
+  30% { opacity: 1; }
+}
+
+
+/* ===== 聊天（从象棋页同步） ===== */
+/* ===== 聊天 ===== */
+.chat-area {
+  margin-top: 20rpx;
+  background: #FFFFFF;
+  border-radius: 24rpx;
+  padding: 20rpx;
+  box-shadow: 0 4rpx 16rpx rgba(74, 63, 58, 0.06);
+}
+
+.chat-list {
+  max-height: 220rpx;
+}
+
+.chat-msg {
+  display: flex;
+  margin-bottom: 12rpx;
+}
+
+.chat-msg.mine { justify-content: flex-end; }
+
+.chat-bubble {
+  background: #FFF0F4;
+  color: #6B4A52;
+  font-size: 24rpx;
+  padding: 12rpx 20rpx;
+  border-radius: 20rpx;
+  max-width: 420rpx;
+  word-break: break-all;
+}
+
+.chat-msg.mine .chat-bubble {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 16rpx;
+  align-items: center;
+}
+
+.chat-input {
+  flex: 1;
+  height: 72rpx;
+  background: #FFF8F5;
+  border: 2rpx solid #FCE8EF;
+  border-radius: 999rpx;
+  padding: 0 24rpx;
+  font-size: 26rpx;
+}
+
+.chat-send {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+  font-size: 26rpx;
+  font-weight: 600;
+  padding: 14rpx 28rpx;
+  border-radius: 999rpx;
+}

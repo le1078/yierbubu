@@ -1,4 +1,4 @@
-<view class="page">
+<view class="page {{landscape ? 'land' : ''}}">
 
   <!-- ===== 菜单 ===== -->
   <view wx:if="{{stage === 'menu'}}" class="menu">
@@ -23,7 +23,7 @@
       <view class="big-btn primary" bindtap="createRoom">🌐 创建联机房间</view>
       <view class="divider"><text>或加入好友的房间</text></view>
       <view class="join-row">
-        <input class="room-input" type="number" maxlength="4" placeholder="输入4位房间号"
+        <input class="room-input" type="text" maxlength="4" placeholder="输入4位房间号"
           value="{{roomNoInput}}" bindinput="onRoomNoInput"/>
         <view class="big-btn" bindtap="joinRoom">加入</view>
       </view>
@@ -41,62 +41,70 @@
     <view class="wait-card">
       <view class="wait-title">房间已创建</view>
       <view class="wait-no">{{roomNo}}</view>
-      <view class="wait-tip">把房间号告诉好友，或点右上角转发邀请</view>
+      <view class="wait-tip">把房间号发给好朋友，或点右上角转发邀请</view>
       <view class="wait-mode">{{coop ? '🤝 合作闯关' : '🏁 竞速模式'}}</view>
       <view class="loading-dots"><text class="dot"></text><text class="dot"></text><text class="dot"></text></view>
       <view class="big-btn ghost" bindtap="leaveRoom">🚪 离开</view>
     </view>
   </view>
 
-  <!-- ===== 对局 ===== -->
+  <!-- ===== 对局（横屏：左画面 + 右按键） ===== -->
   <view wx:if="{{stage === 'playing' || stage === 'ended'}}" class="game">
 
-    <!-- 信息条 -->
-    <view class="bar">
-      <view class="bar-side">
-        <view class="seat-dot p1"></view>
-        <text class="seat-name">P1</text>
-        <text class="seat-lives">❤️{{p1Lives}}</text>
+    <view class="hud">
+      <view class="hud-side">
+        <image class="hud-avatar" src="/subpackages/games/mario/img/avatar_a.gif" mode="aspectFit"/>
+        <text class="hud-name">P1</text>
+        <text class="hud-lives">❤️{{p1Lives}}</text>
       </view>
-      <view class="bar-mid">
-        <view class="bar-status">{{statusText}}</view>
-        <view class="bar-meta">{{metaText}} · 同步 {{syncMs}}ms</view>
+      <view class="hud-mid">
+        <view class="hud-status">{{statusText}}</view>
+        <view class="hud-meta">{{metaText}} · 同步 {{syncMs}}ms</view>
       </view>
-      <view class="bar-side">
-        <view class="seat-dot p2"></view>
-        <text class="seat-name">P2</text>
-        <text class="seat-lives">❤️{{p2Lives}}</text>
+      <view class="hud-side">
+        <image class="hud-avatar" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"/>
+        <text class="hud-name">P2</text>
+        <text class="hud-lives">❤️{{p2Lives}}</text>
       </view>
     </view>
 
-    <!-- 游戏画面 -->
-    <view class="stage">
-      <canvas type="2d" id="gcanvas" class="gcanvas"
-        style="width: {{canvasW}}px; height: {{canvasH}}px;"
-        disable-scroll="true"></canvas>
+    <view class="stage-row">
+      <!-- 游戏画面 -->
+      <view class="stage">
+        <canvas type="2d" id="gcanvas" class="gcanvas"
+          style="width: {{canvasW}}px; height: {{canvasH}}px;"
+          disable-scroll="true"></canvas>
 
-      <!-- 结算浮层 -->
-      <view wx:if="{{stage === 'ended'}}" class="end-mask">
-        <view class="end-card">
-          <view class="end-text">{{winText}}</view>
-          <view class="end-btns">
-            <view class="e-btn primary" bindtap="nextLevel">下一关 →</view>
-            <view class="e-btn" bindtap="restart">重玩本关</view>
-            <view class="e-btn ghost" bindtap="leaveRoom">离开</view>
+        <!-- 玩家形象：canvas 不支持 GIF 动画，只能用 image 组件叠加。
+             位置由 JS 每帧同步（_syncAvatars），与画布同一坐标系 -->
+        <image class="avatar av1" src="/subpackages/games/mario/img/avatar_a.gif" mode="aspectFit"
+          style="left: {{av1.left}}px; top: {{av1.top}}px; width: {{av1.w}}px; height: {{av1.h}}px;"/>
+        <image class="avatar av2" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"
+          style="left: {{av2.left}}px; top: {{av2.top}}px; width: {{av2.w}}px; height: {{av2.h}}px;"/>
+
+        <!-- 结算浮层 -->
+        <view wx:if="{{stage === 'ended'}}" class="end-mask">
+          <view class="end-card">
+            <view class="end-text">{{winText}}</view>
+            <view class="end-btns">
+              <view class="e-btn primary" bindtap="nextLevel">下一关 →</view>
+              <view class="e-btn" bindtap="restart">重玩本关</view>
+              <view class="e-btn ghost" bindtap="leaveRoom">离开</view>
+            </view>
           </view>
         </view>
       </view>
-    </view>
 
-    <!-- 虚拟按键（联机时只控自己，单机时控 P1） -->
-    <view class="pad">
-      <view class="pad-left">
-        <view class="p-btn" data-k="l" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">◀</view>
-        <view class="p-btn" data-k="r" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">▶</view>
-      </view>
-      <view class="pad-right">
-        <view class="p-btn run" data-k="run" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">🏃</view>
-        <view class="p-btn jump" data-k="u" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">⤴</view>
+      <!-- 游戏内虚拟按键（画在游戏内，横屏时在右侧） -->
+      <view class="pad">
+        <view class="pad-dpad">
+          <view class="p-btn" data-k="l" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">◀</view>
+          <view class="p-btn" data-k="r" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">▶</view>
+        </view>
+        <view class="pad-act">
+          <view class="p-btn run" data-k="run" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">🏃</view>
+          <view class="p-btn jump" data-k="u" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">⤴</view>
+        </view>
       </view>
     </view>
 

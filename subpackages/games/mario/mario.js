@@ -49,7 +49,12 @@ Page({
     canvasW: 350,
     canvasH: 350,
     p1Lives: C.MARIO_LIVES,
-    p2Lives: C.MARIO_LIVES
+    p2Lives: C.MARIO_LIVES,
+    landscape: false,
+    // 玩家形象用 <image> 叠加显示（canvas 不支持 GIF 动画，只能用 image 组件）
+    // 这里是两个 image 在画布坐标系里的位置（px），每帧更新
+    av1: { left: 0, top: 0, w: 40, h: 40 },
+    av2: { left: 0, top: 0, w: 40, h: 40 }
   },
 
   onLoad(options) {
@@ -92,11 +97,16 @@ Page({
     // 用安全取值：wx.getWindowInfo 在部分时机返回 null，直接读会崩
     const w = roomkit.getWindowSize().windowWidth;
     const rpx2px = w / 750;
-    const canvasW = Math.floor(w - 48 * rpx2px);
-    // 视口高宽比 3:4，约 12.5 格高 × 15 格宽
-    const canvasH = Math.floor(canvasW * 0.62);
-    this._scale = canvasW / 15;      // 每格像素
-    this.setData({ canvasW, canvasH });
+    const wh = roomkit.getWindowSize().windowHeight;
+    // 横屏：画面在左、按键在右，画布宽度要减去右侧按键区
+    const landscape = wh > w;
+    const canvasW = landscape
+      ? Math.floor(w - 290 * rpx2px)      // 按键区 250rpx + 间距 20rpx + 边距
+      : Math.floor(w - 48 * rpx2px);
+    // 视口：20 格宽 × 11 格高（横屏能看到更远）
+    this._scale = canvasW / 20;
+    const canvasH = Math.floor(this._scale * 11);
+    this.setData({ canvasW, canvasH, landscape });
   },
 
   /* ========== 菜单 ========== */
@@ -460,6 +470,8 @@ Page({
   _render() {
     const ctx = this._ctx;
     if (!ctx || !this._level) return;
+    const cam = R.cameraX(this._level, (this._players[0] || { x: 0 }).x, this.data.canvasW / this._scale);
+    const camY = R.cameraY(this._level, (this._players[0] || { y: 0 }).y, this.data.canvasH / this._scale);
     R.drawFrame(ctx, {
       ctx,
       level: this._level,
@@ -468,8 +480,36 @@ Page({
       viewW: this.data.canvasW,
       viewH: this.data.canvasH,
       scale: this._scale,
-      bgCache: this._bgCache || (this._bgCache = { canvas: null, w: 0, h: 0 })
+      bgCache: this._bgCache || (this._bgCache = { canvas: null, w: 0, h: 0 }),
+      cam,
+      camY
     });
+
+    // 玩家形象（GIF）：用 image 组件叠加，跟随摄像机位置
+    this._syncAvatars(cam, camY);
+  },
+
+  // 把两个玩家的屏幕坐标同步给 wxml 的 <image>
+  _syncAvatars(cam, camY) {
+    const s = this._scale;
+    const out = { av1: this.data.av1, av2: this.data.av2 };
+    for (let i = 0; i < 2; i++) {
+      const p = this._players[i];
+      if (!p) continue;
+      const w = Math.max(30, Math.round(s * 1.1));
+      const x = Math.round((p.x - cam) * s - w / 2);
+      const y = Math.round((p.y - camY) * s - s * 1.0);
+      const key = i === 0 ? 'av1' : 'av2';
+      const cur = out[key];
+      if (cur.left !== x || cur.top !== y || cur.w !== w) {
+        out[key] = { left: x, top: y, w, h: w };
+      }
+    }
+    if (out.av1.left !== this.data.av1.left || out.av1.top !== this.data.av1.top ||
+        out.av2.left !== this.data.av2.left || out.av2.top !== this.data.av2.top ||
+        out.av1.w !== this.data.av1.w) {
+      this.setData({ av1: out.av1, av2: out.av2 });
+    }
   },
 
   _checkEnd() {
@@ -643,8 +683,8 @@ Page({
       ctx.scale(dpr, dpr);
       this._canvas = canvas;
       this._ctx = ctx;
-      // 每格像素与 viewW 必须同源
-      this._scale = cw / 15;
+      // 每格像素与 viewW 必须同源（20 格宽）
+      this._scale = cw / 20;
       log.d('[mario] canvas ' + cw + 'x' + ch + ' scale=' + this._scale.toFixed(2));
       this._canvasRetry = 0;
     });

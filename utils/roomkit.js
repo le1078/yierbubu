@@ -49,19 +49,29 @@ async function createRoom(collection, doc) {
 // 返回房间文档；找不到/不可加入时 toast 说明原因并返回 null。
 async function findJoinableRoom(collection, roomNo) {
   const db = wx.cloud.database();
-  if (!roomNo || roomNo.length !== 4) {
+  const raw = String(roomNo || '').replace(/\D/g, '');
+  if (!raw || raw.length > 4) {
     wx.showToast({ title: '请输入4位房间号', icon: 'none' });
     return null;
   }
+  // 房间号是 padStart(4,'0') 的 4 位字符串，用户可能输入 "42"（少了前导 0），
+  // 也可能输入 "0042"。两种都要能匹配到，所以按补零后的形式依次尝试。
+  const candidates = [];
+  const padded = raw.padStart(4, '0');
+  if (padded !== raw) candidates.push(padded);
+  candidates.push(raw);
   const since = new Date(Date.now() - C.ROOM_EXPIRE_MS);
-  const q = await db.collection(collection)
-    .where({ roomNo, createdAt: db.command.gte(since) })
-    .orderBy('createdAt', 'desc').limit(1).get();
-  if (!q.data || !q.data.length) {
+  let room = null;
+  for (const cand of candidates) {
+    const q = await db.collection(collection)
+      .where({ roomNo: cand, createdAt: db.command.gte(since) })
+      .orderBy('createdAt', 'desc').limit(1).get();
+    if (q.data && q.data.length) { room = q.data[0]; break; }
+  }
+  if (!room) {
     wx.showToast({ title: '房间不存在', icon: 'none' });
     return null;
   }
-  const room = q.data[0];
   if (room.status !== 'waiting') {
     wx.showToast({ title: '房间已开始或已结束', icon: 'none' });
     return null;

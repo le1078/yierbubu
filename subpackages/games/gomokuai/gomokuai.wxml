@@ -81,7 +81,7 @@
       <view class="big-btn primary" bindtap="createRoom">🏠 创建房间</view>
       <view class="divider"><text>或加入好友的房间</text></view>
       <view class="join-row">
-        <input class="room-input" type="number" maxlength="4" placeholder="输入4位房间号"
+        <input class="room-input" type="text" maxlength="4" placeholder="输入4位房间号"
           value="{{roomNoInput}}" bindinput="onRoomNoInput"/>
         <view class="big-btn" bindtap="joinRoom">加入</view>
       </view>

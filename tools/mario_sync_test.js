@@ -55,7 +55,8 @@ console.log('\n[1] 世界序列化');
   check(s.length < 2048, '世界序列化 < 2KB（云数据库单次写入安全）');
   check(w.p1 && w.p2, '双方状态都在');
   check(w.p1.x !== w.p2.x, '双方位置不同（未串位）');
-  check(Array.isArray(w.es) && w.es.length === 2, '敌人数组完整');
+  check(Array.isArray(w.es) && w.es.length === host.level.enemies.length,
+    '敌人数组完整（' + w.es.length + ' 个）');
   check(Array.isArray(w.cs) && w.cs.length <= 9, '金币数组不超总数');
 }
 

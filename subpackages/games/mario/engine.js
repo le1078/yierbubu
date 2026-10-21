@@ -96,8 +96,14 @@ function overlapsBox(x, y, w, h, col, row) {
 
 // 碰撞盒是否与任何实心瓦片重叠
 function boxHitsSolid(grid, x, y, w, h) {
-  const c0 = Math.floor(x), c1 = Math.floor(x + w - 0.0001);
-  const r0 = Math.floor(y), r1 = Math.floor(y + h - 0.0001);
+  // 边界约定（关键）：瓦片 row r 占据纵向区间 [r, r+1)。
+  // 碰撞盒 [y, y+h) 与之重叠的条件是 y < r+1 且 y+h > r，
+  // 因此行的取值范围是 ceil(y-1) .. ceil(y+h-1)-1。
+  // 早先直接用 floor(y) / floor(y+h)，导致"脚底正好等于地面行号"时
+  // 把脚下那一行也算作重叠 —— 玩家一落地就被地面挡住，站着不能动。
+  // （实测：第 2 关出生即卡死，x 完全不动）
+  const c0 = Math.floor(x + 0.0001), c1 = Math.floor(x + w - 0.0001);
+  const r0 = Math.ceil(y - 1 + 0.0001), r1 = Math.ceil(y + h - 1 - 0.0001);
   for (let r = r0; r <= r1; r++) {
     for (let c = c0; c <= c1; c++) {
       if (isSolid(grid, c, r)) return true;
@@ -229,8 +235,12 @@ function loadLevel(rows, spec) {
 function makePlayer(level, seat) {
   return {
     seat,
+    // 坐标约定：x 是中心，y 是脚底。
+    // start.row 表示「站立的地面行」——脚底恰好落在该行的上边界，
+    // 即 y = start.row。早先用 start.row + 0.5 会让玩家陷进地面半格，
+    // 结果卡住不能动（实测第 2 关出生即卡死）。
     x: level.start.col + 0.5,
-    y: level.start.row + 0.5,
+    y: level.start.row,
     w: 0.7, h: 0.9,
     vx: 0, vy: 0,
     face: 1,
@@ -245,7 +255,7 @@ function makePlayer(level, seat) {
     state: 'alive',         // alive | dying | dead | done
     deathT: 0,
     respawnX: level.start.col + 0.5,
-    respawnY: level.start.row + 0.5,
+    respawnY: level.start.row,
     finishT: 0
   };
 }
@@ -380,6 +390,20 @@ function stepPlayer(level, p, input, dt) {
     p.coyote = PHYS.COYOTE;
   } else {
     p.onGround = false;
+  }
+
+  // 检查点：经过就记录复活点
+  // （关卡 spec 的 checkpoints 一直定义了但引擎没实现，导致玩家掉坑后
+  //   只能回出生点重来，第 2 关这种连续小坑会变成无限循环）
+  if (level.checkpoints && p.state === 'alive') {
+    for (const cp of level.checkpoints) {
+      if (Math.abs(p.x - (cp.col + 0.5)) < 0.9 && Math.abs(p.y - (cp.row + 0.5)) < 2.0) {
+        p.respawnX = cp.col + 0.5;
+        // respawnY = cp.row（站立地面行，脚底 y）。用 cp.row + 0.5 会让玩家
+        // 复活时陷进地面半格，站着不能动 —— 实测第 2 关因此反复死在同一处。
+        p.respawnY = cp.row;
+      }
+    }
   }
 
   // 掉出地图
@@ -688,35 +712,41 @@ function resolveHazards(level, p) {
 // host/guest 模拟分叉。
 function hitHeadBlock(level, p) {
   const grid = level.grid;
-  // 头顶所在行：玩家盒顶再上移一点点
-  const headRow = Math.floor(p.y - p.h - 0.02);
+  // 头顶所在行：玩家盒顶再上移一点点。
+  // 向上撞到实心瓦片时，碰撞解算已把玩家停在"刚好接触"的位置，
+  // 头顶可能仍略低于砖块所在行（差值 < 1 格）。所以要向上多探 1 行，
+  // 否则会漏判 —— 实测问号砖在 row10、玩家顶到 row11 时就漏了。
+  const headY = p.y - p.h;
   const c0 = Math.floor(p.x - p.w / 2 + 0.02);
   const c1 = Math.floor(p.x + p.w / 2 - 0.02);
-  for (let c = c0; c <= c1; c++) {
-    if (!inGrid(grid, c, headRow)) continue;
-    const ch = grid[headRow][c];
-    if (ch !== T.QUESTION && ch !== T.BRICK) continue;
-    // 用过的砖：问号砖变普通砖，普通砖保留（不破坏砖块，保持简洁）
-    if (ch === T.QUESTION) {
-      grid[headRow][c] = T.BRICK;
-      // 确定性决定掉落物：按列号奇偶 + 行号，保证 host/guest 一致
-      const dropCoin = ((c + headRow) % 2 === 0);
-      if (dropCoin) {
-        // 直接给玩家加金币（免得再加一个飞出物实体，简化同步）
-        p.coins += 1;
-      } else {
-        // 掉一个蘑菇道具，位置在砖块正下方
-        level.items.push({
-          id: level.items.length,
-          type: 'mushroom',
-          x: c + 0.5, y: headRow + 1.5,
-          w: 0.7, h: 0.7,
-          vx: 1.2, vy: 0,
-          active: true
-        });
+  for (let rowOff = 0; rowOff <= 1; rowOff++) {
+    const headRow = Math.floor(headY - 0.02) - rowOff;
+    for (let c = c0; c <= c1; c++) {
+      if (!inGrid(grid, c, headRow)) continue;
+      const ch = grid[headRow][c];
+      if (ch !== T.QUESTION && ch !== T.BRICK) continue;
+      // 用过的砖：问号砖变普通砖，普通砖保留（不破坏砖块，保持简洁）
+      if (ch === T.QUESTION) {
+        grid[headRow][c] = T.BRICK;
+        // 确定性决定掉落物：按列号奇偶 + 行号，保证 host/guest 一致
+        const dropCoin = ((c + headRow) % 2 === 0);
+        if (dropCoin) {
+          // 直接给玩家加金币（免得再加一个飞出物实体，简化同步）
+          p.coins += 1;
+        } else {
+          // 掉一个蘑菇道具，位置在砖块正下方
+          level.items.push({
+            id: level.items.length,
+            type: 'mushroom',
+            x: c + 0.5, y: headRow + 1.5,
+            w: 0.7, h: 0.7,
+            vx: 1.2, vy: 0,
+            active: true
+          });
+        }
       }
+      return;   // 只顶一个
     }
-    break;   // 只顶一个
   }
 }
 

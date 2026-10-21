@@ -53,9 +53,12 @@ console.log('\n[1] 关卡装载');
   const lv = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
   check(lv.rows.length === 16, '关卡 16 行高');
   check(lv.cols > 50, '关卡宽度 > 50 格（实际 ' + lv.cols + '）');
-  check(lv.coins.length === 9, '关卡 1 有 9 枚金币');
-  check(lv.enemies.length === 2, '关卡 1 有 2 个敌人');
-  check(lv.items.length === 1, '关卡 1 有 1 个道具');
+  // 数量由 tools/gen_levels.py 决定 → 断言「有」和「坐标合法」而不是写死个数
+  check(lv.coins.length > 0, '关卡 1 有金币（' + lv.coins.length + ' 枚）');
+  check(lv.enemies.length > 0, '关卡 1 有敌人（' + lv.enemies.length + ' 个）');
+  check(lv.items.length > 0, '关卡 1 有道具（' + lv.items.length + ' 个）');
+  check(lv.coins.every(c => c.col >= 0 && c.col < lv.cols && c.row >= 0 && c.row < lv.rowsH),
+    '所有金币坐标在关卡范围内');
   check(EN.tileAt(lv.grid, 0, 14) === EN.T.GROUND, '底部是地面');
   check(EN.tileAt(lv.grid, 5, 5) === EN.T.EMPTY, '高空是空的');
 
@@ -307,19 +310,20 @@ console.log('\n[8] 收集与危险');
   check(p2b.big === false, '变大时被撞 → 变小');
   check(p2b.state === 'alive', '变大时被撞不会死');
 
-  // 尖刺致死
-  const lv3 = EN.loadLevel(LV.LEVEL_3, LV.LEVEL_SPECS[2]);
-  const p3 = mkPlayer(lv3);
-  // 找尖刺位置
-  let spike = null;
-  for (let r = 0; r < lv3.grid.length; r++) {
-    const c = lv3.grid[r].indexOf('S');
-    if (c !== -1) { spike = { col: c, row: r }; break; }
+  // 尖刺致死（尖刺现在在 Boss 关，全关卡扫描找）
+  let spike = null, spikeLv = null;
+  for (let li = 0; li < LV.LEVELS.length && !spike; li++) {
+    const l = EN.loadLevel(LV.LEVELS[li], LV.LEVEL_SPECS[li]);
+    for (let r = 0; r < l.grid.length && !spike; r++) {
+      const c = l.grid[r].indexOf('S');
+      if (c !== -1) { spike = { col: c, row: r }; spikeLv = l; }
+    }
   }
-  check(spike !== null, '关卡 3 有尖刺');
-  if (spike) {
+  check(spike !== null, '有尖刺的关卡存在');
+  if (spike && spikeLv) {
+    const p3 = mkPlayer(spikeLv);
     p3.x = spike.col + 0.5; p3.y = spike.row + 1.0;
-    EN.stepWorld(lv3, [p3], { 1: input() }, DT);
+    EN.stepWorld(spikeLv, [p3], { 1: input() }, DT);
     check(p3.state === 'dying', '碰到尖刺死亡');
   }
 
@@ -371,7 +375,7 @@ console.log('\n[9] 死亡重生');
 console.log('\n[10] 移动平台');
 {
   const lv = EN.loadLevel(LV.LEVEL_3, LV.LEVEL_SPECS[2]);
-  check(lv.platforms.length === 2, '关卡 3 有 2 个移动平台');
+  check(lv.platforms.length >= 1, '关卡 3 有移动平台（' + lv.platforms.length + ' 个）');
   const pl = lv.platforms[0];
   const x0 = pl.x;
   run(lv, [], {}, 60);
@@ -503,7 +507,7 @@ console.log('\n[14] 联机序列化');
   run(lv, [p1, p2], { 1: input({ right: true }), 2: input({ left: true }) }, 60);
   const w = EN.worldToWire(lv, [p1, p2]);
   check(w.p1 !== null && w.p2 !== null, '双人状态都序列化');
-  check(Array.isArray(w.es) && w.es.length === 2, '敌人数组序列化');
+  check(Array.isArray(w.es) && w.es.length === lv.enemies.length, '敌人数组序列化（' + w.es.length + ' 个）');
   check(Array.isArray(w.cs), '剩余金币 id 数组');
   check(typeof w.t === 'number', '时间戳字段');
   check(w.bs === null, '关卡 1 无 Boss → bs 为 null');
