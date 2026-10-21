@@ -325,10 +325,15 @@ Page({
       if (dx > 0.8 || dy > 0.8 || initial) {
         me.x = myW.x; me.y = myW.y;
         me.vx = myW.vx; me.vy = myW.vy;
-        me.big = !!myW.b;
         me.lives = myW.lv;
         me.coins = myW.cn;
         if (myW.st === 'dead' || myW.st === 'done') me.state = myW.st;
+      }
+      // 形态必须始终同步（不能只在拉回时同步，否则吃蘑菇对方看不到）。
+      // 用 setForm 而不仅是赋值：它同时更新碰撞盒高度 h。
+      const myForm = (myW.fm !== undefined) ? myW.fm : 0;
+      if (me.form !== myForm) {
+        EN.setForm(me, myForm);
       }
     }
     // 对方角色 + 世界实体：用权威值 + 插值目标
@@ -338,21 +343,27 @@ Page({
       const opp = this._players[oppIdx];
       opp._tx = oppW.x; opp._ty = oppW.y;
       opp.vx = oppW.vx; opp.vy = oppW.vy;
-      opp.big = !!oppW.b;
       opp.lives = oppW.lv;
       opp.coins = oppW.cn;
       opp.state = oppW.st === 'dead' ? 'dead' : (oppW.st === 'done' ? 'done' : 'alive');
+      const oppForm = (oppW.fm !== undefined) ? oppW.fm : 0;
+      if (opp.form !== oppForm) EN.setForm(opp, oppForm);
       if (initial) { opp.x = oppW.x; opp.y = oppW.y; }
     }
     // 敌人
     if (w.es && this._level.enemies) {
       for (const e of w.es) {
-        const eid = e[0], alive = e[1], ex = e[2], ey = e[3];
+        const eid = e[0], alive = e[1], ex = e[2], ey = e[3], shell = e[4];
         const en = this._level.enemies[eid];
         if (!en) continue;
         en._tx = ex; en._ty = ey;
         if (initial) { en.x = ex; en.y = ey; }
         if (!alive) en.alive = false;
+        // 乌龟壳状态也要同步（否则 guest 看到的是走路态）
+        if (shell && en.shell !== shell) {
+          en.shell = shell;
+          if (shell === 'shell') en.vx = 0;
+        }
       }
     }
     // 金币：以 host 为准，本地多吃的要吐回来（host 校验距离后才移除）

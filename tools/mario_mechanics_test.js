@@ -193,38 +193,28 @@ console.log('\n[5] 砖块与问号砖');
   EN.hitHeadBlock(lv2, p2);
   check(lv2.grid[12][5] === EN.T.EMPTY, '超级形态顶普通砖 → 砖碎');
 
-  // 问号砖：小形态出蘑菇
+  // 问号砖：小形态必出蘑菇（与正版一致，纯金币交给多金币砖 C）
   const lv3 = flat([[5, 12, '?']]);
   const p3 = mk(lv3);
-  p3.x = 5.5; p3.y = 14;
+  // 头顶要正好在砖下沿（row12 的砖下沿 y=13），这里直接摆到 y=13.9（h=0.9 → 头顶 13.0）
+  p3.x = 5.5; p3.y = 13.9;
   const itemsBefore = lv3.items.length;
   EN.hitHeadBlock(lv3, p3);
   check(lv3.grid[12][5] === EN.T.USED, '问号砖顶过 → 变空砖 U');
-  // 内容按列+行奇偶决定，可能出金币或道具
-  const gotItem = lv3.items.length > itemsBefore;
-  const gotCoin = p3.coins > 0;
-  check(gotItem || gotCoin, '问号砖出东西（' + (gotItem ? '道具' : '金币') + '）');
-  if (gotItem) {
-    check(lv3.items[itemsBefore].type === 'mushroom', '小形态出蘑菇');
-  }
+  check(lv3.items.length > itemsBefore, '问号砖必出道具');
+  check(lv3.items[itemsBefore].type === 'mushroom', '小形态出蘑菇');
 
-  // 问号砖：大形态出花
-  // 找一个会出道具的列（奇数列）
-  let foundFlower = false;
-  for (let col = 3; col < 20 && !foundFlower; col++) {
-    const lv4 = flat([[col, 12, '?']]);
-    const p4 = mk(lv4);
-    p4.form = EN.FORM.SUPER;
-    p4.h = EN.playerHeight(EN.FORM.SUPER);
-    p4.x = col + 0.5; p4.y = 14;
-    const before = lv4.items.length;
-    EN.hitHeadBlock(lv4, p4);
-    if (lv4.items.length > before) {
-      foundFlower = true;
-      check(lv4.items[before].type === 'flower', '超级形态出花');
-    }
-  }
-  check(foundFlower, '存在会出花砖块（验证大形态出花）');
+  // 问号砖：大形态必出花
+  const lv4 = flat([[6, 12, '?']]);
+  const p4 = mk(lv4);
+  p4.form = EN.FORM.SUPER;
+  p4.h = EN.playerHeight(EN.FORM.SUPER);
+  // h=1.6，头顶要贴近 row12 下沿 y=13 → 脚底 y = 14.6
+  p4.x = 6.5; p4.y = 14.6;
+  const before4 = lv4.items.length;
+  EN.hitHeadBlock(lv4, p4);
+  check(lv4.items.length > before4, '大形态顶问号砖出道具');
+  check(lv4.items[before4].type === 'flower', '超级形态出花');
 }
 
 /* ========== 6. 死亡与重生 ========== */

@@ -60,8 +60,14 @@ const PHYS = {
 const T = {
   EMPTY: '.', GROUND: '#', BRICK: 'B', QUESTION: '?',
   SPIKE: 'S', PIPE: 'P', FLAG: 'F', ICE: 'I', PLATFORM: '=', LIFT: '^',
-  USED: 'U'   // 顶过的砖（空砖，正版里是深色方块）
+  USED: 'U',      // 顶过的砖（空砖）
+  HARD: 'X',      // 硬砖（阶梯/城堡/顶棚，不可破坏）
+  COINBRICK: 'C', // 多金币砖（连顶最多 10 次）
+  FLAGBASE: 'f'   // 旗杆底座
 };
+
+// 多金币砖最多出几枚（正版 1-1 的金币砖可顶 10 次）
+const COINBRICK_MAX = 10;
 
 // 实心瓦片（会阻挡移动）
 const SOLID = {};
@@ -73,6 +79,8 @@ SOLID[T.ICE] = true;
 SOLID[T.PLATFORM] = true;
 SOLID[T.LIFT] = true;
 SOLID[T.USED] = true;
+SOLID[T.HARD] = true;      // 硬砖（阶梯/城堡/顶棚）
+SOLID[T.COINBRICK] = true;  // 多金币砖
 
 // 尖刺不阻挡移动，但是致命
 const DEADLY = {};
@@ -453,12 +461,19 @@ function stepPlayer(level, p, input, dt) {
     }
     if (p.vy > 0) {
       landed = true;
-    } else {
-      // 向上撞 → 顶到头顶的瓦片（问号砖/砖块）
-      hitHeadBlock(level, p);
     }
     ny = p.y + lo;
     p.vy = 0;
+    // 向上撞 → 顶到头顶的瓦片（问号砖/金币砖/普通砖）。
+    // 必须在把 p.y 更新到碰撞位置之后再调用 hitHeadBlock：
+    // 它用 p.y - p.h 算头顶所在行，用旧位置会算到还没碰到的行，永远顶不到。
+    if (!landed) {
+      // 先临时把 y 设到碰撞后的位置，hitHeadBlock 才能算对头顶所在行
+      const oldY = p.y;
+      p.y = ny;
+      hitHeadBlock(level, p);
+      p.y = oldY;   // 后面统一赋值，这里恢复避免重复更新
+    }
   }
   p.y = ny;
 
@@ -1048,12 +1063,16 @@ function hitHeadBlock(level, p) {
   const c0 = Math.floor(p.x - p.w / 2 + 0.02);
   const c1 = Math.floor(p.x + p.w / 2 - 0.02);
 
-  for (let rowOff = 0; rowOff <= 1; rowOff++) {
-    const headRow = Math.floor(headY - 0.02) - rowOff;
+  // 玩家撞到砖块下边界时，头顶 y 恰好等于砖块的 row 值（比如撞 row10 的砖，
+  // 头顶就是 10.0）。floor(10.0 - 0.02) = 9 会漏判，所以探测范围要覆盖
+  // 「头顶所在行」和「头顶上一行」两种情况。
+  for (let rowOff = 0; rowOff <= 2; rowOff++) {
+    const headRow = Math.ceil(headY - 0.02) - 1 + rowOff;
     for (let c = c0; c <= c1; c++) {
       if (!inGrid(grid, c, headRow)) continue;
       const ch = grid[headRow][c];
-      if (ch !== T.QUESTION && ch !== T.BRICK) continue;
+      // 注意：多金币砖 C 也要进这个分支，漏了它就永远顶不出金币
+      if (ch !== T.QUESTION && ch !== T.BRICK && ch !== T.COINBRICK) continue;
 
       // 多金币砖：顶一次出一枚，最多 COINBRICK_MAX 次（正版金币砖）
       if (ch === T.COINBRICK) {
@@ -1075,27 +1094,20 @@ function hitHeadBlock(level, p) {
       if (ch === T.QUESTION) {
         grid[headRow][c] = T.USED;
         p.score += 200;
-        // 确定性决定内容：按列+行奇偶。
-        //   偶数 → 金币（直接加）
-        //   奇数 → 道具（小马里奥给蘑菇，大马里奥给花）
-        const isCoin = ((c + headRow) % 2 === 0);
-        if (isCoin) {
-          p.coins += 1;
-          p.score += 200;
-          if (p.coins % 100 === 0) p.lives += 1;
-        } else {
-          const isBig = p.form !== FORM.SMALL;
-          level.items.push({
-            id: level.items.length,
-            type: isBig ? 'flower' : 'mushroom',
-            x: c + 0.5, y: headRow + 0.5,
-            w: 0.7, h: 0.7,
-            vx: isBig ? 0 : 1.2,
-            vy: 0,
-            active: true,
-            emerge: 0.3
-          });
-        }
+        // 问号砖内容（与正版一致）：
+        //   小马里奥 → 蘑菇（变大）；大马里奥 → 火焰花。
+        //   纯金币由「多金币砖 C」负责，不要用问号砖刷金币。
+        const isBig = p.form !== FORM.SMALL;
+        level.items.push({
+          id: level.items.length,
+          type: isBig ? 'flower' : 'mushroom',
+          x: c + 0.5, y: headRow + 0.5,
+          w: 0.7, h: 0.7,
+          vx: isBig ? 0 : 1.2,
+          vy: 0,
+          active: true,
+          emerge: 0.3
+        });
       } else if (ch === T.BRICK) {
         // 普通砖：大马里奥顶碎，小马里奥只顶一下（砖块保留）
         if (p.form !== FORM.SMALL) {
@@ -1262,7 +1274,7 @@ function worldToWire(level, players) {
 }
 
 module.exports = {
-  TICK, PHYS, T, E, FORM, SOLID, DEADLY,
+  TICK, PHYS, T, E, FORM, SOLID, DEADLY, COINBRICK_MAX,
   makeGrid, gridRows, tileAt, isSolid, inGrid,
   boxHitsSolid, boxHitsDeadly, boxHitsFlag, groundTileAt, boxesOverlap,
   loadLevel, makePlayer, makeInput, playerHeight, setForm,

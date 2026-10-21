@@ -261,19 +261,30 @@ def make_spec(kind, g):
 
     # 敌人：在地面段上，避开出生点和管道
     enemies = []
-    ground_cols = [c for (r, c) in collect(g, '#') if r == GROUND]
-    pipes = [c for (r, c) in collect(g, 'P')]
+    ground_cols = sorted(set([c for (r, c) in collect(g, '#') if r == GROUND]))
+    pipes = [c for (c, r) in collect(g, 'P')]
+    bricks = [c for (r, c) in collect(g, 'B')] +              [c for (r, c) in collect(g, '?')] +              [c for (r, c) in collect(g, 'C')]
     placed = 0
+    last_c = -10
     for c in ground_cols:
-        if c < 14 or (c % 11) != 0:
+        if c < 14:
             continue
-        # 跳过管道位置
+        if c - last_c < 14:
+            continue
+        # 避开管道（左右 2 格）
         if any(abs(c - pc) <= 2 for pc in pipes):
+            continue
+        # 避开砖块群（左右 2 格）：玩家顶砖会跳起来，撞上敌人必死
+        if any(abs(c - bc) <= 2 for bc in bricks):
+            continue
+        # 跳过坑
+        if c + 1 >= W or g[GROUND][c] != '#' or g[GROUND][c + 1] != '#':
             continue
         etype = 'turtle' if placed % 2 == 1 else 'goomba'
         enemies.append({'type': etype, 'col': c, 'row': GROUND - 1, 'range': 2})
         placed += 1
-        if placed >= 6:
+        last_c = c
+        if placed >= 5:
             break
 
     # 道具：放在某些问号砖位置（引擎里问号砖会自己产出，这里只放额外的）

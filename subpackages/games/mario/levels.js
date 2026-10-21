@@ -111,25 +111,25 @@ const LEVEL_SPECS = [
     "enemies": [
       {
         "type": "goomba",
-        "col": 22,
+        "col": 30,
         "row": 13,
         "range": 2
       },
       {
         "type": "turtle",
-        "col": 33,
+        "col": 44,
         "row": 13,
         "range": 2
       },
       {
         "type": "goomba",
-        "col": 66,
+        "col": 58,
         "row": 13,
         "range": 2
       },
       {
         "type": "turtle",
-        "col": 77,
+        "col": 72,
         "row": 13,
         "range": 2
       },
@@ -161,31 +161,31 @@ const LEVEL_SPECS = [
     "enemies": [
       {
         "type": "goomba",
-        "col": 22,
+        "col": 16,
         "row": 13,
         "range": 2
       },
       {
         "type": "turtle",
-        "col": 55,
+        "col": 32,
         "row": 13,
         "range": 2
       },
       {
         "type": "goomba",
-        "col": 66,
+        "col": 46,
         "row": 13,
         "range": 2
       },
       {
         "type": "turtle",
-        "col": 77,
+        "col": 60,
         "row": 13,
         "range": 2
       },
       {
         "type": "goomba",
-        "col": 88,
+        "col": 74,
         "row": 13,
         "range": 2
       }
@@ -332,7 +332,7 @@ const LEVEL_SPECS = [
     "enemies": [
       {
         "type": "goomba",
-        "col": 77,
+        "col": 74,
         "row": 13,
         "range": 2
       },
@@ -386,7 +386,7 @@ const LEVEL_SPECS = [
     "enemies": [
       {
         "type": "goomba",
-        "col": 22,
+        "col": 19,
         "row": 13,
         "range": 2
       },
@@ -398,25 +398,19 @@ const LEVEL_SPECS = [
       },
       {
         "type": "goomba",
-        "col": 44,
+        "col": 49,
         "row": 13,
         "range": 2
       },
       {
         "type": "turtle",
-        "col": 55,
+        "col": 63,
         "row": 13,
         "range": 2
       },
       {
         "type": "goomba",
-        "col": 66,
-        "row": 13,
-        "range": 2
-      },
-      {
-        "type": "turtle",
-        "col": 77,
+        "col": 81,
         "row": 13,
         "range": 2
       }
@@ -447,25 +441,25 @@ const LEVEL_SPECS = [
     "enemies": [
       {
         "type": "goomba",
-        "col": 22,
+        "col": 30,
         "row": 13,
         "range": 2
       },
       {
         "type": "turtle",
-        "col": 33,
+        "col": 44,
         "row": 13,
         "range": 2
       },
       {
         "type": "goomba",
-        "col": 66,
+        "col": 58,
         "row": 13,
         "range": 2
       },
       {
         "type": "turtle",
-        "col": 77,
+        "col": 72,
         "row": 13,
         "range": 2
       },

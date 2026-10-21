@@ -450,18 +450,43 @@ function drawFrame(ctx, opts) {
     if (!it.active) continue;
     if (it.x < cam - 1 || it.x > cam + viewW + 1) continue;
     const ix = (it.x - cam) * s, iy = (it.y - camY) * s;
-    ctx.fillStyle = '#E52521';
-    ctx.beginPath();
-    ctx.arc(ix, iy - s * 0.15, s * 0.3, Math.PI, 0);
-    ctx.fill();
-    ctx.fillStyle = '#FFF';
-    ctx.fillRect(ix - s * 0.14, iy - s * 0.15, s * 0.28, s * 0.3);
-    // 白点
-    ctx.fillStyle = '#FFF';
-    ctx.beginPath();
-    ctx.arc(ix - s * 0.12, iy - s * 0.24, s * 0.07, 0, Math.PI * 2);
-    ctx.arc(ix + s * 0.12, iy - s * 0.24, s * 0.07, 0, Math.PI * 2);
-    ctx.fill();
+    if (it.type === 'flower') {
+      // 火焰花：橙色花瓣 + 白色花心 + 绿茎
+      ctx.strokeStyle = '#27AE60';
+      ctx.lineWidth = Math.max(2, s * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(ix, iy + s * 0.1);
+      ctx.lineTo(ix, iy + s * 0.32);
+      ctx.stroke();
+      // 花瓣（四个椭圆）
+      ctx.fillStyle = '#FF6B00';
+      for (let k = 0; k < 4; k++) {
+        const ang = k * Math.PI / 2;
+        ctx.beginPath();
+        ctx.ellipse(ix + Math.cos(ang) * s * 0.14, iy - s * 0.12 + Math.sin(ang) * s * 0.14,
+          s * 0.12, s * 0.09, ang, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 花心
+      ctx.fillStyle = '#FFF';
+      ctx.beginPath();
+      ctx.arc(ix, iy - s * 0.12, s * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // 蘑菇：红伞白点 + 米色菌柄
+      ctx.fillStyle = '#E52521';
+      ctx.beginPath();
+      ctx.arc(ix, iy - s * 0.15, s * 0.3, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = '#FFF';
+      ctx.fillRect(ix - s * 0.14, iy - s * 0.15, s * 0.28, s * 0.3);
+      // 白点
+      ctx.fillStyle = '#FFF';
+      ctx.beginPath();
+      ctx.arc(ix - s * 0.12, iy - s * 0.24, s * 0.07, 0, Math.PI * 2);
+      ctx.arc(ix + s * 0.12, iy - s * 0.24, s * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // 移动平台
