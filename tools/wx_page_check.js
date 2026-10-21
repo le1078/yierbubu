@@ -108,6 +108,40 @@ for (const file of files) {
   });
 }
 
+/* ========== 窗口信息调用必须有保护 ========== */
+// wx.getWindowInfo / getSystemInfoSync 在初始化、切后台、工具重载时
+// 可能返回 null，直接读 .windowWidth / .pixelRatio 会抛
+// "Cannot read properties of null (reading 'screenHeight')"。
+const wxCallsUnsafe = [];
+for (const file of files) {
+  const rel = path.relative(ROOT, file).split(path.sep).join('/');
+  const raw = fs.readFileSync(file, 'utf8');
+  const clean = stripNoise(raw);
+  const lines = clean.split('\n');
+  lines.forEach((line, i) => {
+    if (line.indexOf('wx.getWindowInfo') === -1 &&
+        line.indexOf('wx.getSystemInfoSync') === -1) return;
+    let guarded = false;
+    for (let k = Math.max(0, i - 8); k <= i; k++) {
+      if (/\btry\s*\{/.test(lines[k])) { guarded = true; break; }
+    }
+    if (/\&\&\s*\w+\./.test(line)) guarded = true;
+    if (/\|\|/.test(line)) guarded = true;
+    if (rel === 'utils/roomkit.js') guarded = true;
+    if (!guarded) wxCallsUnsafe.push(rel + ':' + (i + 1) + '  ' + line.trim().slice(0, 90));
+  });
+}
+if (wxCallsUnsafe.length) {
+  console.log('');
+  console.log('WARN 未保护的窗口信息调用（可能抛 null screenHeight 错误）：');
+  wxCallsUnsafe.forEach(function (s) { console.log('   ' + s); });
+  problems += wxCallsUnsafe.length;
+} else {
+  console.log('');
+  console.log('OK 窗口信息调用全部有保护（try/catch 或空值兜底）');
+}
+
+
 if (problems) {
   console.log('\n共 ' + problems + ' 处可疑调用（页面方法未定义 → 运行时 TypeError 白屏）');
   process.exit(1);

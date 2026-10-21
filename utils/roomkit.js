@@ -252,7 +252,44 @@ function getDpr() {
 }
 
 
+/* ========== 安全导航 ========== */
+
+// 返回上一页；如果页面栈里没有上一页（比如从分享卡片直接进来），
+// 回退到游戏大厅 tab。
+//
+// 为什么不能写成 `wx.navigateBack({ fail: () => wx.switchTab(...) })`：
+// navigateBack 的 fail 回调触发时，基础库仍在收尾上一次路由，
+// 此时立刻 switchTab 会让 routeDone 找不到已销毁的 webview，
+// 报 "routeDone with a webviewId N is not found"。
+// 正确做法是先查页面栈，再决定走哪条路，并加一个极小的延迟让路由收尾。
+function goBack(fallbackTab) {
+  const tab = fallbackTab || '/pages/games/games';
+  let stackLen = 1;
+  try {
+    const pages = getCurrentPages();
+    stackLen = pages ? pages.length : 1;
+  } catch (e) {
+    stackLen = 1;
+  }
+  if (stackLen > 1) {
+    wx.navigateBack({
+      fail: () => {
+        // 极少数情况下栈长度与实际不一致，延迟一拍再走 tab
+        setTimeout(() => { wx.switchTab({ url: tab }); }, 60);
+      }
+    });
+  } else {
+    // 栈里只有当前页 → 直接回 tab（不存在上一个 webview 可退）
+    wx.switchTab({
+      url: tab,
+      fail: () => { wx.reLaunch({ url: tab }); }
+    });
+  }
+}
+
+
 module.exports = {
+  goBack,
   getWindowSize,
   getDpr,
   genRoomNo,

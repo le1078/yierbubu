@@ -21,6 +21,33 @@ function boardKeyOf(room) {
   return room && room.boardStr ? room.boardStr : '';
 }
 
+// 安全返回游戏大厅。
+// 不能写成 navigateBack({ fail: () => switchTab(...) })：
+// navigateBack 失败时基础库仍在收尾路由，立刻 switchTab 会让
+// routeDone 找不到已销毁的 webview，报
+// "routeDone with a webviewId N is not found"。
+function safeBackToLobby() {
+  var stackLen = 1;
+  try {
+    var pages = getCurrentPages();
+    stackLen = pages ? pages.length : 1;
+  } catch (e) {
+    stackLen = 1;
+  }
+  if (stackLen > 1) {
+    wx.navigateBack({
+      fail: function () {
+        setTimeout(function () { wx.switchTab({ url: '/pages/games/games' }); }, 60);
+      }
+    });
+  } else {
+    wx.switchTab({
+      url: '/pages/games/games',
+      fail: function () { wx.reLaunch({ url: '/pages/games/games' }); }
+    });
+  }
+}
+
 Page({
   data: {
     stage: 'lobby',          // lobby | waiting | playing | ended
@@ -449,7 +476,7 @@ Page({
         showCancel: false,
         confirmText: '知道了',
         success: () => {
-          wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/games/games' }) });
+          safeBackToLobby();
         }
       });
     }
@@ -993,7 +1020,7 @@ Page({
           log.e('leaveRoom notify fail', e);
         }
         this._closeWatcher();
-        wx.navigateBack({ fail: () => wx.switchTab({ url: '/pages/games/games' }) });
+        safeBackToLobby();
       }
     });
   },
