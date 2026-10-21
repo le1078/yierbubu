@@ -68,6 +68,18 @@ Page({
     this._measure();
   },
 
+  // 屏幕方向/尺寸变化（用户旋转手机）时重新计算布局。
+  // 不处理的话，横竖屏切换后画布尺寸和按键区会错位。
+  onResize() {
+    if (this._destroyed) return;
+    this._measure();
+    // 画布尺寸变了，背景缓存要作废
+    this._bgCache = { canvas: null, w: 0, h: 0 };
+    this._canvas = null;
+    this._ctx = null;
+    this._ensureCanvas();
+  },
+
   onUnload() {
     this._destroyed = true;
     this._stopLoop();
@@ -97,9 +109,11 @@ Page({
     // 用安全取值：wx.getWindowInfo 在部分时机返回 null，直接读会崩
     const w = roomkit.getWindowSize().windowWidth;
     const rpx2px = w / 750;
-    const wh = roomkit.getWindowSize().windowHeight;
+    // 横屏判定：屏幕宽 > 高。注意横屏时 wx.getWindowInfo 返回的
+    // windowWidth/Height 会随方向变化，这里都取一遍再比较。
+    const win = roomkit.getWindowSize();
+    const landscape = win.windowWidth > win.windowHeight;
     // 横屏：画面在左、按键在右，画布宽度要减去右侧按键区
-    const landscape = wh > w;
     const canvasW = landscape
       ? Math.floor(w - 290 * rpx2px)      // 按键区 250rpx + 间距 20rpx + 边距
       : Math.floor(w - 48 * rpx2px);

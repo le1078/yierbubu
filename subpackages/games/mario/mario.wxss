@@ -5,6 +5,12 @@
   box-sizing: border-box;
 }
 
+/* 横屏：原生导航栏仍占顶部（已去掉 navigationStyle: custom），
+   页面内容需要自己避开它，否则画面会被裁掉一截 */
+.page.land {
+  padding: 12rpx 20rpx;
+}
+
 /* ===== 菜单 ===== */
 .menu-hero {
   display: flex;
