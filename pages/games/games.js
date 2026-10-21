@@ -4,19 +4,10 @@ const GAMES = [
     id: 'gomoku',
     icon: '⚫',
     name: '小笨五子棋',
-    desc: '双人联机 · 房间对战',
-    tags: ['联机', '对战'],
-    path: '/subpackages/games/gomoku/gomoku',
-    online: true
-  },
-  {
-    id: 'gomokuai',
-    icon: '🤖',
-    name: '五子棋人机对战',
-    desc: '单人挑战 · 三档难度',
-    tags: ['AI', '闯关'],
+    desc: '联机 · 同屏 · 人机 三种玩法',
+    tags: ['联机', 'AI', '对战'],
     path: '/subpackages/games/gomokuai/gomokuai',
-    online: false
+    online: true
   },
   {
     id: 'xiangqi',

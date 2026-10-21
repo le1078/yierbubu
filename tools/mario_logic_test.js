@@ -516,6 +516,41 @@ console.log('\n[14] 联机序列化');
   check(s.length < 2000, '单帧世界序列化 < 2KB（实际 ' + s.length + ' 字节）');
 }
 
+
+/* ========== 15. 问号砖顶出道具 ========== */
+console.log("\n[15] 问号砖");
+{
+  const lv = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
+  // 找到问号砖
+  let q = null;
+  for (let r = 0; r < lv.grid.length && !q; r++) {
+    const c = lv.grid[r].indexOf('?');
+    if (c !== -1) q = { col: c, row: r };
+  }
+  check(q !== null, '关卡 1 有问号砖');
+  const p = mkPlayer(lv);
+  const coins0 = p.coins, items0 = lv.items.length;
+  // 顶砖前砖是 ?
+  check(lv.grid[q.row][q.col] === '?', '顶砖前是问号砖');
+  p.x = q.col + 0.5; p.y = q.row + 1.2;
+  EN.hitHeadBlock(lv, p);
+  check(lv.grid[q.row][q.col] === 'B', '顶过之后变成普通砖 B');
+  const gained = (p.coins - coins0) + (lv.items.length - items0);
+  check(gained === 1, '顶出 1 个东西（金币或蘑菇），实际 ' + gained);
+
+  // 确定性：同样位置再顶一次，结果一致
+  const lv2 = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
+  const p2 = mkPlayer(lv2);
+  p2.x = q.col + 0.5; p2.y = q.row + 1.2;
+  EN.hitHeadBlock(lv2, p2);
+  check(p2.coins === p.coins && lv2.items.length === lv.items.length,
+    '确定性：同样位置顶出同样东西（保证 host/guest 同步）');
+
+  // 已顶过的砖再顶不出东西
+  const coinsBefore = p.coins, itemsBefore = lv.items.length;
+  EN.hitHeadBlock(lv, p);
+  check(p.coins === coinsBefore && lv.items.length === itemsBefore, '已用过的砖再顶不出东西');
+}
 /* ========== 汇总 ========== */
 console.log('\n========================================');
 console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');

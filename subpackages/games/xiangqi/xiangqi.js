@@ -303,7 +303,6 @@ Page({
     if (this._selected !== null && this._selected !== undefined) {
       const mv = { from: this._selected, to: hit.idx };
       if (X.isLegal(this._board, mv, this.data.turn)) {
-        wx.vibrateShort({ type: 'light' });
         this._doMove(mv);
         return;
       }

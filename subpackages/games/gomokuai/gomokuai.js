@@ -3,6 +3,7 @@
 // 复用 subpackages/games/gomoku/board_render.js（绘制）
 //
 // 注意：分包里引用主包 utils 要往上三级（subpackages/games/gomokuai → 根目录）
+const COLLECTION = 'gomoku_rooms';
 const C = require('../../../utils/constants.js');
 const roomkit = require('../../../utils/roomkit.js');
 const log = require('../../../utils/log.js');
@@ -12,8 +13,9 @@ const R = require('../gomoku/board_render.js');
 
 Page({
   data: {
-    stage: 'lobby',        // lobby | playing | ended
-    difficulty: 'normal',  // easy | normal | hard
+    stage: 'menu',         // menu | aisetup | lobby | waiting | playing | ended
+    mode: 'ai',            // online | local | ai
+    difficulty: 'normal',
     difficultyText: '普通',
     myColor: 1,            // 1黑 2白
     turn: 1,               // 当前轮谁下
@@ -21,7 +23,14 @@ Page({
     statusText: '',
     winText: '',
     thinking: false,
-    boardW: 300
+    oppName: 'AI',
+    modeText: '人机',
+    boardW: 300,
+    roomNoInput: '',
+    roomNo: '',
+    showChat: false,
+    chatList: [],
+    chatInput: ''
   },
 
   onLoad() {},
@@ -39,6 +48,7 @@ Page({
   onUnload() {
     this._destroyed = true;
     // 统一清理，避免回调对已卸载页面 setData
+    roomkit.sweepTimers(this);
     ['_thinkTimer', '_canvasRetryTimer'].forEach(k => {
       if (this[k]) { clearTimeout(this[k]); this[k] = null; }
     });
@@ -57,31 +67,178 @@ Page({
     this.setData({ myColor: c === 2 ? 2 : 1 });
   },
 
+  pickMode(e) {
+    const mode = e.currentTarget.dataset.mode;
+    this.setData({ mode });
+    if (mode === 'online') {
+      this.setData({ stage: 'lobby' });
+    } else if (mode === 'ai') {
+      this.setData({ stage: 'aisetup' });
+    } else {
+      this._startGame('local');
+    }
+  },
+
   startGame() {
+    this._startGame('ai');
+  },
+
+  _startGame(mode) {
     this._board = core.emptyBoard();
     this._history = [];
     this._lastMove = null;
     this._winLine = null;
     this._over = false;
     this._thinking = false;
+    const oppName = mode === 'ai' ? 'AI' : '对方';
+    const modeText = mode === 'ai' ? '人机' : (mode === 'local' ? '同屏' : '联机');
     this.setData({
       stage: 'playing',
+      mode,
       turn: 1,
       moveCount: 0,
       winText: '',
-      statusText: '轮到你落子'
+      oppName,
+      modeText,
+      statusText: mode === 'local' ? '黑方走棋' : '轮到你落子'
     }, () => {
       this._ensureCanvas();
-      // 玩家执白时 AI（黑）先走
-      if (this.data.myColor === 2) this._aiTurn();
+      if (mode === 'ai' && this.data.myColor === 2) this._aiTurn();
     });
   },
 
-  backToLobby() {
+  backToMenu() {
     this.setData({ stage: 'lobby' });
   },
 
   /* ========== 落子 ========== */
+
+  /* ========== 联机 ========== */
+
+  onRoomNoInput(e) {
+    this.setData({ roomNoInput: String(e.detail.value).replace(/\D/g, '').slice(0, 4) });
+  },
+
+  async createRoom() {
+    if (this._creating) return;
+    this._creating = true;
+    wx.showLoading({ title: '创建中…', mask: true });
+    try {
+      const res = await roomkit.createRoom(COLLECTION, {
+        status: 'waiting',
+        boardStr: JSON.stringify(core.emptyBoard()),
+        history: [],
+        turn: 1,
+        lastMove: {},
+        winner: 0,
+        moveCount: 0,
+        chat: []
+      });
+      this._roomId = res.roomId;
+      this.setData({ stage: 'waiting', roomNo: res.roomNo, myColor: 1 });
+      this._startWatch();
+    } catch (err) {
+      log.e('[gomokuai] createRoom fail', err);
+      wx.showToast({ title: '创建失败，请检查云环境', icon: 'none' });
+    } finally {
+      wx.hideLoading();
+      this._creating = false;
+    }
+  },
+
+  async joinRoom(roomNoArg) {
+    const roomNo = roomNoArg || this.data.roomNoInput;
+    if (this._joining) return;
+    this._joining = true;
+    wx.showLoading({ title: '加入中…', mask: true });
+    try {
+      const room = await roomkit.findJoinableRoom(COLLECTION, roomNo);
+      if (!room) return;
+      this._roomId = room._id;
+      const db = wx.cloud.database();
+      await db.collection(COLLECTION).doc(this._roomId).update({
+        data: { status: 'playing', turn: 1, updatedAt: db.serverDate() }
+      });
+      this._board = room.boardStr ? JSON.parse(room.boardStr) : core.emptyBoard();
+      this._history = room.history || [];
+      this._over = false;
+      this._boardKey = room.boardStr || '';
+      this.setData({
+        stage: 'playing',
+        mode: 'online',
+        roomNo,
+        myColor: 2,
+        turn: 1,
+        moveCount: room.moveCount || 0,
+        oppName: '对方',
+        modeText: '联机',
+        statusText: '等待对方落子…'
+      }, () => this._ensureCanvas());
+      this._startWatch();
+    } catch (err) {
+      log.e('[gomokuai] joinRoom fail', err);
+      wx.showToast({ title: '加入失败：' + (err.errMsg || '未知错误'), icon: 'none' });
+    } finally {
+      wx.hideLoading();
+      this._joining = false;
+    }
+  },
+
+  _startWatch() {
+    roomkit.startWatch(this, COLLECTION, this._roomId, (room) => this._onRoomUpdate(room));
+  },
+
+  _onRoomUpdate(room) {
+    const me = this.data.myColor;
+    if (this.data.stage === 'waiting') {
+      if (room.status === 'playing') {
+        this._board = room.boardStr ? JSON.parse(room.boardStr) : core.emptyBoard();
+        this._history = room.history || [];
+        this._over = false;
+        this._boardKey = room.boardStr || '';
+        this.setData({
+          stage: 'playing',
+          turn: room.turn || 1,
+          moveCount: room.moveCount || 0,
+          oppName: '对方',
+          modeText: '联机',
+          statusText: '轮到你落子'
+        }, () => this._ensureCanvas());
+      }
+      return;
+    }
+    if (room.status === 'ended' && room.leaver && room.leaver !== me && !this._leaverHandled) {
+      this._leaverHandled = true;
+      roomkit.closeWatch(this);
+      this.setData({ stage: 'ended', winText: '对方已离开，对局结束', statusText: '对局结束' });
+      return;
+    }
+    const newKey = room.boardStr || '';
+    const changed = newKey !== (this._boardKey || '');
+    if (changed) {
+      this._board = newKey ? JSON.parse(newKey) : core.emptyBoard();
+      this._boardKey = newKey;
+      this._history = room.history || [];
+    }
+    this._lastMove = room.lastMove && room.lastMove.r !== undefined ? room.lastMove : null;
+    const patch = {
+      turn: room.turn,
+      moveCount: room.moveCount || 0
+    };
+    if (room.winner) {
+      this._over = true;
+      patch.stage = 'ended';
+      patch.winText = room.winner === me ? '🎉 你赢了！' : '😢 对方获胜';
+      patch.statusText = '对局结束';
+    } else {
+      patch.statusText = room.turn === me ? '轮到你落子' : '等待对方落子…';
+    }
+    this.setData(patch, () => { if (changed) this._drawBoard(); });
+    const merged = roomkit.mergeChat(this.data.chatList, room.chat || [], me);
+    if (merged.list.length !== this.data.chatList.length || merged.addedNew) {
+      this.setData({ chatList: merged.list });
+    }
+  },
 
   onCanvasTap(e) {
     if (this.data.stage !== 'playing' || this._over) return;
@@ -96,7 +253,6 @@ Page({
       wx.showToast({ title: '这里已经有棋子了', icon: 'none' });
       return;
     }
-    wx.vibrateShort({ type: 'light' });
     this._place(hit.r, hit.c, this.data.myColor);
   },
 
@@ -129,13 +285,42 @@ Page({
       turn: next,
       statusText: next === this.data.myColor ? '轮到你落子' : 'AI 思考中…'
     });
-    if (next !== this.data.myColor) this._aiTurn();
+    if (this.data.mode === 'ai' && next !== this.data.myColor) this._aiTurn();
+    if (this.data.mode === 'online') this._syncMove(r, c, color, win ? color : 0, count);
+  },
+
+  async _syncMove(r, c, color, winner, count) {
+    const db = wx.cloud.database();
+    try {
+      await db.collection(COLLECTION).doc(this._roomId).update({
+        data: {
+          boardStr: JSON.stringify(this._board),
+          history: this._history,
+          turn: color === 1 ? 2 : 1,
+          lastMove: { r, c },
+          moveCount: count,
+          winner,
+          updatedAt: db.serverDate()
+        }
+      });
+      this._boardKey = JSON.stringify(this._board);
+    } catch (err) {
+      log.e('[gomokuai] sync fail', err);
+      wx.showToast({ title: '同步失败，请重试', icon: 'none' });
+    }
   },
 
   _finish(winner) {
     this._over = true;
-    const text = winner === 0 ? '🤝 平局'
-      : (winner === this.data.myColor ? '🎉 你赢了！' : '😢 AI 获胜');
+    const me = this.data.myColor;
+    let text = '🤝 平局';
+    if (winner !== 0) {
+      if (this.data.mode === 'local') {
+        text = winner === 1 ? '⚫ 黑方获胜！' : '⚪ 白方获胜！';
+      } else {
+        text = winner === me ? '🎉 你赢了！' : '😢 对方获胜';
+      }
+    }
     this.setData({
       stage: 'ended',
       winText: text,
@@ -237,6 +422,46 @@ Page({
 
   restart() {
     this.startGame();
+  },
+
+  /* ========== 聊天 ========== */
+
+  toggleChat() {
+    this.setData({ showChat: !this.data.showChat });
+  },
+
+  onChatInput(e) {
+    this.setData({ chatInput: e.detail.value });
+  },
+
+  async sendChat() {
+    const text = (this.data.chatInput || '').trim();
+    if (!text) return;
+    this.setData({ chatInput: '' });
+    await roomkit.pushChat(this, COLLECTION, {
+      from: this.data.myColor, type: 'text', content: text, ts: Date.now()
+    });
+  },
+
+  leaveRoom() {
+    wx.showModal({
+      title: '离开对局',
+      content: '离开后当前对局将结束，确定吗？',
+      success: async (res) => {
+        if (!res.confirm) return;
+        if (this.data.mode === 'online' && this._roomId) {
+          const db = wx.cloud.database();
+          try {
+            await db.collection(COLLECTION).doc(this._roomId).update({
+              data: { status: 'ended', leaver: this.data.myColor, updatedAt: db.serverDate() }
+            });
+          } catch (e) { log.e('[gomokuai] leave notify fail', e); }
+        }
+        roomkit.closeWatch(this);
+        this._roomId = null;
+        this.setData({ stage: 'menu' });
+      }
+    });
   },
 
   /* ========== Canvas ========== */

@@ -353,7 +353,12 @@ function stepPlayer(level, p, input, dt) {
       if (boxHitsSolid(grid, p.x - p.w / 2, p.y + mid - p.h, p.w, p.h)) hi = mid;
       else lo = mid;
     }
-    if (p.vy > 0) landed = true;   // 向下撞 → 落地
+    if (p.vy > 0) {
+      landed = true;   // 向下撞 → 落地
+    } else {
+      // 向上撞 → 顶到头顶的瓦片。若是问号砖就顶出东西
+      hitHeadBlock(level, p);
+    }
     ny = p.y + lo;
     p.vy = 0;
   }
@@ -677,6 +682,49 @@ function resolveHazards(level, p) {
   }
 }
 
+// 玩家向上撞到头顶瓦片：若是问号砖就顶出东西（金币/蘑菇），并把 ? 换成 B
+// （用过的砖）。若是普通砖，马里奥版里也允许顶（顶成 B，不掉东西）。
+// 约定：顶出物的类型由「砖块在关卡中的列号」确定性决定，避免随机数导致
+// host/guest 模拟分叉。
+function hitHeadBlock(level, p) {
+  const grid = level.grid;
+  // 头顶所在行：玩家盒顶再上移一点点
+  const headRow = Math.floor(p.y - p.h - 0.02);
+  const c0 = Math.floor(p.x - p.w / 2 + 0.02);
+  const c1 = Math.floor(p.x + p.w / 2 - 0.02);
+  for (let c = c0; c <= c1; c++) {
+    if (!inGrid(grid, c, headRow)) continue;
+    const ch = grid[headRow][c];
+    if (ch !== T.QUESTION && ch !== T.BRICK) continue;
+    // 用过的砖：问号砖变普通砖，普通砖保留（不破坏砖块，保持简洁）
+    if (ch === T.QUESTION) {
+      grid[headRow][c] = T.BRICK;
+      // 确定性决定掉落物：按列号奇偶 + 行号，保证 host/guest 一致
+      const dropCoin = ((c + headRow) % 2 === 0);
+      if (dropCoin) {
+        // 直接给玩家加金币（免得再加一个飞出物实体，简化同步）
+        p.coins += 1;
+      } else {
+        // 掉一个蘑菇道具，位置在砖块正下方
+        level.items.push({
+          id: level.items.length,
+          type: 'mushroom',
+          x: c + 0.5, y: headRow + 1.5,
+          w: 0.7, h: 0.7,
+          vx: 1.2, vy: 0,
+          active: true
+        });
+      }
+    }
+    break;   // 只顶一个
+  }
+}
+
+// 边界安全：grid 索引
+function inGrid(grid, c, r) {
+  return r >= 0 && r < grid.length && c >= 0 && c < grid[r].length;
+}
+
 // 移动平台承载玩家：站在平台上时跟着平台一起动，且被平台"接住"。
 // 判定要宽松：平台每帧在动，玩家下落速度也可能很快（最多 22 格/秒 ≈ 0.37 格/帧），
 // 所以容差取 0.45 格（略大于单帧最大下落位移），否则高速下落会穿过平台。
@@ -805,7 +853,7 @@ module.exports = {
   stepPlayer, stepEnemy, stepPlatform, stepItem, stepBoss, stepFireballs,
   stepWorld,
   resolveEnemyHit, resolveBossHit, resolveFireballHit,
-  resolveCoinHit, resolveItemHit, resolveHazards, resolvePlatformRide,
+  resolveCoinHit, resolveItemHit, resolveHazards, resolvePlatformRide, hitHeadBlock,
   isLevelCleared, raceWinner, isGameOver,
   playerToWire, worldToWire, round3
 };

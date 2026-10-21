@@ -1,12 +1,46 @@
 <view class="page">
 
-  <!-- ===== 大厅：选难度 / 选执子 ===== -->
-  <view wx:if="{{stage === 'lobby'}}" class="lobby">
-    <view class="lobby-hero">
-      <view class="lobby-title">🤖 五子棋人机对战</view>
+  <!-- ===== 模式选择（像象棋那样三种模式） ===== -->
+  <view wx:if="{{stage === 'menu'}}" class="menu">
+    <view class="menu-hero">
+      <view class="menu-title">⚫⚪ 小笨五子棋</view>
     </view>
-    <view class="lobby-sub">单机挑战 · 三档难度 · 无需联网</view>
+    <view class="menu-sub">联机对战 · 同屏轮流 · 人机挑战</view>
 
+    <view class="menu-card">
+      <view class="opt primary" bindtap="pickMode" data-mode="online">
+        <view class="opt-icon">🌐</view>
+        <view class="opt-body">
+          <view class="opt-name">联机对战</view>
+          <view class="opt-desc">创建房间或加入好友，云端同步棋局</view>
+        </view>
+      </view>
+
+      <view class="opt" bindtap="pickMode" data-mode="local">
+        <view class="opt-icon">👥</view>
+        <view class="opt-body">
+          <view class="opt-name">同屏对战</view>
+          <view class="opt-desc">一部手机两人轮流下，无需联网</view>
+        </view>
+      </view>
+
+      <view class="opt" bindtap="pickMode" data-mode="ai">
+        <view class="opt-icon">🤖</view>
+        <view class="opt-body">
+          <view class="opt-name">人机对战</view>
+          <view class="opt-desc">挑战小笨 AI，三档难度可选</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="menu-tip">💡 先手执黑。连成五子即胜。</view>
+  </view>
+
+  <!-- ===== 人机模式：选难度/执子 ===== -->
+  <view wx:if="{{stage === 'aisetup'}}" class="lobby">
+    <view class="lobby-hero">
+      <view class="lobby-title">🤖 人机对战</view>
+    </view>
     <view class="lobby-card">
       <view class="sec-title">选择难度</view>
       <view class="opt-row">
@@ -37,6 +71,33 @@
       </view>
 
       <view class="big-btn primary" bindtap="startGame">🎮 开始对局</view>
+      <view class="big-btn ghost" bindtap="backToMenu">🚪 返回</view>
+    </view>
+  </view>
+
+  <!-- ===== 联机大厅 ===== -->
+  <view wx:if="{{stage === 'lobby'}}" class="lobby">
+    <view class="lobby-card">
+      <view class="big-btn primary" bindtap="createRoom">🏠 创建房间</view>
+      <view class="divider"><text>或加入好友的房间</text></view>
+      <view class="join-row">
+        <input class="room-input" type="number" maxlength="4" placeholder="输入4位房间号"
+          value="{{roomNoInput}}" bindinput="onRoomNoInput"/>
+        <view class="big-btn" bindtap="joinRoom">加入</view>
+      </view>
+      <view class="hint">💡 创建后点右上角「···」转发给微信好友，TA 点卡片直接进入</view>
+      <view class="big-btn ghost" bindtap="backToMenu">🚪 返回</view>
+    </view>
+  </view>
+
+  <!-- ===== 等待对手 ===== -->
+  <view wx:if="{{stage === 'waiting'}}" class="waiting">
+    <view class="wait-card">
+      <view class="wait-title">房间已创建</view>
+      <view class="wait-no">{{roomNo}}</view>
+      <view class="wait-tip">把房间号告诉好友，或点右上角转发邀请</view>
+      <view class="loading-dots"><text class="dot"></text><text class="dot"></text><text class="dot"></text></view>
+      <view class="big-btn ghost" bindtap="leaveRoom">🚪 离开</view>
     </view>
   </view>
 
@@ -51,11 +112,11 @@
       </view>
       <view class="p-mid">
         <view class="p-status">{{statusText}}</view>
-        <view class="p-count">{{moveCount}} 手 · {{difficultyText}}</view>
+        <view class="p-count">{{moveCount}} 手 · {{modeText}}</view>
       </view>
       <view class="p-item {{turn !== myColor && stage === 'playing' ? 'active' : ''}}">
         <view class="p-dot {{myColor === 1 ? 'white' : 'black'}}"></view>
-        <view class="p-name">AI</view>
+        <view class="p-name">{{oppName}}</view>
       </view>
     </view>
 
@@ -78,9 +139,23 @@
 
     <!-- 操作 -->
     <view class="actions">
-      <view class="act-btn" bindtap="restart">🔄 重新开始</view>
+      <view class="act-btn" bindtap="restart">🔄 重开</view>
       <view class="act-btn" bindtap="undo">↩️ 悔棋</view>
-      <view class="act-btn ghost" bindtap="backToLobby">🚪 换难度</view>
+      <view wx:if="{{mode === 'online'}}" class="act-btn" bindtap="toggleChat">💬 聊天</view>
+      <view class="act-btn ghost" bindtap="leaveRoom">🚪 离开</view>
+    </view>
+
+    <!-- 聊天面板（联机模式） -->
+    <view wx:if="{{mode === 'online' && showChat}}" class="chat-area">
+      <scroll-view class="chat-list" scroll-y scroll-into-view="chat{{chatList.length - 1}}">
+        <view wx:for="{{chatList}}" wx:key="ts" id="chat{{index}}" class="chat-msg {{item.mine ? 'mine' : 'theirs'}}">
+          <text class="chat-bubble">{{item.content}}</text>
+        </view>
+      </scroll-view>
+      <view class="chat-input-row">
+        <input class="chat-input" placeholder="说点什么…" value="{{chatInput}}" bindinput="onChatInput" bindconfirm="sendChat" maxlength="50"/>
+        <view class="chat-send" bindtap="sendChat">发送</view>
+      </view>
     </view>
 
   </view>
