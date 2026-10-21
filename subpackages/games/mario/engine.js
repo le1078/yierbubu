@@ -264,17 +264,31 @@ function loadLevel(rows, spec) {
       }
     : null;
 
+  // 多金币砖的剩余次数（按 "row_col" 索引）—— 顶一次出一枚，最多 10 枚
+  const blockState = {};
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < grid[r].length; c++) {
+      if (grid[r][c] === T.COINBRICK) blockState[r + '_' + c] = COINBRICK_MAX;
+    }
+  }
+
   return {
     grid,
     rows: gridRows(grid),
     cols: grid[0].length,
     rowsH: grid.length,
     coins, enemies, platforms, items, boss,
+    blockState,
     fireballs: [],
     start: spec.start || { col: 2, row: 14 },
     checkpoints: spec.checkpoints || [],
     name: spec.name || '',
-    time: 0
+    theme: spec.theme || 'overworld',   // overworld | underground | castle
+    time: 0,
+    timeLeft: spec.timeLimit || 400,    // 关卡倒计时（秒）
+    timeAcc: 0,
+    flagY: -1,                          // 旗杆顶端行（用于下滑动画）
+    clearPhase: 0                       // 0 正常 / 1 旗杆下滑 / 2 走向城堡 / 3 结算
   };
 }
 
@@ -307,7 +321,7 @@ function makePlayer(level, seat) {
     respawnX: level.start.col + 0.5,
     respawnY: level.start.row,
     finishT: 0,
-    // 变大/变小时的过渡动画（正版有短暂定格式的变换过程）
+    onFlag: false,          // 是否已抓住旗杆
     growT: 0
   };
 }
@@ -937,12 +951,88 @@ function resolveHazards(level, p) {
     p.fellInPit = false;
     return;
   }
+  // 碰到旗杆 → 进入下滑动画（正版：抓住旗杆滑到底，再走向城堡）
   if (boxHitsFlag(level.grid, p.x - p.w / 2, p.y - p.h, p.w, p.h)) {
-    p.state = 'done';
-    p.finishT = level.time;
-    // 过关加分：剩余时间换算（简化：固定奖励）
-    p.score += 5000;
+    if (!p.onFlag) {
+      p.onFlag = true;
+      p.vx = 0;
+      p.vy = 0;
+      p.x = findFlagCol(level) + 0.5;
+      // 抓杆高度越高，得分越多（正版：100~5000 分）
+      const flagTop = findFlagTop(level);
+      const height = Math.max(0, (flagTop - p.y) / 8);
+      p.score += Math.round(100 + height * 4900);
+    }
   }
+}
+
+// 找旗杆所在列（FLAG 或 FLAGBASE）
+function findFlagCol(level) {
+  for (let r = 0; r < level.rowsH; r++) {
+    for (let c = 0; c < level.cols; c++) {
+      const ch = level.grid[r][c];
+      if (ch === T.FLAG || ch === T.FLAGBASE) return c;
+    }
+  }
+  return level.cols - 5;
+}
+
+// 旗杆顶端所在行
+function findFlagTop(level) {
+  for (let r = 0; r < level.rowsH; r++) {
+    for (let c = 0; c < level.cols; c++) {
+      if (level.grid[r][c] === T.FLAG) return r;
+    }
+  }
+  return 4;
+}
+
+// 旗杆下滑与过关流程推进（每帧调用）
+// 阶段：0 正常 → 1 抓杆下滑 → 2 走向城堡 → 3 结算完成
+function stepClearSequence(level, players, dt) {
+  for (const p of players) {
+    if (!p.onFlag || p.state === 'done') continue;
+    const baseRow = findFlagBottom(level);
+    if (p.y < baseRow) {
+      // 沿旗杆下滑
+      p.y = Math.min(baseRow, p.y + 4.5 * dt);
+      p.vy = 0;
+      p.vx = 0;
+    } else {
+      // 到达杆底：自动向右走向城堡
+      p.face = 1;
+      p.x += 3.2 * dt;
+      const castleCol = findCastleCol(level);
+      if (p.x >= castleCol + 1.5) {
+        p.state = 'done';
+        p.finishT = level.time;
+        // 剩余时间换算成分数（正版每单位时间 50 分）
+        p.score += Math.max(0, Math.floor(level.timeLeft)) * 50;
+      }
+    }
+  }
+}
+
+function findFlagBottom(level) {
+  let last = level.rowsH - 3;
+  for (let r = 0; r < level.rowsH; r++) {
+    for (let c = 0; c < level.cols; c++) {
+      if (level.grid[r][c] === T.FLAG) last = r;
+    }
+  }
+  return last;
+}
+
+function findCastleCol(level) {
+  for (let r = 0; r < level.rowsH; r++) {
+    for (let c = 0; c < level.cols; c++) {
+      if (level.grid[r][c] === T.HARD) {
+        // 城堡用 HARD 瓦片搭，取最右侧的一段
+        if (c > level.cols - 15) return c;
+      }
+    }
+  }
+  return level.cols - 4;
 }
 
 /* ========== 顶砖块 / 问号砖 ========== */
@@ -964,6 +1054,23 @@ function hitHeadBlock(level, p) {
       if (!inGrid(grid, c, headRow)) continue;
       const ch = grid[headRow][c];
       if (ch !== T.QUESTION && ch !== T.BRICK) continue;
+
+      // 多金币砖：顶一次出一枚，最多 COINBRICK_MAX 次（正版金币砖）
+      if (ch === T.COINBRICK) {
+        const key = headRow + '_' + c;
+        const left = level.blockState[key] || 0;
+        if (left > 0) {
+          level.blockState[key] = left - 1;
+          p.coins += 1;
+          p.score += 200;
+          if (p.coins % 100 === 0) p.lives += 1;
+          if (left - 1 === 0) grid[headRow][c] = T.USED;   // 用完了变空砖
+        }
+        // 记录碎片特效（纯表现，不影响逻辑）
+        if (!level.debris) level.debris = [];
+        level.debris.push({ x: c + 0.5, y: headRow + 0.5, t: 0, kind: 'coin' });
+        return;
+      }
 
       if (ch === T.QUESTION) {
         grid[headRow][c] = T.USED;
@@ -989,13 +1096,27 @@ function hitHeadBlock(level, p) {
             emerge: 0.3
           });
         }
-      } else {
+      } else if (ch === T.BRICK) {
         // 普通砖：大马里奥顶碎，小马里奥只顶一下（砖块保留）
         if (p.form !== FORM.SMALL) {
           grid[headRow][c] = T.EMPTY;   // 顶碎
           p.score += 50;
+          // 碎片特效（正版砖块碎裂有 4 块飞散）
+          if (!level.debris) level.debris = [];
+          for (let k = 0; k < 4; k++) {
+            level.debris.push({
+              x: c + 0.25 + (k % 2) * 0.5,
+              y: headRow + 0.25 + Math.floor(k / 2) * 0.5,
+              vx: (k % 2 ? 1 : -1) * 2.5,
+              vy: -6 - Math.floor(k / 2) * 1.5,
+              t: 0,
+              kind: 'brick'
+            });
+          }
         } else {
           p.score += 10;
+          if (!level.debris) level.debris = [];
+          level.debris.push({ x: c + 0.5, y: headRow + 0.5, t: 0, kind: 'bump' });
         }
       }
       return;
@@ -1009,6 +1130,44 @@ function hitHeadBlock(level, p) {
 function stepWorld(level, players, inputs, dt) {
   level.time += dt;
 
+  // 倒计时（正版 400 秒，每 0.4 秒扣 1，这里每秒扣 1 更宽松）
+  if (level.timeLeft > 0) {
+    level.timeAcc += dt;
+    if (level.timeAcc >= 1) {
+      level.timeAcc -= 1;
+      level.timeLeft -= 1;
+      // 时间耗尽 → 所有存活玩家死亡
+      if (level.timeLeft <= 0) {
+        for (const p of players) {
+          if (p.state === 'alive') {
+            p.state = 'dying';
+            p.deathT = 0;
+            p.vy = -9;
+            p.fellInPit = false;
+          }
+        }
+      }
+    }
+  }
+
+  // 砖块碎片（纯表现，但放引擎里方便联机时两端一致）
+  if (level.debris && level.debris.length) {
+    const keep = [];
+    for (const d of level.debris) {
+      d.t += dt;
+      if (d.kind === 'brick') {
+        d.vy += PHYS.GRAVITY * dt;
+        d.x += d.vx * dt;
+        d.y += d.vy * dt;
+      }
+      if (d.t < 0.9) keep.push(d);
+    }
+    level.debris = keep;
+  }
+
+  // 旗杆下滑阶段：这些玩家不受常规输入控制
+  stepClearSequence(level, players, dt);
+
   // 平台先动（玩家本帧要能踩到新位置）
   for (const pl of level.platforms) stepPlatform(level, pl, dt);
   for (const it of level.items) stepItem(level, it, dt);
@@ -1016,8 +1175,9 @@ function stepWorld(level, players, inputs, dt) {
   stepFireballs(level, dt);
   stepPlayerFireballs(level, dt);
 
-  // 玩家物理
+  // 玩家物理（抓杆下滑中的玩家跳过常规物理）
   for (const p of players) {
+    if (p.onFlag) continue;
     const inp = inputs[p.seat] || makeInput();
     stepPlayer(level, p, inp, dt);
     resolvePlatformRide(level, p, dt);
@@ -1029,7 +1189,7 @@ function stepWorld(level, players, inputs, dt) {
 
   // 交互
   for (const p of players) {
-    if (p.state !== 'alive') continue;
+    if (p.state !== 'alive' || p.onFlag) continue;
     resolveCoinHit(level, p);
     resolveItemHit(level, p);
     for (const e of level.enemies) resolveEnemyHit(level, p, e);
@@ -1112,6 +1272,7 @@ module.exports = {
   resolveCoinHit, resolveItemHit, resolveHazards, resolvePlatformRide,
   resolveShellHits, resolvePlayerFireballHits,
   hitHeadBlock, hurtPlayer, kickShell, spawnFireball,
+  stepClearSequence, findFlagCol, findFlagTop,
   isLevelCleared, raceWinner, isGameOver,
   playerToWire, worldToWire, round3
 };

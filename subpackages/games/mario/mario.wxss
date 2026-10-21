@@ -280,6 +280,19 @@
   font-weight: 600;
 }
 
+/* 倒计时（剩余 60 秒内变红闪烁警示） */
+.hud-timer {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #6B4A52;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-timer.urgent {
+  color: #E74C3C;
+  animation: blink 0.8s infinite;
+}
+
 .hud-meta {
   font-size: 20rpx;
   color: #A08A80;

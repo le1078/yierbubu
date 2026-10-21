@@ -54,6 +54,7 @@ Page({
     p2Score: 0,
     p1Coins: 0,
     p2Coins: 0,
+    timeLeft: 400,
     landscape: false,
     // 玩家形象用 <image> 叠加显示（canvas 不支持 GIF 动画，只能用 image 组件）
     // 这里是两个 image 在画布坐标系里的位置（px），每帧更新
@@ -464,6 +465,10 @@ Page({
       if (b.lives !== this.data.p2Lives) patch.p2Lives = b.lives;
       if (b.score !== this.data.p2Score) patch.p2Score = b.score;
       if (b.coins !== this.data.p2Coins) patch.p2Coins = b.coins;
+    }
+    // 倒计时
+    if (this._level && this._level.timeLeft !== this.data.timeLeft) {
+      patch.timeLeft = this._level.timeLeft;
     }
     if (Object.keys(patch).length) this.setData(patch);
   },

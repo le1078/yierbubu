@@ -60,8 +60,8 @@
         </view>
       </view>
       <view class="hud-mid">
-        <view class="hud-status">{{statusText}}</view>
-        <view class="hud-meta">{{metaText}}</view>
+        <view class="hud-timer {{timeLeft <= 60 ? 'urgent' : ''}}">⏱ {{timeLeft}}</view>
+        <view class="hud-meta">{{statusText}} · {{metaText}}</view>
       </view>
       <view class="hud-side">
         <image class="hud-avatar" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"/>

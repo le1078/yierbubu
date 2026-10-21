@@ -114,6 +114,8 @@ console.log('\n[4] 金币上报校验');
 {
   const { host } = mkPair();
   const level = host.level;
+  // 自己造一枚金币（关卡数据由生成器决定）
+  level.coins = [{ id: 0, col: 5, row: 13, taken: false }];
   const coin = level.coins[0];
   const p2 = host.players[1];
 
@@ -131,6 +133,10 @@ console.log('\n[4] 金币上报校验');
 
   // 情况 B：guest 上报一个很远的金币 → host 必须拒绝
   const { host: h2 } = mkPair();
+  h2.level.coins = [
+    { id: 0, col: 5, row: 13, taken: false },
+    { id: 1, col: 20, row: 13, taken: false }
+  ];
   const farCoin = h2.level.coins[1];
   h2.players[1].x = 2.5;
   h2.players[1].y = 13.5;
@@ -146,6 +152,7 @@ console.log('\n[4] 金币上报校验');
 
   // 情况 C：重复上报同一金币 → 不双扣
   const { host: h3 } = mkPair();
+  h3.level.coins = [{ id: 0, col: 5, row: 13, taken: false }];
   const c3 = h3.level.coins[0];
   h3.players[1].x = c3.col + 0.5;
   h3.players[1].y = c3.row + 0.5;

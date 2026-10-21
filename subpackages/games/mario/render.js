@@ -119,6 +119,32 @@ function drawTile(ctx, ch, x, y, s) {
       ctx.moveTo(x + s * 0.75, y + s / 2); ctx.lineTo(x + s * 0.75, y + s);
       ctx.stroke();
       break;
+    case 'X':   // 硬砖（阶梯/城堡/顶棚）—— 砖纹但偏灰
+      ctx.fillStyle = '#9A7B5A';
+      ctx.fillRect(x, y, s, s);
+      ctx.strokeStyle = 'rgba(60,40,20,0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
+      ctx.beginPath();
+      ctx.moveTo(x, y + s / 2); ctx.lineTo(x + s, y + s / 2);
+      ctx.stroke();
+      break;
+    case 'C':   // 多金币砖（金色发光边框）
+      ctx.fillStyle = PAL.question;
+      ctx.fillRect(x, y, s, s);
+      ctx.strokeStyle = '#FFE86B';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, s - 2, s - 2);
+      // 中间画个小金币
+      ctx.fillStyle = '#C8A000';
+      ctx.beginPath();
+      ctx.ellipse(x + s / 2, y + s / 2, s * 0.16, s * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    case 'f':   // 旗杆底座
+      ctx.fillStyle = '#5A5A5A';
+      ctx.fillRect(x + s * 0.35, y + s * 0.5, s * 0.3, s * 0.5);
+      break;
     case 'U':   // 顶过的空砖（正版是深色方块）
       ctx.fillStyle = '#8B5A2B';
       ctx.fillRect(x, y, s, s);
@@ -171,15 +197,13 @@ function drawTile(ctx, ch, x, y, s) {
       ctx.fillStyle = PAL.platform;
       ctx.fillRect(x, y + s * 0.3, s, s * 0.4);
       break;
-    case 'F':   // 终点旗
+    case 'F':   // 终点旗（杆 + 杆顶球）
       ctx.fillStyle = PAL.flagPole;
       ctx.fillRect(x + s * 0.45, y, s * 0.1, s);
-      ctx.fillStyle = PAL.flag;
+      // 杆顶小球（只在最顶端那格画）
+      ctx.fillStyle = '#FFD700';
       ctx.beginPath();
-      ctx.moveTo(x + s * 0.55, y + s * 0.08);
-      ctx.lineTo(x + s, y + s * 0.28);
-      ctx.lineTo(x + s * 0.55, y + s * 0.48);
-      ctx.closePath();
+      ctx.arc(x + s * 0.5, y + s * 0.08, s * 0.12, 0, Math.PI * 2);
       ctx.fill();
       break;
     default:
@@ -471,6 +495,29 @@ function drawFrame(ctx, opts) {
       ctx.beginPath();
       ctx.arc(fx, fy, r * 0.5, 0, Math.PI * 2);
       ctx.fill();
+    }
+  }
+
+  // 砖块碎片 / 顶砖金币（纯表现）
+  if (level.debris) {
+    for (const d of level.debris) {
+      const dx = (d.x - cam) * s, dy = (d.y - camY) * s;
+      if (dx < -s || dx > opts.viewW + s) continue;
+      if (d.kind === 'brick') {
+        ctx.fillStyle = PAL.brick;
+        ctx.fillRect(dx - s * 0.18, dy - s * 0.18, s * 0.36, s * 0.36);
+      } else if (d.kind === 'coin') {
+        // 顶砖弹出的金币：向上飘
+        ctx.fillStyle = PAL.coin;
+        ctx.beginPath();
+        ctx.ellipse(dx, dy - d.t * s * 2.2, s * 0.16, s * 0.24, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (d.kind === 'bump') {
+        // 小砖被顶的弹动
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(dx - s * 0.5, dy - s * 0.5 - d.t * s, s, s);
+      }
     }
   }
 
