@@ -114,9 +114,9 @@
         <view class="p-status">{{statusText}}</view>
         <view class="p-count">{{moveCount}} 手 · {{modeText}}</view>
       </view>
-      <view class="p-item {{turn !== myColor && stage === 'playing' ? 'active' : ''}}">
+      <view class="p-item {{turn !== myColor && stage === 'playing' ? 'active' : ''}} {{thinking ? 'thinking' : ''}}">
         <view class="p-dot {{myColor === 1 ? 'white' : 'black'}}"></view>
-        <view class="p-name">{{oppName}}</view>
+        <view class="p-name">{{thinking ? 'AI 思考中…' : oppName}}</view>
       </view>
     </view>
 
@@ -126,10 +126,6 @@
         style="width: {{boardW}}px; height: {{boardW}}px;"
         bindtouchend="onCanvasTap"
         disable-scroll="true"></canvas>
-      <view wx:if="{{thinking}}" class="think-mask">
-        <view class="think-dots"><text class="dot"></text><text class="dot"></text><text class="dot"></text></view>
-        <view class="think-text">AI 思考中…</view>
-      </view>
     </view>
 
     <!-- 胜负横幅 -->

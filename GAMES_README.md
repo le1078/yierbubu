@@ -178,6 +178,9 @@ node tools/mario_mechanics_test.js # 马里奥机制 48 项
 node tools/mario_render_test.js   # 马里奥渲染 8 项（角色必须画出来）
 node tools/mario_features_test.js # 马里奥扩展玩法 29 项（管道/金币房/食人花/星星/1UP/隐藏砖/电脑对手）
 node tools/mario_page_check.js    # 页面-引擎一致性 19 项（含竞速蓝屏回归）
+node tools/wxml_event_audit.js    # WXML 事件处理函数是否都在 JS 里定义
+node tools/wxml_data_audit.js     # WXML 数据字段是否都在 data/setData 里
+node tools/game_page_flow_test.js # 页面流程 34 项（难度选择/悔棋/联机守卫/画布重建/watcher）
 ```
 
 所有测试都是纯 node 可跑，不需要开微信开发者工具。
@@ -208,6 +211,11 @@ node tools/mario_page_check.js    # 页面-引擎一致性 19 项（含竞速蓝
 | 马里奥 `onGround` 用身体盒探测 | 走出平台边缘仍判落地 | 改用脚下一行薄探针 |
 | 马里奥踩头容差过松 | 侧面蹭到也判踩头，敌人白死 | 加「踩入深度 < 敌人高度 3/4」 |
 | 移动平台不承载玩家 | 站上去几帧就掉 | 记录平台上帧位移，叠加到玩家坐标 |
+| WXML 绑了不存在的方法 | 点击时报 `is not a function`（象棋难度页） | `wxml_event_audit.js` 静态扫描 |
+| AI 计时器跨局存活 | 重开/悔棋后 AI 把棋子下到新棋盘 | `_stopAIThink()` + token 作废旧回调 |
+| 开局时关掉 watch | 联机只有一方能看到对方落子 | 等待页→对局时保持 watcher |
+| 画布节点被 wx:if 重建 | 再进对局棋盘/画面全空 | 离开对局时 `_resetCanvas()` |
+| 联机点重开/悔棋 | 本地棋盘与云端分叉 | 联机模式直接拦截并提示 |
 | 旗杆判定只看 `onFlag` | 单机抓杆后关卡不结束，看起来像卡死 | 单机只生成 P1；过关必须等到 `state==='done'`；城堡列要排除末段阶梯 |
 
 ---

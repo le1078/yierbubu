@@ -118,16 +118,16 @@
     <!-- 信息条 -->
     <view class="bar">
       <view class="bar-side {{turn === mySide ? 'on' : ''}}">
-        <view class="side-dot red"></view>
-        <text class="side-name">{{mode === 'ai' ? '我' : '红方'}}</text>
+        <view class="side-dot {{mySide === 1 ? 'red' : 'black'}}"></view>
+        <text class="side-name">{{mode === 'local' ? '红方' : '我'}}</text>
       </view>
       <view class="bar-mid">
         <view class="bar-status">{{statusText}}</view>
         <view class="bar-meta">{{metaText}}</view>
       </view>
       <view class="bar-side {{turn !== mySide ? 'on' : ''}}">
-        <view class="side-dot black"></view>
-        <text class="side-name">{{oppName}}</text>
+        <view class="side-dot {{mySide === 1 ? 'black' : 'red'}}"></view>
+        <text class="side-name">{{mode === 'local' ? '黑方' : oppName}}</text>
       </view>
     </view>
 

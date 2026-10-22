@@ -56,17 +56,25 @@ Page({
 
   onUnload() {
     this._destroyed = true;
+    this._aiToken = (this._aiToken || 0) + 1;
     roomkit.sweepTimers(this);
     if (this._thinkTimer) { clearTimeout(this._thinkTimer); this._thinkTimer = null; }
   },
 
   onHide() {
-    // 切后台时暂停 AI 思考，避免回来时 AI 已连走多步
+    // 切后台时停掉 AI 计时器；回来后在 onShow 里继续
     this._paused = true;
+    this._stopAIThink();
   },
 
   onShow() {
     this._paused = false;
+    // 后台期间 AI 没下完：回到前台继续思考
+    if (!this._destroyed && this.data.stage === 'playing' &&
+        this.data.mode === 'ai' && !this._over &&
+        this.data.turn !== this.data.mySide) {
+      this._aiTurn();
+    }
   },
 
   /* ========== 布局 ========== */
@@ -90,14 +98,39 @@ Page({
     this.setData({ mode });
     if (mode === 'online') {
       this.setData({ stage: 'lobby' });
+    } else if (mode === 'ai') {
+      // 人机模式先进入难度/执子选择页，不能直接开局
+      this.setData({ stage: 'aisetup' });
     } else {
       this._startLocal(mode);
     }
   },
 
+  // 人机设置页：选择难度
+  pickDifficulty(e) {
+    const d = e.currentTarget.dataset.d;
+    const text = d === 'easy' ? '简单' : (d === 'hard' ? '困难' : '普通');
+    this.setData({ difficulty: d, difficultyText: text });
+  },
+
+  // 人机设置页：选择执红/执黑
+  pickSide(e) {
+    const s = Number(e.currentTarget.dataset.s);
+    this.setData({ mySide: s === 2 ? 2 : 1 });
+  },
+
+  // 人机设置页：开始对局
+  startAiGame() {
+    this.setData({ mode: 'ai' }, () => {
+      this._startLocal('ai');
+    });
+  },
+
   backToMenu() {
+    this._stopAIThink();
     roomkit.closeWatch(this);
     this._roomId = null;
+    this._resetCanvas();
     this.setData({ stage: 'menu' });
   },
 
@@ -117,6 +150,8 @@ Page({
   },
 
   _startLocal(mode) {
+    this._stopAIThink();
+    this._resetCanvas();
     this._board = X.startBoard();
     this._history = [];
     this._lastMove = null;
@@ -132,6 +167,7 @@ Page({
       mySide,
       statusText: aiFirst ? 'AI 思考中…' : '红方走棋',
       winText: '',
+      thinking: false,
       oppName: mode === 'ai' ? ('AI · ' + this.data.difficultyText) : '黑方',
       metaText: mode === 'ai' ? ('人机 · ' + this.data.difficultyText) : ''
     }, () => {
@@ -197,6 +233,7 @@ Page({
       this._history = room.history || [];
       this._over = false;
       this._notePosition();
+      this._resetCanvas();
       this.setData({
         stage: 'playing',
         roomNo,
@@ -226,11 +263,13 @@ Page({
     // 房主在等待页：对方加入后开局
     if (this.data.stage === 'waiting') {
       if (room.status === 'playing') {
-        roomkit.closeWatch(this);
+        // 注意：这里不能 closeWatch。房主需要继续接收 guest 的走棋，
+        // 关掉 watcher 会导致开局后只有 guest 能看到 host 的棋。
         this._board = X.strToBoard(room.boardStr);
         this._history = room.history || [];
         this._over = false;
         this._notePosition();
+        this._resetCanvas();
         this.setData({
           stage: 'playing',
           turn: room.turn || X.RED,
@@ -410,21 +449,38 @@ Page({
 
   /* ========== AI ========== */
 
+  // 停掉正在进行的 AI 思考。token 让已经进入回调的旧计时器失效，
+  // 避免「重开/悔棋/离开时 AI 还把棋子下到新棋盘上」。
+  _stopAIThink(resetUI) {
+    this._aiToken = (this._aiToken || 0) + 1;
+    if (this._thinkTimer) {
+      clearTimeout(this._thinkTimer);
+      this._thinkTimer = null;
+    }
+    if (resetUI !== false && this.data.thinking) this.setData({ thinking: false });
+  },
+
   _aiTurn() {
-    if (this._destroyed || this._over) return;
+    if (this._destroyed || this._over || this._paused) return;
+    if (this._thinkTimer) return;   // 已经在思考，别重复排程
+    this._aiToken = (this._aiToken || 0) + 1;
+    const token = this._aiToken;
     this.setData({ thinking: true });
     const board = this._board;
     const side = this.data.turn;
     const difficulty = this.data.difficulty;
 
     this._thinkTimer = setTimeout(() => {
-      if (this._destroyed || this._over) return;
+      this._thinkTimer = null;
+      if (token !== this._aiToken) return;   // 已被重开/悔棋/离开作废
+      if (this._destroyed || this._over || this._paused) return;
       let mv = null;
       try {
         mv = ai.think(board, side, difficulty, { budgetMs: C.XQ_AI_BUDGET_MS });
       } catch (err) {
         log.e('[xiangqi] ai think fail', err);
       }
+      if (token !== this._aiToken) return;
       this.setData({ thinking: false });
       if (!mv) return;
       this._doMove(mv);
@@ -442,6 +498,8 @@ Page({
       wx.showToast({ title: '联机模式悔棋需实现双方确认，暂不支持', icon: 'none' });
       return;
     }
+    // 如果 AI 正在思考，先停掉，避免它把棋子下到悔棋后的棋盘上
+    this._stopAIThink();
     // 人机模式：撤到「我上一手之前」；本地模式：撤一手即可
     const mySide = this.data.mySide;
     const popped = [];
@@ -457,6 +515,8 @@ Page({
       if (this.data.mode === 'local') break;
     }
     this._over = false;
+    this._noCapture = 0;         // 悔棋后重置自然限着
+    this._positions = {};        // 重复局面也从当前局面重新计
     this._selected = null;
     this._lastMove = this._history.length
       ? { from: this._history[this._history.length - 1].from, to: this._history[this._history.length - 1].to }
@@ -468,8 +528,14 @@ Page({
       turn: backTurn,
       winText: '',
       selectedText: '',
+      thinking: false,
       statusText: '轮到你走棋'
-    }, () => this._drawBoard());
+    }, () => {
+      this._notePosition();
+      this._drawBoard();
+      // 极端情况下悔棋后轮到 AI（例如悔到 AI 的回合），继续让它走
+      if (this.data.mode === 'ai' && this.data.turn !== this.data.mySide) this._aiTurn();
+    });
   },
 
   /* ========== 聊天（联机） ========== */
@@ -507,8 +573,10 @@ Page({
             });
           } catch (e) { log.e('[xiangqi] leave notify fail', e); }
         }
+        this._stopAIThink();
         roomkit.closeWatch(this);
         this._roomId = null;
+        this._resetCanvas();
         this.setData({ stage: 'menu' });
       }
     });
@@ -525,6 +593,14 @@ Page({
   },
 
   /* ========== Canvas ========== */
+
+  // 画布在 wx:if 里，离开对局会被销毁；再进对局必须重新查询节点，
+  // 否则 _ctx 指向旧节点，新棋盘永远空白。
+  _resetCanvas() {
+    this._canvas = null;
+    this._ctx = null;
+    this._canvasRetry = 0;
+  },
 
   _ensureCanvas() {
     if (this._canvas) { this._drawBoard(); return; }

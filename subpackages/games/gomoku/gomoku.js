@@ -172,6 +172,7 @@ Page({
       };
       const res = await db.collection(COLLECTION).add({ data: doc });
       this._roomId = res._id;
+      this._resetCanvas();
       this.setData({
         stage: 'waiting',
         roomNo,
@@ -228,6 +229,7 @@ Page({
           updatedAt: db.serverDate()
         }
       });
+      this._resetCanvas();
       this.setData({
         stage: 'playing',
         roomNo,
@@ -342,8 +344,10 @@ Page({
     // 首次收到完整房间数据（房主在 waiting 阶段）
     if (this.data.stage === 'waiting') {
       if (room.status === 'playing') {
-        this._closeWatcher();
+        // 不能关闭 watcher：开局后还要继续接收对方落子。
+        // 关掉后只有本端能写、看不到对方，联机会变成各下各的。
         const turnNow = room.turn || 1;
+        this._resetCanvas();
         this.setData({
           stage: 'playing',
           turn: turnNow,
@@ -1036,6 +1040,13 @@ Page({
   },
 
   /* ========== Canvas 初始化（wxml canvas 准备好后调用） ========== */
+
+  // 画布在 wx:if 里，离开对局会被销毁；再进对局必须重新查询节点。
+  _resetCanvas() {
+    this._canvas = null;
+    this._ctx = null;
+    this._canvasRetry = 0;
+  },
 
   _ensureCanvas() {
     if (this._canvas) { this._drawBoard(); return; }
