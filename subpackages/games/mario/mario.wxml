@@ -33,7 +33,7 @@
     <view class="menu-tip">
       💡 创建后点右上角「···」转发给微信好友，TA 点卡片直接进房<br/>
       ▼ 站在管道口按向下键，可以进入地下金币房<br/>
-      ⚠️ 联机模式下对方位置有约 0.3 秒延迟（云推送限制），手感已做预测优化<br/>
+      ⚠️ 联机模式下对方位置有约 0.3~0.8 秒延迟（云同步限制），手感已做预测优化<br/>
       🔧 加入失败？请把云数据库房间集合权限设为「所有用户可读写」
     </view>
   </view>
@@ -63,7 +63,7 @@
       </view>
       <view class="hud-mid">
         <view class="hud-timer {{timeLeft <= 60 ? 'urgent' : ''}}">⏱ {{timeLeft}}</view>
-        <view class="hud-meta">{{statusText}} · {{metaText}}</view>
+        <view class="hud-meta">{{statusText}} · {{metaText}}<text wx:if="{{syncText}}" class="hud-sync"> · {{syncText}}</text></view>
       </view>
       <view wx:if="{{mode === 'online' || !coop}}" class="hud-side">
         <image class="hud-avatar" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"/>

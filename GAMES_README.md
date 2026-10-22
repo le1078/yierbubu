@@ -128,9 +128,9 @@ ASCII 地图 + 实体配置。主关卡占 col 0~99，col 100~135 是管道通�
 
 ```
 mario_rooms 文档：
-  world:  JSON 字符串，只有 host（座位1）写，5Hz
+  world:  JSON 字符串，只有 host（座位1）写，2.5Hz
           含双方玩家 + 敌人 + 剩余金币 + Boss
-  input2: JSON 字符串，只有 guest（座位2）写，5Hz
+  input2: JSON 字符串，只有 guest（座位2）写，2.5Hz
           含按键状态 + 已吃掉的金币 id
 ```
 
@@ -141,11 +141,11 @@ mario_rooms 文档：
 |---|---|
 | 延迟掩盖 | guest 自己的角色用本地输入做死区推算（偏差 >0.8 格才拉回），手感即时 |
 | 平滑 | host 角色/敌人/金币/Boss 用权威值 + 帧间插值，消除 watch 推送的阶梯感 |
-| 限流保护 | 默认 5Hz；写失败自动降频 2.5Hz → 1Hz |
+| 限流保护 | 每人 2.5Hz（双人合计 5Hz，避开单文档 5 次/秒限流）；写失败降 1.25Hz → 0.625Hz |
 | 防作弊 | 金币以 host 为权威：guest 只上报 `got:[id]`，host 做距离校验后才移除 |
 | 省额度 | `onHide` 停循环 + 停写入，切回来再续 |
 
-**已知限制（必须告知用户）**：云 watch 推送延迟 200~500ms，
+**已知限制（必须告知用户）**：云 watch 推送 + 2.5Hz 同步，对手位置约有 0.3~0.8 秒延迟，
 联机下对手位置仍有约 0.3 秒可感知延迟。客户端预测只能掩盖、不能消除。
 若要彻底解决需自建 WebSocket 服务器（需域名 ICP 备案 + 小程序后台配 socket 合法域名）。
 
@@ -196,6 +196,7 @@ node tools/wxml_data_audit.js     # WXML 数据字段是否都在 data/setData �
 node tools/game_page_flow_test.js # 页面流程 34 项（难度选择/悔棋/联机守卫/画布重建/watcher）
 node tools/roomkit_join_test.js   # 联机加入查询 16 项（房间号补零/24h过期/权限/集合）
 node tools/join_arg_test.js       # 加入参数 13 项（bindtap 事件对象 / 分享自动加入）
+node tools/mario_online_flow_test.js # 马里奥联机页面同步 21 项（输入中继/世界/闭环/mode/边沿锁存）
 ```
 
 所有测试都是纯 node 可跑，不需要开微信开发者工具。
@@ -236,6 +237,9 @@ node tools/join_arg_test.js       # 加入参数 13 项（bindtap 事件对象 /
 | 画布节点被 wx:if 重建 | 再进对局棋盘/画面全空 | 离开对局时 `_resetCanvas()` |
 | 联机点重开/悔棋 | 本地棋盘与云端分叉 | 联机模式直接拦截并提示 |
 | `bindtap="joinRoom"` 把事件对象当房间号 | 所有联机点加入都提示「请输入4位房间号」 | `joinRoom` 只接受字符串参数，其余回退 `roomNoInput` |
+| 玩过单机后直接联机 | `mode` 还是 `solo`，不写 world/input2，对方永远不动 | 建房/加入/房主开局都强制 `mode='online'` |
+| 双端各 5Hz 写同一房间文档 | 单文档 10 次/秒，被云数据库限流，对方像卡死 | 每人 2.5Hz（合计 5Hz），跳/下用边沿锁存，失败再降频 |
+| 分不清是延迟还是断链 | 看不到对方动，不知道同步有没有到 | HUD 超过 3 秒收不到远端数据显示「同步中断」 |
 | 旗杆判定只看 `onFlag` | 单机抓杆后关卡不结束，看起来像卡死 | 单机只生成 P1；过关必须等到 `state==='done'`；城堡列要排除末段阶梯 |
 
 ---

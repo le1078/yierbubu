@@ -6,21 +6,21 @@
 // 60fps 实时同步不可行，所以：
 //
 //   mario_rooms 文档：
-//     world:  JSON 字符串，只有 host（座位1）写，5Hz
+//     world:  JSON 字符串，只有 host（座位1）写，2.5Hz
 //             含双方玩家状态 + 敌人 + 剩余金币 + Boss
-//     input2: JSON 字符串，只有 guest（座位2）写，5Hz
+//     input2: JSON 字符串，只有 guest（座位2）写，2.5Hz
 //             含按键状态 + 已吃掉的金币 id
 //
 //   每个座位只写自己的字段 → 两个写者永不冲突，
 //   不需要 read-modify-write，规避云数据库嵌套数组更新的最大坑。
 //
-//   host 侧：本地 60Hz 确定性模拟 → 读 input2 → 每 200ms 写一次 world
-//   guest 侧：每 200ms 写一次 input2；收到 world 后：
+//   host 侧：本地 60Hz 确定性模拟 → 读 input2 → 每 400ms 写一次 world
+//   guest 侧：每 400ms 写一次 input2；收到 world 后：
 //             · 自己的角色用本地输入做死区推算（手感即时）
 //             · host 角色 / 敌人 / 金币 / Boss 用权威值 + 帧间插值
 //   金币以 host 为权威：guest 只上报 got:[coinId]，host 校验后移除，不双扣
 //
-// 预期（必须告知用户）：对手位置仍有可感知的 200~500ms 延迟，
+// 预期（必须告知用户）：对手位置仍有约 0.3~0.8 秒延迟，
 // 这是云 watch 的固有限制，客户端预测只能掩盖、不能消除。
 
 const COLLECTION = 'mario_rooms';
@@ -55,7 +55,8 @@ Page({
     p1Coins: 0,
     p2Coins: 0,
     timeLeft: 400,
-    landscape: false
+    landscape: false,
+    syncText: ''          // 联机同步状态：长时间收不到远端数据时提示
   },
 
   onLoad(options) {
@@ -193,6 +194,8 @@ Page({
       this._players[1].respawnX = level.start.col + 2.5;
     }
     this._inputs = { 1: EN.makeInput(), 2: EN.makeInput() };
+    // 2.5Hz 输入采样会漏掉「快速点一下跳/下」，用边沿锁存到下一次上报
+    this._edgeLatch = { u: false, d: false };
     this._acc = 0;                 // 物理累时器（固定步长的关键）
     this._syncAcc = 0;
     this._lastSyncOk = true;
@@ -233,13 +236,13 @@ Page({
         coop: this.data.coop ? 1 : 0,
         seats: { 1: 1, 2: 0 },
         world: JSON.stringify({ level: 0, t: 0, p1: null, p2: null, es: [], cs: [] }),
-        input2: JSON.stringify({ t: 0, keys: { l: 0, r: 0, u: 0 }, got: [] }),
+        input2: JSON.stringify({ t: 0, keys: { l: 0, r: 0, u: 0, d: 0, rn: 0 }, got: [] }),
         winner: 0
       });
       this._roomId = res.roomId;
       this._setupLevel(0);
       this._resetCanvas();
-      this.setData({ stage: 'waiting', roomNo: res.roomNo, mySeat: 1 });
+      this.setData({ stage: 'waiting', mode: 'online', roomNo: res.roomNo, mySeat: 1 });
       this._startWatch();
     } catch (err) {
       log.e('[mario] createRoom fail', err);
@@ -278,6 +281,7 @@ Page({
       if (room.world) this._applyWorld(JSON.parse(room.world), true);
       this.setData({
         stage: 'playing',
+        mode: 'online',
         roomNo,
         mySeat: 2,
         coop: room.coop === 1,
@@ -308,6 +312,7 @@ Page({
         this._resetCanvas();
         this.setData({
           stage: 'playing',
+          mode: 'online',
           statusText: '联机闯关 · P1',
           metaText: '房间 ' + (room.roomNo || this.data.roomNo) + ' · ' + (this.data.coop ? '合作' : '竞速')
         }, () => {
@@ -331,6 +336,7 @@ Page({
       // guest：应用 host 的权威世界
       try {
         this._applyWorld(JSON.parse(room.world), false);
+        this._lastRemoteAt = Date.now();
       } catch (e) {
         log.e('[mario] parse world fail', e);
       }
@@ -339,6 +345,7 @@ Page({
       // host：读取 guest 的输入
       try {
         this._applyInput2(JSON.parse(room.input2));
+        this._lastRemoteAt = Date.now();
       } catch (e) {
         log.e('[mario] parse input2 fail', e);
       }
@@ -384,6 +391,8 @@ Page({
       opp.starT = oppW.sr || 0;
       opp.lives = oppW.lv;
       opp.coins = oppW.cn;
+      if (oppW.f !== undefined) opp.face = oppW.f;
+      if (oppW.g !== undefined) opp.onGround = !!oppW.g;
       opp.state = oppW.st === 'dead' ? 'dead' : (oppW.st === 'done' ? 'done' : 'alive');
       const oppForm = (oppW.fm !== undefined) ? oppW.fm : 0;
       if (opp.form !== oppForm) EN.setForm(opp, oppForm);
@@ -435,6 +444,7 @@ Page({
     i2.left = !!inp.keys.l;
     i2.right = !!inp.keys.r;
     i2.up = !!inp.keys.u;
+    i2.down = !!inp.keys.d;
     i2.run = !!inp.keys.rn;
     // guest 上报吃掉的金币：host 做距离校验，防作弊/防双扣
     if (inp.got && inp.got.length && this._level) {
@@ -500,7 +510,7 @@ Page({
     // 胜负检查
     this._checkEnd();
 
-    // 云同步（5Hz）
+    // 云同步（每人 2.5Hz，双人合计 5Hz）
     this._syncAcc += (now - (this._lastSyncAt || now));
     if (this._syncAcc >= this.data.syncMs) {
       this._syncAcc = 0;
@@ -527,6 +537,17 @@ Page({
     // 倒计时
     if (this._level && this._level.timeLeft !== this.data.timeLeft) {
       patch.timeLeft = this._level.timeLeft;
+    }
+    // 联机同步健康度：3 秒收不到对方的 world/input2 就提示
+    if (this.data.mode === 'online') {
+      if (this._lastRemoteAt === undefined) this._lastRemoteAt = Date.now();
+      let syncText = '';
+      if (this._lastRemoteAt && Date.now() - this._lastRemoteAt > 3000) {
+        syncText = '⚠️ 同步中断';
+      }
+      if (syncText !== this.data.syncText) patch.syncText = syncText;
+    } else if (this.data.syncText) {
+      patch.syncText = '';
     }
     if (Object.keys(patch).length) this.setData(patch);
   },
@@ -642,13 +663,20 @@ Page({
         const i2 = this._inputs[2];
         const payload = {
           t: Math.round(this._level.time * 1000),
-          keys: { l: i2.left ? 1 : 0, r: i2.right ? 1 : 0, u: i2.up ? 1 : 0, rn: i2.run ? 1 : 0 },
+          keys: {
+            l: i2.left ? 1 : 0, r: i2.right ? 1 : 0,
+            u: (i2.up || this._edgeLatch.u) ? 1 : 0,
+            d: (i2.down || this._edgeLatch.d) ? 1 : 0,
+            rn: i2.run ? 1 : 0
+          },
           got: this._pendingGot || []
         };
         await db.collection(COLLECTION).doc(this._roomId).update({
           data: { input2: JSON.stringify(payload) }
         });
         this._pendingGot = [];
+        this._edgeLatch.u = false;
+        this._edgeLatch.d = false;
       }
       // 写成功：逐步恢复同步频率
       if (!this._lastSyncOk) {
@@ -677,8 +705,8 @@ Page({
     if (!i) return;
     if (k === 'l') i.left = true;
     else if (k === 'r') i.right = true;
-    else if (k === 'u') i.up = true;
-    else if (k === 'd') i.down = true;
+    else if (k === 'u') { i.up = true; this._edgeLatch.u = true; }
+    else if (k === 'd') { i.down = true; this._edgeLatch.d = true; }
     else if (k === 'run') i.run = true;
   },
 

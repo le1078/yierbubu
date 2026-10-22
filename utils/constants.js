@@ -54,9 +54,11 @@ module.exports = {
 
   // 马里奥
   MARIO_TICK_MS: 1000 / 60,           // 固定物理步长 60Hz（host/guest 必须完全一致才谈得上预测）
-  MARIO_SYNC_MS: 200,                 // 云同步周期 5Hz
-  MARIO_SYNC_SLOW_MS: 400,            // 写失败降频：2.5Hz
-  MARIO_SYNC_MIN_MS: 1000,            // 再失败降频：1Hz
+  // 同一房间文档由 host 写 world、guest 写 input2，两个写者合计才是文档写入频率。
+  // 云数据库单文档持续写入 >5 次/秒容易被限流，所以每人 2.5Hz（合计 5Hz）。
+  MARIO_SYNC_MS: 400,                 // 每人 2.5Hz（双人合计 5Hz）
+  MARIO_SYNC_SLOW_MS: 800,            // 写失败降频：每人 1.25Hz
+  MARIO_SYNC_MIN_MS: 1600,            // 再失败降频：每人 0.625Hz
   MARIO_INTERP_MS: 160,               // guest 端对 host 实体的插值窗口
   MARIO_LIVES: 3,                     // 每人命数
   MARIO_LEVEL_COUNT: 5,               // 关卡数

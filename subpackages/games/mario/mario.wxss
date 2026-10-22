@@ -299,6 +299,11 @@
   margin-top: 2rpx;
 }
 
+.hud-sync {
+  color: #E74C3C;
+  font-weight: 600;
+}
+
 /* ===== 竖屏主区：画面在上、按键在下 ===== */
 .stage-row {
   display: flex;

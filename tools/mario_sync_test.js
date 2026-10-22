@@ -214,13 +214,12 @@ console.log('\n[6] 双跑确定性');
 /* ========== 7. 同步频率与降频 ========== */
 console.log('\n[7] 同步频率策略');
 {
-  // 5Hz = 200ms，失败降 2.5Hz = 400ms，再降 1Hz = 1000ms
-  const base = 200, slow = 400, min = 1000;
-  check(base === 1000 / 5, '默认 5Hz（200ms/次）');
-  check(slow === 1000 / 2.5, '降频一档 2.5Hz');
-  check(min === 1000 / 1, '降频二档 1Hz');
-  // 每玩家每 200ms 一次写 = 5 次/秒，双人房间 10 次/秒，低于云数据库限流阈值
-  check(5 < 10, '单座位 5 次/秒，低于云数据库单文档持续写入限流阈值');
+  const C = require('../utils/constants.js');
+  const base = C.MARIO_SYNC_MS, slow = C.MARIO_SYNC_SLOW_MS, min = C.MARIO_SYNC_MIN_MS;
+  const perSide = 1000 / base;
+  check(perSide === 2.5, '每人 2.5Hz（' + base + 'ms/次）');
+  check(perSide * 2 <= 5, '双人合计 ' + (perSide * 2) + ' 次/秒，不超过云数据库单文档 5 次/秒');
+  check(slow > base && min > slow, '写失败逐级降频（' + slow + 'ms → ' + min + 'ms）');
 }
 
 /* ========== 汇总 ========== */
