@@ -101,7 +101,13 @@ Page({
   },
 
   onShow() {
-    if (this.data.stage === 'playing' && !this._paused) this._startLoop();
+    // 从后台/其他页面回来：必须清掉暂停标记再重启循环。
+    // 之前 onShow 里判断 !this._paused，而 onHide 把 _paused 置 true，
+    // 导致回到页面后循环永远不恢复（画布只剩 CSS 蓝底）。
+    if (this.data.stage === 'playing') {
+      this._paused = false;
+      this._startLoop();
+    }
   },
 
   /* ========== 布局 ========== */
@@ -121,6 +127,16 @@ Page({
     this.setData({ canvasW, canvasH, landscape: false });
   },
 
+  // 对局画布在 wx:if 里，离开 playing 时会被销毁、再进入时重建。
+  // 旧 _ctx 指向已销毁的节点，继续画只会得到一块空蓝底 —— 每次进入
+  // 新对局都重置，让 _ensureCanvas 重新查询新节点。
+  _resetCanvas() {
+    this._canvas = null;
+    this._ctx = null;
+    this._sprites = null;
+    this._bgCache = { canvas: null, w: 0, h: 0 };
+  },
+
   /* ========== 菜单 ========== */
 
   pickMode(e) {
@@ -132,6 +148,7 @@ Page({
   },
 
   startSolo() {
+    this._resetCanvas();
     // 单机只有一个真人玩家：不要再生成一个站在起点不动的 P2，
     // 否则合作模式的「双方都到终点」永远无法满足，碰到旗杆就会卡死。
     this._setupLevel(0, true);
@@ -147,6 +164,7 @@ Page({
     roomkit.closeWatch(this);
     this._roomId = null;
     this._stopLoop();
+    this._resetCanvas();
     this.setData({ stage: 'menu' });
   },
 
@@ -156,10 +174,13 @@ Page({
     const spec = LV.LEVEL_SPECS[idx];
     const level = EN.loadLevel(LV.LEVELS[idx], spec);
     this._level = level;
-    this._players = solo
+    // 单机合作只需要 P1；单机竞速生成一个电脑 P2 和你比赛。
+    const withAI = !!solo && !this.data.coop;
+    this._aiSeat = withAI ? 2 : 0;
+    this._players = (solo && !withAI)
       ? [EN.makePlayer(level, 1)]
       : [EN.makePlayer(level, 1), EN.makePlayer(level, 2)];
-    if (!solo) {
+    if (!solo || withAI) {
       // 双人出生点错开，避免叠在一起
       this._players[1].x = level.start.col + 2.5;
       this._players[1].respawnX = level.start.col + 2.5;
@@ -210,6 +231,7 @@ Page({
       });
       this._roomId = res.roomId;
       this._setupLevel(0);
+      this._resetCanvas();
       this.setData({ stage: 'waiting', roomNo: res.roomNo, mySeat: 1 });
       this._startWatch();
     } catch (err) {
@@ -241,6 +263,7 @@ Page({
       });
       const lvIdx = room.level || 0;
       this._setupLevel(lvIdx);
+      this._resetCanvas();
       // guest 是座位 2，先按 host 的世界快照对齐一帧
       if (room.world) this._applyWorld(JSON.parse(room.world), true);
       this.setData({
@@ -271,6 +294,7 @@ Page({
     // host 在等待页：对方加入后开局
     if (this.data.stage === 'waiting') {
       if (room.status === 'playing') {
+        this._resetCanvas();
         this.setData({
           stage: 'playing',
           statusText: '联机闯关 · P1',
@@ -327,6 +351,7 @@ Page({
       if (dx > 0.8 || dy > 0.8 || initial) {
         me.x = myW.x; me.y = myW.y;
         me.vx = myW.vx; me.vy = myW.vy;
+        me.starT = myW.sr || 0;
         me.lives = myW.lv;
         me.coins = myW.cn;
         if (myW.st === 'dead' || myW.st === 'done') me.state = myW.st;
@@ -345,6 +370,7 @@ Page({
       const opp = this._players[oppIdx];
       opp._tx = oppW.x; opp._ty = oppW.y;
       opp.vx = oppW.vx; opp.vy = oppW.vy;
+      opp.starT = oppW.sr || 0;
       opp.lives = oppW.lv;
       opp.coins = oppW.cn;
       opp.state = oppW.st === 'dead' ? 'dead' : (oppW.st === 'done' ? 'done' : 'alive');
@@ -434,6 +460,11 @@ Page({
 
   _tick() {
     if (this._destroyed || this._paused || this.data.stage !== 'playing') return;
+    // 兜底：竞速/单机切换时如果关卡或玩家没建好，先补建，
+    // 否则 stepWorld 会直接抛错、循环断掉，画布只剩蓝底。
+    if (!this._level || !this._players || !this._players.length) {
+      this._setupLevel(this.data.level || 0, this.data.mode === 'solo');
+    }
     // canvas 在 wx:if 渲染完成后才挂载，主循环里轮询获取（比猜时机可靠）
     if (!this._ctx) this._ensureCanvas();
 
@@ -443,6 +474,9 @@ Page({
     this._lastFrame = now;
     let steps = 0;
     while (this._acc >= C.MARIO_TICK_MS && steps < 8) {
+      if (this._aiSeat && this._players[this._aiSeat - 1]) {
+        this._inputs[this._aiSeat] = EN.makeAutoInput(this._level, this._players[this._aiSeat - 1]);
+      }
       EN.stepWorld(this._level, this._players, this._inputs, EN.TICK);
       this._acc -= C.MARIO_TICK_MS;
       steps++;
@@ -509,8 +543,12 @@ Page({
   _render() {
     const ctx = this._ctx;
     if (!ctx || !this._level) return;
-    const cam = R.cameraX(this._level, (this._players[0] || { x: 0 }).x, this.data.canvasW / this._scale);
-    const camY = R.cameraY(this._level, (this._players[0] || { y: 0 }).y, this.data.canvasH / this._scale);
+    // 摄像机跟随「自己」：联机时 guest 的 mySeat=2，不能一直跟着 host，
+    // 否则 guest 进管道/走到别处时画面会停在 host 身上。
+    const focusIdx = this.data.mode === 'online' ? Math.max(0, this.data.mySeat - 1) : 0;
+    const focus = this._players[focusIdx] || this._players[0] || { x: 0, y: 0 };
+    const cam = R.cameraX(this._level, focus.x, this.data.canvasW / this._scale);
+    const camY = R.cameraY(this._level, focus.y, this.data.canvasH / this._scale);
     R.drawFrame(ctx, {
       ctx,
       level: this._level,
@@ -544,6 +582,7 @@ Page({
 
   _checkEnd() {
     if (this._over) return;
+    if (!this._level || !this._players || !this._players.length) return;
     const cleared = this.data.coop
       ? EN.isLevelCleared(this._level, this._players)
       : EN.raceWinner(this._level, this._players) !== 0;
@@ -552,7 +591,8 @@ Page({
       this._stopLoop();
       const w = this.data.coop ? null : EN.raceWinner(this._level, this._players);
       const text = this.data.mode === 'solo'
-        ? '🎉 通关！'
+        ? (this.data.coop ? '🎉 通关！'
+          : (w === 1 ? '🎉 你赢了电脑！' : '🤖 电脑先到终点'))
         : (this.data.coop
           ? '🎉 合作通关！'
           : (w === this.data.mySeat ? '🎉 你赢了！' : '😢 对方先到终点'));
@@ -627,6 +667,7 @@ Page({
     if (k === 'l') i.left = true;
     else if (k === 'r') i.right = true;
     else if (k === 'u') i.up = true;
+    else if (k === 'd') i.down = true;
     else if (k === 'run') i.run = true;
   },
 
@@ -639,6 +680,7 @@ Page({
     if (k === 'l') i.left = false;
     else if (k === 'r') i.right = false;
     else if (k === 'u') i.up = false;
+    else if (k === 'd') i.down = false;
     else if (k === 'run') i.run = false;
   },
 
@@ -665,6 +707,7 @@ Page({
         roomkit.closeWatch(this);
         this._roomId = null;
         this._stopLoop();
+        this._resetCanvas();
         this.setData({ stage: 'menu' });
       }
     });

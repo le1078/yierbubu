@@ -138,6 +138,16 @@ console.log('[6] 关键玩法字段在页面层有同步');
 }
 
 console.log('');
+console.log('[7] 重新进入对局必须重置 canvas（防竞速模式蓝屏）');
+{
+  check(/_resetCanvas\s*\(/.test(pageSrc), '有 _resetCanvas 方法');
+  check(/startSolo\(\)\s*\{[\s\S]{0,160}_resetCanvas/.test(pageSrc), '单机开局重置画布');
+  check(/joinRoom[\s\S]{0,1200}_resetCanvas/.test(pageSrc), '加入房间重置画布');
+  check(/room\.status === 'playing'[\s\S]{0,220}_resetCanvas/.test(pageSrc), 'host 开局重置画布');
+  check(/onShow\(\)\s*\{[\s\S]{0,320}_startLoop/.test(pageSrc), 'onShow 会恢复主循环');
+}
+
+console.log('');
 console.log('========================================');
 console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 if (fail > 0) {

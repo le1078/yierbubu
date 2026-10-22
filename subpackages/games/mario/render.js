@@ -342,6 +342,40 @@ function drawPlayerAvatar(ctx, p, x, y, s, time, frames) {
 
 // 敌人
 function drawEnemy(ctx, e, x, y, s, time) {
+  if (e.type === 'piranha') {
+    const up = e.emerge || 0;
+    if (up < 0.03) return;
+    const topY = y - s * 0.35 * up;
+    // 茎
+    ctx.strokeStyle = '#2E8B57';
+    ctx.lineWidth = Math.max(2, s * 0.12);
+    ctx.beginPath();
+    ctx.moveTo(x, y + s * 0.45);
+    ctx.lineTo(x, topY + s * 0.12);
+    ctx.stroke();
+    // 花头
+    ctx.fillStyle = '#E85D75';
+    ctx.beginPath();
+    ctx.ellipse(x, topY, s * 0.3, s * 0.26, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // 白点
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    ctx.arc(x - s * 0.12, topY - s * 0.08, s * 0.05, 0, Math.PI * 2);
+    ctx.arc(x + s * 0.13, topY - s * 0.02, s * 0.045, 0, Math.PI * 2);
+    ctx.fill();
+    // 嘴/牙
+    ctx.fillStyle = '#FFF8F0';
+    ctx.beginPath();
+    ctx.moveTo(x - s * 0.18, topY + s * 0.12);
+    ctx.lineTo(x + s * 0.18, topY + s * 0.12);
+    ctx.lineTo(x + s * 0.12, topY + s * 0.24);
+    ctx.lineTo(x, topY + s * 0.14);
+    ctx.lineTo(x - s * 0.12, topY + s * 0.24);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
   if (e.type === 'flyer') {
     // 飞行怪：椭圆身 + 翅膀
     const flap = Math.sin(time * 10 + e.phase) * 0.4 + 0.6;
@@ -480,9 +514,18 @@ function drawFrame(ctx, opts) {
   const cam = (opts.cam !== undefined) ? opts.cam : cameraX(level, focus.x, viewW);
   const camY = (opts.camY !== undefined) ? opts.camY : cameraY(level, focus.y, viewH);
 
-  // 背景
-  if (bg) ctx.drawImage(bg, 0, 0, opts.viewW, opts.viewH);
-  else {
+  // 背景：主关卡用蓝天白云；摄像机进入右侧地下金币房时切暗色洞窟
+  const bonusStart = level.bonusStart || level.cols;
+  const inBonus = cam > bonusStart - 4;
+  if (inBonus) {
+    const gd = ctx.createLinearGradient(0, 0, 0, opts.viewH);
+    gd.addColorStop(0, '#1B1B2F');
+    gd.addColorStop(1, '#2E2E4A');
+    ctx.fillStyle = gd;
+    ctx.fillRect(0, 0, opts.viewW, opts.viewH);
+  } else if (bg) {
+    ctx.drawImage(bg, 0, 0, opts.viewW, opts.viewH);
+  } else {
     const g = ctx.createLinearGradient(0, 0, 0, opts.viewH);
     g.addColorStop(0, PAL.sky0);
     g.addColorStop(1, PAL.sky1);
@@ -490,15 +533,56 @@ function drawFrame(ctx, opts) {
     ctx.fillRect(0, 0, opts.viewW, opts.viewH);
   }
 
-  // 瓦片（只画视口内的）
-  const c0 = Math.max(0, Math.floor(cam) - 1);
-  const c1 = Math.min(level.cols - 1, Math.ceil(cam + viewW) + 1);
+  // 瓦片（只画视口内的）。主关卡和金币房互不串味：
+  // 在主关卡时不要把右侧金币房的墙画进画面，反之亦然。
+  let c0 = Math.max(0, Math.floor(cam) - 1);
+  let c1 = Math.min(level.cols - 1, Math.ceil(cam + viewW) + 1);
+  if (inBonus) c0 = Math.max(c0, bonusStart);
+  else c1 = Math.min(c1, bonusStart - 1);
   const r0 = 0, r1 = level.rowsH - 1;
   for (let r = r0; r <= r1; r++) {
     for (let c = c0; c <= c1; c++) {
       const ch = level.grid[r][c];
       if (ch === '.') continue;
       drawTile(ctx, ch, (c - cam) * s, (r - camY) * s, s);
+    }
+  }
+
+  // 检查点小旗（走到这里会记录重生点）
+  if (level.checkpoints) {
+    for (const cp of level.checkpoints) {
+      // 空中关的检查点不在实地上，不画（否则会飘在半空）
+      const below = level.grid[Math.min(level.rowsH - 1, cp.row + 1)];
+      if (!below || below[cp.col] !== '#') continue;
+      const cx = (cp.col + 0.5 - cam) * s;
+      const cy = (cp.row - camY) * s;
+      if (cx < -s || cx > opts.viewW + s) continue;
+      ctx.fillStyle = '#F5F5F5';
+      ctx.fillRect(cx - s * 0.04, cy - s * 2.2, s * 0.08, s * 2.2);
+      ctx.fillStyle = '#4EA8DE';
+      ctx.beginPath();
+      ctx.moveTo(cx + s * 0.04, cy - s * 2.1);
+      ctx.lineTo(cx + s * 0.55, cy - s * 1.85);
+      ctx.lineTo(cx + s * 0.04, cy - s * 1.6);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // 可进入的管道口：画一个向下的小箭头提示
+  if (level.warps) {
+    for (const wp of level.warps) {
+      const wx = (wp.col + wp.width / 2 - cam) * s;
+      const wy = (wp.topRow - camY) * s;
+      if (wx < -s || wx > opts.viewW + s) continue;
+      const bob = Math.sin(time * 4) * s * 0.08;
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.beginPath();
+      ctx.moveTo(wx - s * 0.18, wy - s * 0.8 + bob);
+      ctx.lineTo(wx + s * 0.18, wy - s * 0.8 + bob);
+      ctx.lineTo(wx, wy - s * 0.5 + bob);
+      ctx.closePath();
+      ctx.fill();
     }
   }
 
@@ -545,6 +629,41 @@ function drawFrame(ctx, opts) {
       ctx.fillStyle = '#FFF';
       ctx.beginPath();
       ctx.arc(ix, iy - s * 0.12, s * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (it.type === 'star') {
+      // 星星：金色五角星
+      const R = s * 0.34, r = s * 0.15;
+      ctx.fillStyle = '#FFD700';
+      ctx.strokeStyle = '#C8A000';
+      ctx.lineWidth = Math.max(1, s * 0.05);
+      ctx.beginPath();
+      for (let k = 0; k < 10; k++) {
+        const ang = -Math.PI / 2 + k * Math.PI / 5;
+        const rad = (k % 2 === 0) ? R : r;
+        const sx = ix + Math.cos(ang) * rad;
+        const sy = iy - s * 0.15 + Math.sin(ang) * rad;
+        if (k === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#5A4038';
+      ctx.beginPath();
+      ctx.arc(ix - s * 0.08, iy - s * 0.18, s * 0.035, 0, Math.PI * 2);
+      ctx.arc(ix + s * 0.08, iy - s * 0.18, s * 0.035, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (it.type === 'oneup') {
+      // 1-UP 蘑菇：绿伞白点
+      ctx.fillStyle = '#2EAD4E';
+      ctx.beginPath();
+      ctx.arc(ix, iy - s * 0.15, s * 0.3, Math.PI, 0);
+      ctx.fill();
+      ctx.fillStyle = '#FFF';
+      ctx.fillRect(ix - s * 0.14, iy - s * 0.15, s * 0.28, s * 0.3);
+      ctx.beginPath();
+      ctx.arc(ix - s * 0.12, iy - s * 0.24, s * 0.07, 0, Math.PI * 2);
+      ctx.arc(ix + s * 0.12, iy - s * 0.24, s * 0.07, 0, Math.PI * 2);
       ctx.fill();
     } else {
       // 蘑菇：红伞白点 + 米色菌柄
@@ -620,6 +739,19 @@ function drawFrame(ctx, opts) {
     }
   }
 
+  // 管道传送闪光
+  if (level.warpFx) {
+    for (const fx of level.warpFx) {
+      const fxX = (fx.x - cam) * s, fxY = (fx.y - camY) * s;
+      const k = Math.max(0, 1 - fx.t / 0.45);
+      ctx.strokeStyle = 'rgba(255,255,255,' + (k * 0.8).toFixed(3) + ')';
+      ctx.lineWidth = Math.max(1, s * 0.08);
+      ctx.beginPath();
+      ctx.arc(fxX, fxY, s * (0.35 + (1 - k) * 0.7), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
   // Boss
   if (level.boss && level.boss.hp > 0) {
     drawBoss(ctx, level.boss, (level.boss.x - cam) * s, (level.boss.y - camY) * s, s);
@@ -638,6 +770,24 @@ function drawFrame(ctx, opts) {
 
     drawPlayerAvatar(ctx, p, px, py, s, time,
       sprites ? sprites[p.seat] : null);
+
+    // 星星无敌：彩色光环
+    if (p.starT > 0) {
+      const starCols = ['#FFD700', '#FF8FA3', '#7FE3FF', '#B9F27C'];
+      ctx.strokeStyle = starCols[Math.floor(time * 10) % 4];
+      ctx.lineWidth = Math.max(2, s * 0.1);
+      ctx.beginPath();
+      ctx.arc(px, py - s * 0.7, s * 0.72, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = starCols[(Math.floor(time * 10) + 1) % 4];
+      for (let k = 0; k < 4; k++) {
+        const ang = time * 3 + k * Math.PI / 2;
+        ctx.beginPath();
+        ctx.arc(px + Math.cos(ang) * s * 0.85, py - s * 0.7 + Math.sin(ang) * s * 0.85,
+          s * 0.06, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
 
     // 名牌：白色小药丸，玩家色描边
     const label = 'P' + p.seat;

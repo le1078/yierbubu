@@ -57,7 +57,8 @@ console.log('\n[1] 世界序列化');
   check(w.p1.x !== w.p2.x, '双方位置不同（未串位）');
   check(Array.isArray(w.es) && w.es.length === host.level.enemies.length,
     '敌人数组完整（' + w.es.length + ' 个）');
-  check(Array.isArray(w.cs) && w.cs.length <= 9, '金币数组不超总数');
+  check(Array.isArray(w.cs) && w.cs.length <= host.level.coins.length,
+    '金币数组不超总数（' + w.cs.length + '/' + host.level.coins.length + '）');
 }
 
 /* ========== 2. host 权威 → guest 收敛 ========== */

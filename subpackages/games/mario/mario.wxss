@@ -371,6 +371,11 @@
   font-size: 34rpx;
 }
 
+.p-btn.down {
+  background: #FFF8F5;
+  font-size: 30rpx;
+}
+
 /* ===== 结算浮层 ===== */
 .end-mask {
   position: absolute;

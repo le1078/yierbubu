@@ -23,9 +23,13 @@ import io
 import json
 import os
 
-W = 96
+W = 136
 H = 16
 GROUND = 14
+# 主关卡占 0~99；100~135 是管道通往的地下金币房（同一张网格，
+# 这样联机两端共用一份关卡数据，进入管道不需要切换 level）。
+BONUS_START = 100
+BONUS_END = 135
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -85,13 +89,40 @@ def flagpole(g, c, top=4):
     put(g, GROUND - 1, c, 'f')
 
 
+def bonus_room(g):
+    """地下金币房：管道可以下来的隐藏房间。
+
+    放在主关卡右侧（BONUS_START~BONUS_END），和主关卡共用一张网格。
+    顶棚做厚一点，镜头跟随玩家时看不到外面的天空，像真的进洞了。
+    """
+    # 顶棚（0~7 行全是硬砖，镜头里形成洞顶）
+    for r in range(0, 8):
+        fill(g, r, BONUS_START, BONUS_END, 'X')
+    ground(g, BONUS_START, BONUS_END)
+    # 左右墙
+    for r in range(0, GROUND):
+        put(g, r, BONUS_START, 'X')
+        put(g, r, BONUS_END, 'X')
+
+    # 金币砖走廊
+    fill(g, 9, 106, 112, 'B')
+    put(g, 9, 109, 'C')
+    fill(g, 9, 118, 124, 'B')
+    put(g, 9, 121, '?')
+    # 隐藏 1-UP 砖（顶一下才出现）
+    put(g, 11, 112, 'H')
+
+    # 出口管道（站在管道顶上按 ↓ 回到主关卡）
+    pipe(g, 130, 2)
+
+
 def build_level_1():
     """1-1 草原关（按正版 1-1 的布局还原）"""
     g = blank()
     # 地面段。正版 1-1 有 3 个坑，坑宽 2~3 格
     ground(g, 0, 68)
     ground(g, 71, 85)
-    ground(g, 88, W - 1)
+    ground(g, 88, BONUS_START - 1)
     # 坑在 69-70（2格）、86-87（2格）
 
     # 第一组砖块（正版：? B ? B ?）
@@ -146,7 +177,7 @@ def build_level_2():
     """1-2 地下关（管道迷宫 + 大量金币）"""
     g = blank()
     # 地下关：全程有地面
-    ground(g, 0, W - 1)
+    ground(g, 0, BONUS_START - 1)
     # 地下关的顶棚（视觉上像洞窟）
     fill(g, 0, 0, W - 1, 'X')
 
@@ -186,7 +217,7 @@ def build_level_3():
     g = blank()
     # 只有起点和终点有地面
     ground(g, 0, 12)
-    ground(g, 74, W - 1)
+    ground(g, 74, BONUS_START - 1)
 
     # 悬浮平台链：水平间隔 6 格（跳跃距离 4.6~6.9 格），垂直交替 11/9 行
     plats = [(15, 11), (21, 9), (27, 11), (33, 9), (39, 11),
@@ -207,7 +238,7 @@ def build_level_3():
 def build_level_4():
     """1-4 城堡关（尖刺 + 火棒 + Boss）"""
     g = blank()
-    ground(g, 0, W - 1)
+    ground(g, 0, BONUS_START - 1)
     # 城堡内部的顶棚
     fill(g, 0, 0, W - 1, 'X')
 
@@ -273,7 +304,7 @@ def make_spec(kind, g):
     placed = 0
     last_c = -10
     for c in ground_cols:
-        if c < 14:
+        if c < 14 or c >= BONUS_START - 4:
             continue
         if c - last_c < 14:
             continue
@@ -298,6 +329,49 @@ def make_spec(kind, g):
         last_c = c
         if placed >= 5:
             break
+
+    # 地下金币房：一排金币（跳过隐藏砖所在格）
+    if kind in (1, 2, 5):
+        for i, c in enumerate(range(104, 129, 2)):
+            if c == 112:
+                continue
+            coins.append({'col': c, 'row': 11 + (i % 2)})
+
+    # 管道传送：站在入口管道顶上按 ↓ 进入地下金币房；
+    # 在金币房出口管道上按 ↓ 回到主关卡管道右侧。
+    if kind in (1, 2, 5):
+        main_pipes = sorted(set(c for c in pipes if c < BONUS_START))
+        entry = None
+        for c in main_pipes:
+            if c >= 20:
+                entry = c
+                break
+        if entry is None and main_pipes:
+            entry = main_pipes[0]
+        if entry is not None:
+            spec_warps = [
+                {'col': entry, 'width': 2,
+                 'toX': BONUS_START + 3.5, 'toY': GROUND, 'label': 'bonus'},
+                {'col': 130, 'width': 2,
+                 'toX': entry + 3.5, 'toY': GROUND, 'label': 'main'}
+            ]
+            # 入口管道上放一株食人花（正版管道口会冒出来的那种）
+            top = min([r for (r, c) in collect(g, 'P') if c == entry or c == entry + 1])
+            enemies.append({'type': 'piranha', 'col': entry + 0.5,
+                            'row': top - 0.5, 'range': 0})
+        else:
+            spec_warps = []
+    else:
+        spec_warps = []
+
+    # 特殊砖内容：隐藏砖/问号砖里放 1UP 和星星
+    block_items = {}
+    if kind in (1, 2, 5):
+        block_items = {
+            '10_34': 'oneup',   # 1-1 的 ? 砖
+            '9_121': 'star',    # 金币房的 ? 砖
+            '11_112': 'oneup'   # 金币房的隐藏砖
+        }
 
     # 道具：放在某些问号砖位置（引擎里问号砖会自己产出，这里只放额外的）
     items = []
@@ -330,6 +404,9 @@ def make_spec(kind, g):
         'items': items,
         'platforms': platforms,
         'checkpoints': checkpoints,
+        'warps': spec_warps,
+        'blockItems': block_items,
+        'bonusStart': BONUS_START
     }
 
     # Boss 只放城堡关
@@ -352,6 +429,8 @@ def main():
     specs = []
     for kind in range(1, 6):
         g = LEVEL_BUILDERS[kind - 1]()
+        # 每关右侧都建一个地下金币房（只有 1-1 / 1-2 / 1-1改 有管道入口）
+        bonus_room(g)
         rows = [''.join(r) for r in g]
         all_rows.append(rows)
         out.append('const LEVEL_%d = [' % kind)

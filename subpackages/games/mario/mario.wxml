@@ -5,7 +5,7 @@
     <view class="menu-hero">
       <view class="menu-title">🍄 小笨马里奥</view>
     </view>
-    <view class="menu-sub">双人联机闯关 · 五关 + Boss 战</view>
+    <view class="menu-sub">双人联机闯关 · 管道金币房 · 星星/1UP · 五关 + Boss 战</view>
 
     <view class="menu-card">
       <view class="sec-title">玩法</view>
@@ -16,7 +16,7 @@
         </view>
         <view class="opt {{!coop ? 'on' : ''}}" bindtap="toggleCoop">
           <view class="opt-name">🏁 竞速</view>
-          <view class="opt-desc">先到终点者胜</view>
+          <view class="opt-desc">先到终点者胜（单机有电脑）</view>
         </view>
       </view>
 
@@ -32,6 +32,7 @@
 
     <view class="menu-tip">
       💡 创建后点右上角「···」转发给微信好友，TA 点卡片直接进房<br/>
+      ▼ 站在管道口按向下键，可以进入地下金币房<br/>
       ⚠️ 联机模式下对方位置有约 0.3 秒延迟（云推送限制），手感已做预测优化
     </view>
   </view>
@@ -63,7 +64,7 @@
         <view class="hud-timer {{timeLeft <= 60 ? 'urgent' : ''}}">⏱ {{timeLeft}}</view>
         <view class="hud-meta">{{statusText}} · {{metaText}}</view>
       </view>
-      <view wx:if="{{mode === 'online'}}" class="hud-side">
+      <view wx:if="{{mode === 'online' || !coop}}" class="hud-side">
         <image class="hud-avatar" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"/>
         <view class="hud-info">
           <view class="hud-row"><text class="hud-name">P2</text><text class="hud-lives">❤️{{p2Lives}}</text></view>
@@ -101,6 +102,7 @@
     <view class="pad">
       <view class="pad-dpad">
         <view class="p-btn" data-k="l" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">◀</view>
+        <view class="p-btn down" data-k="d" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">▼</view>
         <view class="p-btn" data-k="r" bindtouchstart="onBtnDown" bindtouchend="onBtnUp" bindtouchcancel="onBtnUp">▶</view>
       </view>
       <view class="pad-act">

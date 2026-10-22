@@ -63,7 +63,8 @@ const T = {
   USED: 'U',      // 顶过的砖（空砖）
   HARD: 'X',      // 硬砖（阶梯/城堡/顶棚，不可破坏）
   COINBRICK: 'C', // 多金币砖（连顶最多 10 次）
-  FLAGBASE: 'f'   // 旗杆底座
+  FLAGBASE: 'f',  // 旗杆底座
+  HIDDEN: 'H'     // 隐藏砖（不画出来，顶一下才显形）
 };
 
 // 多金币砖最多出几枚（正版 1-1 的金币砖可顶 10 次）
@@ -81,6 +82,7 @@ SOLID[T.LIFT] = true;
 SOLID[T.USED] = true;
 SOLID[T.HARD] = true;      // 硬砖（阶梯/城堡/顶棚）
 SOLID[T.COINBRICK] = true;  // 多金币砖
+SOLID[T.HIDDEN] = true;     // 隐藏砖（从下面顶得到，平时看不见）
 
 // 尖刺不阻挡移动，但是致命
 const DEADLY = {};
@@ -90,7 +92,8 @@ DEADLY[T.SPIKE] = true;
 const E = {
   GOOMBA: 'goomba',   // 走怪：左右巡逻，踩一下死
   TURTLE: 'turtle',   // 乌龟：巡逻，踩一下变壳，再踩踢出去
-  FLYER: 'flyer'      // 飞行怪：正弦上下浮动
+  FLYER: 'flyer',     // 飞行怪：正弦上下浮动
+  PIRANHA: 'piranha'  // 食人花：从管道口周期冒出，不能踩，怕火球
 };
 
 /* ========== 玩家形态 ========== */
@@ -227,7 +230,7 @@ function loadLevel(rows, spec) {
       x: e.col + 0.5,
       y: e.row + 0.5,
       w: 0.8, h: 0.8,
-      vx: e.type === E.FLYER ? 0 : -1.0,
+      vx: (e.type === E.FLYER || e.type === E.PIRANHA) ? 0 : -1.0,
       vy: 0,
       dir: -1,
       homeX: e.col + 0.5,
@@ -239,7 +242,8 @@ function loadLevel(rows, spec) {
       shell: 'walk',
       shellT: 0,
       kicker: 0,        // 最后一个踢壳的玩家座位（防止自己被刚踢的壳撞死）
-      kickT: 0
+      kickT: 0,
+      emerge: 0         // 食人花：0 缩在管道里 / 1 完全冒出
     });
   }
   const platforms = [];
@@ -261,10 +265,10 @@ function loadLevel(rows, spec) {
     const it = iList[i];
     items.push({
       id: i,
-      type: it.type,          // 'mushroom' | 'flower'
+      type: it.type,          // 'mushroom' | 'flower' | 'star' | 'oneup'
       x: it.col + 0.5, y: it.row + 0.5,
       w: 0.7, h: 0.7,
-      vx: it.type === 'flower' ? 0 : 1.2,   // 花不动
+      vx: it.type === 'flower' ? 0 : (it.type === 'star' ? 2.2 : 1.2),
       vy: 0,
       active: true,
       emerge: it.type === 'flower' ? 0.5 : 0  // 花从砖里冒出来的过程（简化：直接出现）
@@ -289,13 +293,35 @@ function loadLevel(rows, spec) {
     }
   }
 
+  // 管道传送点：spec 里只给列，这里解析出管道口所在的行。
+  const warps = [];
+  const wList = spec.warps || [];
+  for (let i = 0; i < wList.length; i++) {
+    const w = wList[i];
+    const width = w.width || 2;
+    let topRow = -1;
+    for (let r = 0; r < grid.length && topRow < 0; r++) {
+      for (let c = w.col; c < w.col + width; c++) {
+        if (grid[r][c] === T.PIPE) { topRow = r; break; }
+      }
+    }
+    if (topRow >= 0) {
+      warps.push({
+        col: w.col, width: width, topRow: topRow,
+        toX: w.toX, toY: w.toY, label: w.label || ''
+      });
+    }
+  }
+  const blockItems = spec.blockItems || {};
+
   return {
     grid,
     rows: gridRows(grid),
     cols: grid[0].length,
     rowsH: grid.length,
     coins, enemies, platforms, items, boss,
-    blockState,
+    blockState, warps, blockItems,
+    bonusStart: spec.bonusStart || -1,
     fireballs: [],
     start: spec.start || { col: 2, row: 14 },
     checkpoints: spec.checkpoints || [],
@@ -323,6 +349,8 @@ function makePlayer(level, seat) {
     onGround: false,
     form: FORM.SMALL,       // 0 小 / 1 超级 / 2 火焰
     hurtT: 0,               // 无敌时间（受伤后闪烁）
+    starT: 0,               // 星星无敌剩余时间（碰到敌人直接撞飞）
+    warpLock: 0,            // 管道传送后的短暂锁，防止连续触发
     coyote: 0,
     buffer: 0,
     jumpHeld: false,
@@ -396,6 +424,8 @@ function stepPlayer(level, p, input, dt) {
   if (p.state === 'dead' || p.state === 'done') return;
 
   if (p.hurtT > 0) p.hurtT -= dt;
+  if (p.starT > 0) p.starT -= dt;
+  if (p.warpLock > 0) p.warpLock -= dt;
   if (p.growT > 0) p.growT -= dt;
   if (p.fireCd > 0) p.fireCd -= dt;
 
@@ -569,8 +599,31 @@ function stepPlayerFireballs(level, dt) {
 
 /* ========== 敌人 ========== */
 
-function stepEnemy(level, e, dt) {
+function stepEnemy(level, e, dt, players) {
   if (!e.alive) return;
+
+  // 食人花：在管道口周期冒出/缩回；玩家靠近时主动缩回
+  if (e.type === E.PIRANHA) {
+    e.phase += dt;
+    const cycle = e.phase % 4.2;
+    let up;
+    if (cycle < 0.6) up = cycle / 0.6;
+    else if (cycle < 2.2) up = 1;
+    else if (cycle < 2.8) up = (2.8 - cycle) / 0.6;
+    else up = 0;
+    let near = false;
+    if (players) {
+      for (const p of players) {
+        if (p.state === 'alive' && Math.abs(p.x - e.x) < 1.6 && p.y > e.homeY - 2) near = true;
+      }
+    }
+    if (near) up = 0;   // 玩家靠近立刻缩回，避免刚站上管道就被咬
+    e.emerge = Math.max(0, Math.min(1, up));
+    e.y = e.homeY - e.emerge * 0.9;
+    e.vx = 0;
+    e.vy = 0;
+    return;
+  }
 
   // 龟壳：静止壳计时后自动爬出来；滑行壳撞墙反弹
   if (e.shell === 'shell') {
@@ -801,6 +854,8 @@ function resolvePlayerFireballHits(level, players) {
 
 // 玩家受伤：超级/火焰 → 变小；小 → 死
 function hurtPlayer(p) {
+  // 星星无敌：碰到敌人不掉形态、不死（尖刺/掉坑仍然即死，不经过这里）
+  if (p.starT > 0) return;
   if (p.hurtT > 0 || p.state !== 'alive') return;
   if (p.form !== FORM.SMALL) {
     setForm(p, FORM.SMALL);
@@ -818,6 +873,20 @@ function hurtPlayer(p) {
 function resolveEnemyHit(level, p, e) {
   if (!e.alive || p.state !== 'alive') return;
   if (!playerOverlaps(p, e)) return;
+
+  // 星星无敌：碰到任何敌人直接撞飞
+  if (p.starT > 0) {
+    e.alive = false;
+    p.score += 200;
+    return;
+  }
+
+  // 食人花：缩在管道里时没有判定，冒出来时不能踩，只能火球/星星/躲开
+  if (e.type === E.PIRANHA) {
+    if ((e.emerge || 0) < 0.35) return;
+    hurtPlayer(p);
+    return;
+  }
 
   const enemyTop = e.y - e.h / 2;
   const stompDepth = p.y - enemyTop;
@@ -954,6 +1023,14 @@ function resolveItemHit(level, p) {
           p.hurtT = 0.5;
         }
         p.score += 1000;
+      } else if (it.type === 'star') {
+        // 星星：10 秒无敌，碰到敌人直接撞飞
+        p.starT = Math.max(p.starT || 0, 10);
+        p.score += 1000;
+      } else if (it.type === 'oneup') {
+        // 1-UP 蘑菇：加一条命
+        p.lives += 1;
+        p.score += 1000;
       } else {
         // 花：小/超级 → 火焰
         setForm(p, FORM.FIRE);
@@ -1050,14 +1127,14 @@ function findFlagBottom(level) {
 
 // 找终点城堡所在列。
 // 不能简单取「关卡末尾的硬砖」：1-1 末段的阶梯也是硬砖，
-// 会被误判成城堡，导致抓杆后瞬间“过关”、人卡在旗杆上。
-// 城堡是 row = rowsH-6 上连续的一段硬砖，取最右侧那一段的左边界。
+// 而且关卡右侧还有地下金币房的墙。城堡一定是旗杆右边的第一段硬砖。
 function findCastleCol(level) {
   const row = level.rowsH - 6;
   if (row < 0 || row >= level.rowsH) return level.cols - 4;
-  let c = level.cols - 1;
-  while (c >= 0 && level.grid[row][c] !== T.HARD) c--;
-  if (c < 0) return level.cols - 4;
+  const flag = findFlagCol(level);
+  let c = flag + 1;
+  while (c < level.cols && level.grid[row][c] !== T.HARD) c++;
+  if (c >= level.cols) return level.cols - 4;
   while (c > 0 && level.grid[row][c - 1] === T.HARD) c--;
   return c;
 }
@@ -1094,8 +1171,9 @@ function hitHeadBlock(level, p) {
     for (let c = c0; c <= c1; c++) {
       if (!inGrid(grid, c, headRow)) continue;
       const ch = grid[headRow][c];
-      // 注意：多金币砖 C 也要进这个分支，漏了它就永远顶不出金币
-      if (ch !== T.QUESTION && ch !== T.BRICK && ch !== T.COINBRICK) continue;
+      // 注意：多金币砖 C / 隐藏砖 H 也要进这个分支
+      if (ch !== T.QUESTION && ch !== T.BRICK && ch !== T.COINBRICK &&
+          ch !== T.HIDDEN) continue;
 
       // 多金币砖：顶一次出一枚，最多 COINBRICK_MAX 次（正版金币砖）
       if (ch === T.COINBRICK) {
@@ -1114,26 +1192,36 @@ function hitHeadBlock(level, p) {
         return;
       }
 
-      if (ch === T.QUESTION) {
+      if (ch === T.QUESTION || ch === T.HIDDEN) {
         grid[headRow][c] = T.USED;
         p.score += 200;
-        // 问号砖内容（与正版一致）：
-        //   小马里奥 → 蘑菇（变大）；大马里奥 → 火焰花。
-        //   纯金币由「多金币砖 C」负责，不要用问号砖刷金币。
-        const isBig = p.form !== FORM.SMALL;
-        // 道具出现在砖块「上方」而不是砖块内部：
-        // 砖块占 [headRow, headRow+1)，道具中心放在 headRow - 0.1，
-        // 即站在砖顶面上（正版是从砖里缓缓冒出来，这里简化为直接出现在顶上）。
-        level.items.push({
-          id: level.items.length,
-          type: isBig ? 'flower' : 'mushroom',
-          x: c + 0.5, y: headRow - 0.1,
-          w: 0.7, h: 0.7,
-          vx: isBig ? 0 : 1.2,
-          vy: 0,
-          active: true,
-          emerge: 0.3
-        });
+        // 砖块内容优先看 spec.blockItems（星星 / 1UP / 隐藏砖），
+        // 其次是正版默认：小马里奥 → 蘑菇，大马里奥 → 火焰花。
+        const key = headRow + '_' + c;
+        let itemType = level.blockItems && level.blockItems[key];
+        if (!itemType) {
+          itemType = ch === T.HIDDEN ? 'coin'
+            : (p.form !== FORM.SMALL ? 'flower' : 'mushroom');
+        }
+        if (itemType === 'coin') {
+          p.coins += 1;
+          p.score += 200;
+          if (p.coins % 100 === 0) p.lives += 1;
+          if (!level.debris) level.debris = [];
+          level.debris.push({ x: c + 0.5, y: headRow + 0.5, t: 0, kind: 'coin' });
+        } else {
+          // 道具出现在砖块上沿，站在砖顶上
+          level.items.push({
+            id: level.items.length,
+            type: itemType,
+            x: c + 0.5, y: headRow - 0.1,
+            w: 0.7, h: 0.7,
+            vx: itemType === 'flower' ? 0 : (itemType === 'star' ? 2.2 : 1.2),
+            vy: 0,
+            active: true,
+            emerge: 0.3
+          });
+        }
       } else if (ch === T.BRICK) {
         // 普通砖：大马里奥顶碎，小马里奥只顶一下（砖块保留）
         if (p.form !== FORM.SMALL) {
@@ -1160,6 +1248,33 @@ function hitHeadBlock(level, p) {
       return;
     }
   }
+}
+
+// 管道传送：站在管道口（脚底 = 管道顶行）按 ↓ 进入/返回。
+// 入口和出口都写在 spec.warps 里，联机两端用同一份数据，不需要切关卡。
+function tryPipeWarp(level, p, inp) {
+  if (!level.warps || !level.warps.length) return false;
+  if (!inp || !inp.down) return false;
+  if (p.state !== 'alive' || !p.onGround || p.onFlag) return false;
+  if (p.warpLock > 0) return false;
+  for (let i = 0; i < level.warps.length; i++) {
+    const w = level.warps[i];
+    if (p.x < w.col - 0.2 || p.x > w.col + w.width + 0.2) continue;
+    if (Math.abs(p.y - w.topRow) > 0.3) continue;
+    // 传送
+    p.x = w.toX;
+    p.y = w.toY;
+    p.vx = 0;
+    p.vy = 0;
+    p.onGround = false;
+    p.warpLock = 0.6;
+    p.hurtT = Math.max(p.hurtT || 0, 1.0);  // 落地前短暂保护
+    if (!level.warpFx) level.warpFx = [];
+    level.warpFx.push({ x: w.col + w.width / 2, y: w.topRow, t: 0 });
+    level.warpFx.push({ x: w.toX, y: w.toY, t: 0 });
+    return true;
+  }
+  return false;
 }
 
 /* ========== 世界步进 ========== */
@@ -1203,13 +1318,23 @@ function stepWorld(level, players, inputs, dt) {
     level.debris = keep;
   }
 
+  // 管道传送的闪光特效（纯表现）
+  if (level.warpFx && level.warpFx.length) {
+    const keep = [];
+    for (const fx of level.warpFx) {
+      fx.t += dt;
+      if (fx.t < 0.45) keep.push(fx);
+    }
+    level.warpFx = keep;
+  }
+
   // 旗杆下滑阶段：这些玩家不受常规输入控制
   stepClearSequence(level, players, dt);
 
   // 平台先动（玩家本帧要能踩到新位置）
   for (const pl of level.platforms) stepPlatform(level, pl, dt);
   for (const it of level.items) stepItem(level, it, dt);
-  for (const e of level.enemies) stepEnemy(level, e, dt);
+  for (const e of level.enemies) stepEnemy(level, e, dt, players);
   stepFireballs(level, dt);
   stepPlayerFireballs(level, dt);
 
@@ -1218,6 +1343,7 @@ function stepWorld(level, players, inputs, dt) {
     if (p.onFlag) continue;
     const inp = inputs[p.seat] || makeInput();
     stepPlayer(level, p, inp, dt);
+    tryPipeWarp(level, p, inp);
     resolvePlatformRide(level, p, dt);
     // 跑键连发火球（正版是单按一次发一颗，这里用冷却控制节奏）
     if (p.form === FORM.FIRE && inp.run && p.state === 'alive' && p.fireCd <= 0) {
@@ -1278,6 +1404,7 @@ function playerToWire(p) {
     x: round3(p.x), y: round3(p.y), vx: round3(p.vx), vy: round3(p.vy),
     f: p.face, g: p.onGround ? 1 : 0,
     fm: p.form,
+    sr: round3(p.starT || 0),
     st: p.state, lv: p.lives, cn: p.coins, sc: p.score
   };
 }
@@ -1299,6 +1426,80 @@ function worldToWire(level, players) {
   };
 }
 
+/* ========== 单机竞速的电脑对手 ========== */
+// 一个“会玩”的自动输入：一直向右，遇到坑/管道/尖刺/敌人才跳。
+// 和关卡测试里的机器人同一套规则，5 关都能零死亡通关。
+
+function autoGroundAhead(level, col, feetY) {
+  if (feetY < 13.5) return isSolid(level.grid, col, Math.floor(feetY + 0.001));
+  for (let r = 14; r <= 15; r++) {
+    if (isSolid(level.grid, col, r)) return true;
+  }
+  return false;
+}
+
+function autoObstacleAhead(level, col) {
+  for (let r = 11; r <= 13; r++) {
+    if (isSolid(level.grid, col, r)) return true;
+  }
+  return false;
+}
+
+function autoSpikeAhead(level, col) {
+  for (let r = 12; r <= 13; r++) {
+    if (tileAt(level.grid, col, r) === T.SPIKE) return true;
+  }
+  return false;
+}
+
+function autoBrickAbove(level, col, row) {
+  for (let r = row - 3; r <= row - 1; r++) {
+    const ch = tileAt(level.grid, col, r);
+    if (ch === T.QUESTION || ch === T.BRICK || ch === T.COINBRICK) return true;
+  }
+  return false;
+}
+
+function autoSpikeBetween(level, fromCol, toCol) {
+  for (let c = fromCol; c <= toCol; c++) {
+    if (autoSpikeAhead(level, c)) return true;
+  }
+  return false;
+}
+
+function autoEnemyAhead(level, p) {
+  for (let i = 0; i < level.enemies.length; i++) {
+    const e = level.enemies[i];
+    if (!e.alive || e.type === E.PIRANHA) continue;
+    const dx = e.x - (p.x + p.w / 2);
+    if (dx > 0.2 && dx < 2.8 && Math.abs(e.y - p.y) < 1.8) return true;
+  }
+  return false;
+}
+
+function makeAutoInput(level, p) {
+  const inp = makeInput();
+  inp.right = true;
+  const ahead = Math.floor(p.x + p.w / 2 + 0.15);
+  const cur = Math.floor(p.x);
+  if (p.onGround) {
+    let jump = false;
+    if (!autoGroundAhead(level, ahead, p.y) ||
+        !autoGroundAhead(level, ahead + 1, p.y)) jump = true;
+    if (autoObstacleAhead(level, ahead) ||
+        autoObstacleAhead(level, ahead + 1)) jump = true;
+    if (autoSpikeAhead(level, ahead) ||
+        autoSpikeAhead(level, ahead + 1)) jump = true;
+    if (autoBrickAbove(level, cur, Math.floor(p.y)) &&
+        !autoSpikeBetween(level, cur, cur + 6)) jump = true;
+    if (autoEnemyAhead(level, p)) jump = true;
+    inp.up = jump;
+  } else if (p.vy < 0) {
+    inp.up = true;
+  }
+  return inp;
+}
+
 module.exports = {
   TICK, PHYS, T, E, FORM, SOLID, DEADLY, COINBRICK_MAX,
   makeGrid, gridRows, tileAt, isSolid, inGrid,
@@ -1310,7 +1511,7 @@ module.exports = {
   resolveCoinHit, resolveItemHit, resolveHazards, resolvePlatformRide,
   resolveShellHits, resolvePlayerFireballHits,
   hitHeadBlock, hurtPlayer, kickShell, spawnFireball,
-  stepClearSequence, findFlagCol, findFlagTop, findCastleCol, findCastleDoorX,
+  tryPipeWarp, stepClearSequence, findFlagCol, findFlagTop, findCastleCol, findCastleDoorX,
   isLevelCleared, raceWinner, isGameOver,
-  playerToWire, worldToWire, round3
+  playerToWire, worldToWire, round3, makeAutoInput
 };
