@@ -195,6 +195,7 @@ node tools/wxml_event_audit.js    # WXML 事件处理函数是否都在 JS 里�
 node tools/wxml_data_audit.js     # WXML 数据字段是否都在 data/setData 里
 node tools/game_page_flow_test.js # 页面流程 34 项（难度选择/悔棋/联机守卫/画布重建/watcher）
 node tools/roomkit_join_test.js   # 联机加入查询 16 项（房间号补零/24h过期/权限/集合）
+node tools/join_arg_test.js       # 加入参数 13 项（bindtap 事件对象 / 分享自动加入）
 ```
 
 所有测试都是纯 node 可跑，不需要开微信开发者工具。
@@ -234,6 +235,7 @@ node tools/roomkit_join_test.js   # 联机加入查询 16 项（房间号补零/
 | 开局时关掉 watch | 联机只有一方能看到对方落子 | 等待页→对局时保持 watcher |
 | 画布节点被 wx:if 重建 | 再进对局棋盘/画面全空 | 离开对局时 `_resetCanvas()` |
 | 联机点重开/悔棋 | 本地棋盘与云端分叉 | 联机模式直接拦截并提示 |
+| `bindtap="joinRoom"` 把事件对象当房间号 | 所有联机点加入都提示「请输入4位房间号」 | `joinRoom` 只接受字符串参数，其余回退 `roomNoInput` |
 | 旗杆判定只看 `onFlag` | 单机抓杆后关卡不结束，看起来像卡死 | 单机只生成 P1；过关必须等到 `state==='done'`；城堡列要排除末段阶梯 |
 
 ---

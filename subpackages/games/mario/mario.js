@@ -61,12 +61,19 @@ Page({
   onLoad(options) {
     if (options && options.roomNo) {
       this._autoJoin = String(options.roomNo);
-      this.setData({ stage: 'lobby', roomNoInput: String(options.roomNo) });
+      // 马里奥没有独立的 lobby 视图，直接回到菜单（菜单里有房间号输入）
+      this.setData({ stage: 'menu', roomNoInput: String(options.roomNo) });
     }
   },
 
   onReady() {
     this._measure();
+    // 从分享卡片进入：自动加入房间
+    if (this._autoJoin) {
+      const no = this._autoJoin;
+      this._autoJoin = null;
+      this.joinRoom(no);
+    }
   },
 
   // 屏幕方向/尺寸变化（用户旋转手机）时重新计算布局。
@@ -245,7 +252,9 @@ Page({
   },
 
   async joinRoom(roomNoArg) {
-    const roomNo = roomNoArg || this.data.roomNoInput;
+    // bindtap 会把事件对象作为第一个参数传进来；只有字符串才是
+    // onLoad/分享卡片主动传的房间号，否则回退到输入框的值。
+    const roomNo = (typeof roomNoArg === 'string') ? roomNoArg : this.data.roomNoInput;
     if (this._joining) return;
     this._joining = true;
     wx.showLoading({ title: '加入中…', mask: true });

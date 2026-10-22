@@ -197,7 +197,9 @@ Page({
   },
 
   async joinRoom(roomNoArg) {
-    const roomNo = roomNoArg || this.data.roomNoInput;
+    // bindtap 会把事件对象作为第一个参数传进来；只有字符串才是
+    // onLoad/分享卡片主动传的房间号，否则回退到输入框的值。
+    const roomNo = (typeof roomNoArg === 'string') ? roomNoArg : this.data.roomNoInput;
     if (!roomNo) {
       wx.showToast({ title: '请输入房间号', icon: 'none' });
       return;
