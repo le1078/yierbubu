@@ -254,37 +254,57 @@ Page({
 
   /* ========== Watch 同步 ========== */
 
-  _startWatch() {
+  _startWatch(isRetry) {
     this._closeWatcher();
     const db = wx.cloud.database();
-    this._watchRetry = 0;
-    this._watcher = db.collection(COLLECTION).doc(this._roomId).watch({
-      onChange: (snapshot) => {
-        this._watchRetry = 0;
-        const docs = snapshot.docs;
-        if (!docs || !docs.length) return;
-        this._onRoomUpdate(docs[0]);
-      },
-      onError: (err) => {
-        log.e('watch error', err);
-        this._watcher = null;
-        // 指数退避重连；对局中断链时降级为轮询，避免界面永久卡住
-        if (this._watchRetry < 3) {
-          this._watchRetry += 1;
-          const delay = Math.pow(2, this._watchRetry) * 1000;
-          setTimeout(() => {
-            if (this._destroyed || !this._roomId) return;
-            this._startWatch();
-          }, delay);
-        } else if (this.data.stage === 'playing' && !this._watchPollInterval) {
-          wx.showToast({ title: '网络不稳定，已切换轮询', icon: 'none' });
-          this._watchPollInterval = setInterval(() => this._pollRoomStatus(), 2000);
+    if (!isRetry) this._watchRetry = 0;   // 重连保留计数，避免无限重试
+    this._pollKey = null;
+    try {
+      this._watcher = db.collection(COLLECTION).doc(this._roomId).watch({
+        onChange: (snapshot) => {
+          this._watchRetry = 0;
+          const docs = snapshot.docs;
+          if (!docs || !docs.length) return;
+          const key = JSON.stringify(docs[0]);
+          if (key === this._pollKey) return;
+          this._pollKey = key;
+          this._onRoomUpdate(docs[0]);
+        },
+        onError: (err) => {
+          log.e('watch error', err);
+          this._watcher = null;
+          this._usingPoll = true;
+          // 指数退避重连；轮询一直在跑，watch 不可用也不会卡住
+          if (this._watchRetry < 3) {
+            this._watchRetry += 1;
+            const delay = Math.pow(2, this._watchRetry) * 1000;
+            if (this._watchRetryTimer) clearTimeout(this._watchRetryTimer);
+            this._watchRetryTimer = setTimeout(() => {
+              if (this._destroyed || !this._roomId) return;
+              this._startWatch(true);
+            }, delay);
+          }
         }
-      }
-    });
+      });
+    } catch (err) {
+      // 部分基础库/开发者工具不支持实时推送
+      log.e('watch unsupported', err);
+      this._watcher = null;
+      this._usingPoll = true;
+    }
+
+    // 无条件轮询兜底：watch 正常时按 _pollKey 去重，几乎零开销。
+    // watch 在开发者工具里可能返回 reportRealtimeAction:fail not support，
+    // 没有这条轮询就会「双方都看不到对方动」。
+    if (this._watchPollInterval) clearInterval(this._watchPollInterval);
+    this._watchPollInterval = setInterval(() => this._pollRoomStatus(), 500);
   },
 
   _closeWatcher() {
+    if (this._watchRetryTimer) {
+      clearTimeout(this._watchRetryTimer);
+      this._watchRetryTimer = null;
+    }
     if (this._watcher) {
       try { this._watcher.close(); } catch (e) {}
       this._watcher = null;
@@ -292,6 +312,7 @@ Page({
     ['_waitPollInterval', '_watchPollInterval'].forEach(k => {
       if (this[k]) { clearInterval(this[k]); this[k] = null; }
     });
+    this._pollKey = null;
   },
 
   // 轮询兜底：watch 延迟/断链时也能及时同步（等待页与对局中都可用）
@@ -302,6 +323,9 @@ Page({
       const res = await db.collection(COLLECTION).doc(this._roomId).get();
       const room = res.data;
       if (!room) return;
+      const key = JSON.stringify(room);
+      if (key === this._pollKey) return;
+      this._pollKey = key;
       if (room.status === 'playing' && this.data.stage === 'waiting') {
         this._onRoomUpdate(room);
       } else if (this.data.stage === 'playing' && this._watchPollInterval) {

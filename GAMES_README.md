@@ -142,11 +142,13 @@ mario_rooms 文档：
 | 延迟掩盖 | guest 自己的角色用本地输入做死区推算（偏差 >0.8 格才拉回），手感即时 |
 | 平滑 | host 角色/敌人/金币/Boss 用权威值 + 帧间插值，消除 watch 推送的阶梯感 |
 | 限流保护 | 每人 2.5Hz（双人合计 5Hz，避开单文档 5 次/秒限流）；写失败降 1.25Hz → 0.625Hz |
+| watch 不可用 | 开发者工具可能报 `reportRealtimeAction:fail not support`；统一加 **500ms 无条件轮询兜底**，按文档 key 去重，watch 正常时几乎零开销 |
 | 防作弊 | 金币以 host 为权威：guest 只上报 `got:[id]`，host 做距离校验后才移除 |
 | 省额度 | `onHide` 停循环 + 停写入，切回来再续 |
 
-**已知限制（必须告知用户）**：云 watch 推送 + 2.5Hz 同步，对手位置约有 0.3~0.8 秒延迟，
-联机下对手位置仍有约 0.3 秒可感知延迟。客户端预测只能掩盖、不能消除。
+**已知限制（必须告知用户）**：云 watch 推送 + 2.5Hz 同步，对手位置约有 0.3~0.8 秒延迟。
+watch 不可用时由 500ms 轮询兜底，延迟会更大一些，但不会出现「对方完全不动」。
+客户端预测只能掩盖、不能消除。
 若要彻底解决需自建 WebSocket 服务器（需域名 ICP 备案 + 小程序后台配 socket 合法域名）。
 
 ---
@@ -195,6 +197,7 @@ node tools/wxml_event_audit.js    # WXML 事件处理函数是否都在 JS 里�
 node tools/wxml_data_audit.js     # WXML 数据字段是否都在 data/setData 里
 node tools/game_page_flow_test.js # 页面流程 34 项（难度选择/悔棋/联机守卫/画布重建/watcher）
 node tools/roomkit_join_test.js   # 联机加入查询 16 项（房间号补零/24h过期/权限/集合）
+node tools/roomkit_sync_test.js   # 联机同步兜底 14 项（watch 不支持时轮询仍可用）
 node tools/join_arg_test.js       # 加入参数 13 项（bindtap 事件对象 / 分享自动加入）
 node tools/mario_online_flow_test.js # 马里奥联机页面同步 21 项（输入中继/世界/闭环/mode/边沿锁存）
 ```

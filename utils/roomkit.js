@@ -126,37 +126,53 @@ async function findJoinableRoom(collection, roomNo) {
 // 订阅房间文档。onChange 收到房间文档。
 // 内部维护退避状态，调用方把返回对象挂在 this._watcher 上，
 // 用 closeWatch(page) 统一关闭。
-function startWatch(page, collection, docId, onChange) {
+function startWatch(page, collection, docId, onChange, isRetry) {
   closeWatch(page);
   const db = wx.cloud.database();
-  page._watchRetry = 0;
-  page._watcher = db.collection(collection).doc(docId).watch({
-    onChange: (snapshot) => {
-      page._watchRetry = 0;
-      const docs = snapshot.docs;
-      if (!docs || !docs.length) return;
-      onChange(docs[0]);
-    },
-    onError: (err) => {
-      log.e('[roomkit] watch error', err);
-      page._watcher = null;
-      if (page._watchRetry < 3) {
-        page._watchRetry += 1;
-        const delay = Math.pow(2, page._watchRetry) * 1000;
-        setTimeout(() => {
-          if (page._destroyed || !docId) return;
-          startWatch(page, collection, docId, onChange);
-        }, delay);
-      } else {
-        // 断链：降级为轮询，避免界面永久卡住
+  if (!isRetry) page._watchRetry = 0;   // 重连时保留计数，避免无限重试
+  page._pollKey = null;
+
+  try {
+    page._watcher = db.collection(collection).doc(docId).watch({
+      onChange: (snapshot) => {
+        page._watchRetry = 0;
+        const docs = snapshot.docs;
+        if (!docs || !docs.length) return;
+        const key = JSON.stringify(docs[0]);
+        if (key === page._pollKey) return;
+        page._pollKey = key;
+        onChange(docs[0]);
+      },
+      onError: (err) => {
+        log.e('[roomkit] watch error', err);
+        page._watcher = null;
         page._usingPoll = true;
-        if (page._pollInterval) clearInterval(page._pollInterval);
-        page._pollInterval = setInterval(() => {
-          pollRoom(page, collection, docId, onChange);
-        }, 2000);
+        // 指数退避重连；即使 watch 彻底不可用，下面的轮询也会兜底
+        if (page._watchRetry < 3) {
+          page._watchRetry += 1;
+          const delay = Math.pow(2, page._watchRetry) * 1000;
+          if (page._watchRetryTimer) clearTimeout(page._watchRetryTimer);
+          page._watchRetryTimer = setTimeout(() => {
+            if (page._destroyed || !docId) return;
+            startWatch(page, collection, docId, onChange, true);
+          }, delay);
+        }
       }
-    }
-  });
+    });
+  } catch (err) {
+    // 部分基础库/开发者工具直接不支持实时推送（reportRealtimeAction: fail not support）
+    log.e('[roomkit] watch unsupported', err);
+    page._watcher = null;
+    page._usingPoll = true;
+  }
+
+  // 无条件轮询兜底：
+  // - watch 正常时，轮询拿到的文档和 _pollKey 相同，直接跳过，几乎零开销
+  // - watch 不可用/被限流时，至少 500ms 也能拿到一次对方状态，不会「完全不动」
+  if (page._pollInterval) clearInterval(page._pollInterval);
+  page._pollInterval = setInterval(() => {
+    pollRoom(page, collection, docId, onChange);
+  }, 500);
 }
 
 // 轮询兜底：watch 延迟/断链时也能及时同步
@@ -165,13 +181,21 @@ async function pollRoom(page, collection, docId, onChange) {
   try {
     const db = wx.cloud.database();
     const res = await db.collection(collection).doc(docId).get();
-    if (res.data) onChange(res.data);
+    if (!res || !res.data) return;
+    const key = JSON.stringify(res.data);
+    if (key === page._pollKey) return;
+    page._pollKey = key;
+    onChange(res.data);
   } catch (e) {
     log.e('[roomkit] poll fail', e);
   }
 }
 
 function closeWatch(page) {
+  if (page._watchRetryTimer) {
+    clearTimeout(page._watchRetryTimer);
+    page._watchRetryTimer = null;
+  }
   if (page._watcher) {
     try { page._watcher.close(); } catch (e) {}
     page._watcher = null;
@@ -181,6 +205,7 @@ function closeWatch(page) {
     page._pollInterval = null;
   }
   page._usingPoll = false;
+  page._pollKey = null;
 }
 
 /* ========== 定时器统一清理 ========== */
@@ -188,7 +213,7 @@ function closeWatch(page) {
 // onUnload 里一把梭：清理本模块 + 页面自己的所有 _xTimer / _pollInterval。
 // 漏一个定时器 → 回调对已卸载页面 setData → 控制台刷 "当前页面不存在" 报错
 const PAGE_TIMER_KEYS = [
-  '_waitPollTimer', '_pokeTimer', '_emojiFlyTimer',
+  '_waitPollTimer', '_pokeTimer', '_emojiFlyTimer', '_watchRetryTimer',
   '_canvasRetryTimer', '_undoTimeoutTimer',
   '_thinkTimer', '_syncTimer', '_rafTimer', '_respawnTimer'
 ];

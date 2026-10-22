@@ -142,6 +142,41 @@ if (wxCallsUnsafe.length) {
 }
 
 
+// 页面 JSON 非法 key：enableShareAppMessage 不是页面配置项，
+// 分享由 onShareAppMessage 控制；写了会被开发者工具报「无效的 page.json」
+{
+  const badJson = [];
+  function walkJson(dir) {
+    for (const name of fs.readdirSync(dir)) {
+      const p = path.join(dir, name);
+      const st = fs.statSync(p);
+      if (st.isDirectory()) {
+        if (name === '.git' || name === 'node_modules' || name.startsWith('backup')) continue;
+        walkJson(p);
+      } else if (/\.json$/.test(name)) {
+        try {
+          const obj = JSON.parse(fs.readFileSync(p, 'utf8'));
+          if (Object.prototype.hasOwnProperty.call(obj, 'enableShareAppMessage')) {
+            badJson.push(path.relative(ROOT, p));
+          }
+        } catch (e) {
+          badJson.push(path.relative(ROOT, p) + '（JSON 解析失败）');
+        }
+      }
+    }
+  }
+  walkJson(path.join(ROOT, 'pages'));
+  walkJson(path.join(ROOT, 'subpackages'));
+  if (badJson.length) {
+    console.log('');
+    console.log('WARN 页面 JSON 含非法 enableShareAppMessage（应删除，分享由 onShareAppMessage 控制）：');
+    badJson.forEach(function (s) { console.log('   ' + s); });
+    problems += badJson.length;
+  } else {
+    console.log('');
+    console.log('OK 页面 JSON 无非法 enableShareAppMessage');
+  }
+}
 if (problems) {
   console.log('\n共 ' + problems + ' 处可疑调用（页面方法未定义 → 运行时 TypeError 白屏）');
   process.exit(1);
