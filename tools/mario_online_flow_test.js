@@ -136,6 +136,20 @@ function setupWorld(page) {
       check(inp.got && inp.got.length === 1 && inp.got[0] === 3, 'input2 带上已吃金币 id');
     }
 
+    check(host._txWorld === 1, 'host 写 world 后发送计数 +1');
+    check(guest._txInput === 1, 'guest 写 input2 后发送计数 +1');
+
+    // 收到远端数据后接收计数 +1
+    host.data.stage = 'playing';
+    host._onRoomUpdate({ status: 'playing', input2: JSON.stringify({ keys: { r: 1 }, got: [] }) });
+    check(host._rxInput === 1, 'host 收到 input2 后接收计数 +1');
+    guest.data.stage = 'playing';
+    guest._onRoomUpdate({
+      status: 'playing',
+      world: JSON.stringify(EN.worldToWire(host._level, host._players))
+    });
+    check(guest._rxWorld === 1, 'guest 收到 world 后接收计数 +1');
+
     // 2.5Hz 采样会漏掉快速点按：跳/下的边沿必须锁存到下一次上报
     guest._inputs[2].up = false;
     guest._inputs[2].down = false;

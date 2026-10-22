@@ -188,6 +188,11 @@ async function pollRoom(page, collection, docId, onChange) {
     onChange(res.data);
   } catch (e) {
     log.e('[roomkit] poll fail', e);
+    if (!page._pollErrorShown) {
+      page._pollErrorShown = true;
+      const hint = joinErrorText(e);
+      wx.showToast({ title: hint || '同步读取失败', icon: 'none', duration: 3000 });
+    }
   }
 }
 

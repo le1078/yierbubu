@@ -289,6 +289,7 @@ Page({
       });
       this._startWatch();
       this._startLoop();
+      this._doSync();   // 开局立刻上报一次输入
     } catch (err) {
       log.e('[mario] joinRoom fail', err);
       const hint = roomkit.joinErrorText(err);
@@ -318,6 +319,7 @@ Page({
         }, () => {
           this._over = false;
           this._startLoop();
+          this._doSync();   // 开局立刻写一次世界，别等第一个 400ms
         });
       }
       return;
@@ -337,6 +339,7 @@ Page({
       try {
         this._applyWorld(JSON.parse(room.world), false);
         this._lastRemoteAt = Date.now();
+        this._rxWorld = (this._rxWorld || 0) + 1;
       } catch (e) {
         log.e('[mario] parse world fail', e);
       }
@@ -346,6 +349,7 @@ Page({
       try {
         this._applyInput2(JSON.parse(room.input2));
         this._lastRemoteAt = Date.now();
+        this._rxInput = (this._rxInput || 0) + 1;
       } catch (e) {
         log.e('[mario] parse input2 fail', e);
       }
@@ -538,12 +542,31 @@ Page({
     if (this._level && this._level.timeLeft !== this.data.timeLeft) {
       patch.timeLeft = this._level.timeLeft;
     }
-    // 联机同步健康度：3 秒收不到对方的 world/input2 就提示
+    // 联机同步健康度：显示收发计数；3 秒收不到对方就自动重启 watch/轮询
     if (this.data.mode === 'online') {
       if (this._lastRemoteAt === undefined) this._lastRemoteAt = Date.now();
-      let syncText = '';
-      if (this._lastRemoteAt && Date.now() - this._lastRemoteAt > 3000) {
-        syncText = '⚠️ 同步中断';
+      const isHost = this.data.mySeat === 1;
+      const tx = isHost ? (this._txWorld || 0) : (this._txInput || 0);
+      const rx = isHost ? (this._rxInput || 0) : (this._rxWorld || 0);
+      let syncText = (isHost ? '发W' : '发I') + tx + ' ' + (isHost ? '收I' : '收W') + rx;
+      const stale = this._lastRemoteAt && Date.now() - this._lastRemoteAt > 3000;
+      if (stale) syncText = '⚠️ 同步中断';
+
+      // 超过 3 秒没收到对方：主动重启订阅/轮询 + 立即写一次自己的数据
+      if (stale && Date.now() - (this._lastRepairAt || 0) > 5000) {
+        this._lastRepairAt = Date.now();
+        log.d('[mario] sync repair: restart watch/poll');
+        this._startWatch();
+        this._doSync();
+      }
+
+      // 每 5 秒打一条同步计数日志，方便定位是哪一侧没写/没收到
+      if (!this._lastSyncLog || Date.now() - this._lastSyncLog > 5000) {
+        this._lastSyncLog = Date.now();
+        log.d('[mario] sync ' + (isHost ? 'host' : 'guest') +
+          ' txW=' + (this._txWorld || 0) + ' txI=' + (this._txInput || 0) +
+          ' rxW=' + (this._rxWorld || 0) + ' rxI=' + (this._rxInput || 0) +
+          ' mode=' + this.data.mode);
       }
       if (syncText !== this.data.syncText) patch.syncText = syncText;
     } else if (this.data.syncText) {
@@ -658,6 +681,7 @@ Page({
         await db.collection(COLLECTION).doc(this._roomId).update({
           data: { world: JSON.stringify(w) }
         });
+        this._txWorld = (this._txWorld || 0) + 1;
       } else {
         // guest 只写输入 + 已吃金币
         const i2 = this._inputs[2];
@@ -674,6 +698,7 @@ Page({
         await db.collection(COLLECTION).doc(this._roomId).update({
           data: { input2: JSON.stringify(payload) }
         });
+        this._txInput = (this._txInput || 0) + 1;
         this._pendingGot = [];
         this._edgeLatch.u = false;
         this._edgeLatch.d = false;
