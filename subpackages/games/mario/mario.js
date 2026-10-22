@@ -132,7 +132,9 @@ Page({
   },
 
   startSolo() {
-    this._setupLevel(0);
+    // 单机只有一个真人玩家：不要再生成一个站在起点不动的 P2，
+    // 否则合作模式的「双方都到终点」永远无法满足，碰到旗杆就会卡死。
+    this._setupLevel(0, true);
     // 必须在 setData 回调里启动循环：_tick 会检查 this.data.stage === 'playing'，
     // 而 setData 是异步的，提前启动会导致第一帧就 return、且不再续 timer
     this.setData({ stage: 'playing', mode: 'solo', mySeat: 1, statusText: '单机试玩 · P1' }, () => {
@@ -150,14 +152,18 @@ Page({
 
   /* ========== 关卡装载 ========== */
 
-  _setupLevel(idx) {
+  _setupLevel(idx, solo) {
     const spec = LV.LEVEL_SPECS[idx];
     const level = EN.loadLevel(LV.LEVELS[idx], spec);
     this._level = level;
-    this._players = [EN.makePlayer(level, 1), EN.makePlayer(level, 2)];
-    // 双人出生点错开，避免叠在一起
-    this._players[1].x = level.start.col + 2.5;
-    this._players[1].respawnX = level.start.col + 2.5;
+    this._players = solo
+      ? [EN.makePlayer(level, 1)]
+      : [EN.makePlayer(level, 1), EN.makePlayer(level, 2)];
+    if (!solo) {
+      // 双人出生点错开，避免叠在一起
+      this._players[1].x = level.start.col + 2.5;
+      this._players[1].respawnX = level.start.col + 2.5;
+    }
     this._inputs = { 1: EN.makeInput(), 2: EN.makeInput() };
     this._acc = 0;                 // 物理累时器（固定步长的关键）
     this._syncAcc = 0;
@@ -171,7 +177,7 @@ Page({
 
   nextLevel() {
     const n = (this.data.level + 1) % LV.LEVEL_SPECS.length;
-    this._setupLevel(n);
+    this._setupLevel(n, this.data.mode === 'solo');
     this.setData({ stage: 'playing', winText: '' }, () => {
       this._over = false;
       this._startLoop();
@@ -179,7 +185,7 @@ Page({
   },
 
   restart() {
-    this._setupLevel(this.data.level);
+    this._setupLevel(this.data.level, this.data.mode === 'solo');
     this.setData({ stage: 'playing', winText: '' }, () => {
       this._over = false;
       this._startLoop();
@@ -545,9 +551,11 @@ Page({
       this._over = true;
       this._stopLoop();
       const w = this.data.coop ? null : EN.raceWinner(this._level, this._players);
-      const text = this.data.coop
-        ? '🎉 合作通关！'
-        : (w === this.data.mySeat ? '🎉 你赢了！' : '😢 对方先到终点');
+      const text = this.data.mode === 'solo'
+        ? '🎉 通关！'
+        : (this.data.coop
+          ? '🎉 合作通关！'
+          : (w === this.data.mySeat ? '🎉 你赢了！' : '😢 对方先到终点'));
       this.setData({ stage: 'ended', winText: text, statusText: '本关完成' });
       if (this.data.mode === 'online' && this._roomId) {
         const db = wx.cloud.database();

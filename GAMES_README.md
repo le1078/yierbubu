@@ -165,9 +165,9 @@ node tools/xiangqi_logic_test.js  # 象棋规则 133 项
 node tools/xiangqi_ai_test.js     # 象棋 AI 22 项
 node tools/mario_logic_test.js    # 马里奥引擎 94 项（含双跑确定性）
 node tools/mario_sync_test.js     # 马里奥联机同步 25 项
-node tools/mario_level_test.js    # 马里奥关卡 12 项（含 5 关端到端通关）
+node tools/mario_level_test.js    # 马里奥关卡 13 项（含 5 关端到端通关 + 旗杆完整流程）
 node tools/mario_mechanics_test.js # 马里奥机制 48 项
-node tools/mario_render_test.js   # 马里奥渲染 7 项（角色必须画出来）
+node tools/mario_render_test.js   # 马里奥渲染 8 项（角色必须画出来）
 node tools/mario_page_check.js    # 页面-引擎一致性 14 项
 ```
 
@@ -199,6 +199,7 @@ node tools/mario_page_check.js    # 页面-引擎一致性 14 项
 | 马里奥 `onGround` 用身体盒探测 | 走出平台边缘仍判落地 | 改用脚下一行薄探针 |
 | 马里奥踩头容差过松 | 侧面蹭到也判踩头，敌人白死 | 加「踩入深度 < 敌人高度 3/4」 |
 | 移动平台不承载玩家 | 站上去几帧就掉 | 记录平台上帧位移，叠加到玩家坐标 |
+| 旗杆判定只看 `onFlag` | 单机抓杆后关卡不结束，看起来像卡死 | 单机只生成 P1；过关必须等到 `state==='done'`；城堡列要排除末段阶梯 |
 
 ---
 

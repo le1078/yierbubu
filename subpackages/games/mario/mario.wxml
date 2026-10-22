@@ -63,7 +63,7 @@
         <view class="hud-timer {{timeLeft <= 60 ? 'urgent' : ''}}">⏱ {{timeLeft}}</view>
         <view class="hud-meta">{{statusText}} · {{metaText}}</view>
       </view>
-      <view class="hud-side">
+      <view wx:if="{{mode === 'online'}}" class="hud-side">
         <image class="hud-avatar" src="/subpackages/games/mario/img/avatar_b.gif" mode="aspectFit"/>
         <view class="hud-info">
           <view class="hud-row"><text class="hud-name">P2</text><text class="hud-lives">❤️{{p2Lives}}</text></view>

@@ -1023,11 +1023,12 @@ function stepClearSequence(level, players, dt) {
       p.vy = 0;
       p.vx = 0;
     } else {
-      // 到达杆底：自动向右走向城堡
+      // 到达杆底：自动向右走进城堡门洞
       p.face = 1;
       p.x += 3.2 * dt;
-      const castleCol = findCastleCol(level);
-      if (p.x >= castleCol + 1.5) {
+      const doorX = findCastleDoorX(level);
+      if (p.x >= doorX) {
+        p.x = doorX;
         p.state = 'done';
         p.finishT = level.time;
         // 剩余时间换算成分数（正版每单位时间 50 分）
@@ -1047,16 +1048,29 @@ function findFlagBottom(level) {
   return last;
 }
 
+// 找终点城堡所在列。
+// 不能简单取「关卡末尾的硬砖」：1-1 末段的阶梯也是硬砖，
+// 会被误判成城堡，导致抓杆后瞬间“过关”、人卡在旗杆上。
+// 城堡是 row = rowsH-6 上连续的一段硬砖，取最右侧那一段的左边界。
 function findCastleCol(level) {
-  for (let r = 0; r < level.rowsH; r++) {
-    for (let c = 0; c < level.cols; c++) {
-      if (level.grid[r][c] === T.HARD) {
-        // 城堡用 HARD 瓦片搭，取最右侧的一段
-        if (c > level.cols - 15) return c;
-      }
-    }
+  const row = level.rowsH - 6;
+  if (row < 0 || row >= level.rowsH) return level.cols - 4;
+  let c = level.cols - 1;
+  while (c >= 0 && level.grid[row][c] !== T.HARD) c--;
+  if (c < 0) return level.cols - 4;
+  while (c > 0 && level.grid[row][c - 1] === T.HARD) c--;
+  return c;
+}
+
+// 城堡门洞：城堡底行里第一个不是硬砖的格子（生成器在 c+2 留门）。
+// 城堡底行是 GROUND-1，即 rowsH-3；不能用 rowsH-1（那是地面，永远不是硬砖）。
+function findCastleDoorX(level) {
+  const c0 = findCastleCol(level);
+  const row = level.rowsH - 3;
+  for (let c = c0; c < level.cols; c++) {
+    if (level.grid[row][c] !== T.HARD) return c + 0.5;
   }
-  return level.cols - 4;
+  return c0 + 2.5;
 }
 
 /* ========== 顶砖块 / 问号砖 ========== */
@@ -1296,7 +1310,7 @@ module.exports = {
   resolveCoinHit, resolveItemHit, resolveHazards, resolvePlatformRide,
   resolveShellHits, resolvePlayerFireballHits,
   hitHeadBlock, hurtPlayer, kickShell, spawnFireball,
-  stepClearSequence, findFlagCol, findFlagTop,
+  stepClearSequence, findFlagCol, findFlagTop, findCastleCol, findCastleDoorX,
   isLevelCleared, raceWinner, isGameOver,
   playerToWire, worldToWire, round3
 };

@@ -118,6 +118,17 @@ console.log('\n[4] 死亡角色不绘制');
     cam: 0, camY: 7, sprites: { 1: fake, 2: fake }
   });
   check(ctx._draws.length === 1, '只画存活的 P1（' + ctx._draws.length + ' 个）');
+
+  // 走进城堡后（done）也应该从画面消失
+  const st2 = setup();
+  st2.players[1].state = 'done';
+  const ctx2 = makeMockCtx();
+  R.drawFrame(ctx2, {
+    ctx: ctx2, level: st2.level, players: st2.players, time: 1,
+    viewW: W, viewH: H, scale: S, bgCache: { canvas: null, w: 0, h: 0 },
+    cam: 0, camY: 7, sprites: { 1: fake, 2: fake }
+  });
+  check(ctx2._draws.length === 1, '已走进城堡的 P2 不再绘制（' + ctx2._draws.length + ' 个）');
 }
 
 console.log('\n========================================');

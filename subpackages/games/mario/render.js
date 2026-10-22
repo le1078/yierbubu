@@ -630,7 +630,8 @@ function drawFrame(ctx, opts) {
   // 原生 canvas 盖住（只看得见名牌，看不到角色）——画进 canvas 最稳。
   const sprites = opts.sprites || null;
   for (const p of players) {
-    if (p.state === 'dead') continue;
+    // dead：已消失；done：已经走进城堡，不再留在画面里
+    if (p.state === 'dead' || p.state === 'done') continue;
     if (p.x < cam - 2 || p.x > cam + viewW + 2) continue;
     const px = (p.x - cam) * s;
     const py = (p.y - camY) * s;

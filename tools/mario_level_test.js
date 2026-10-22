@@ -109,8 +109,10 @@ function playLevel(idx, maxFrames) {
     if (p.state === 'dying' && !wasDying) deaths++;
     wasDying = p.state === 'dying';
     if (p.x > maxX) maxX = p.x;
-    if (p.state === 'done' || p.onFlag) {
-      return { cleared: true, maxX: maxX, deaths: deaths, jumped: jumped, flag: flag, level: level };
+    // 必须等到走进城堡（state === 'done'）才算通关。
+    // 只碰到旗杆（onFlag）就返回会漏掉后半段，之前「旗杆卡死」就是这么漏掉的。
+    if (p.state === 'done') {
+      return { cleared: true, maxX: maxX, deaths: deaths, jumped: jumped, flag: flag, level: level, frames: f };
     }
     if (p.state === 'dead') {
       return { cleared: false, maxX: maxX, deaths: deaths, jumped: jumped, flag: flag, level: level };
@@ -306,6 +308,55 @@ console.log('[8] 大形态能跳过 1-1 第一根管道（用户实测卡死点�
   }
   console.log('    大形态落点 x=' + p.x.toFixed(2) + ' y=' + p.y.toFixed(2) + ' onGround=' + p.onGround);
   check(crossed && p.state === 'alive', '大形态成功越过管道（x > 30.5）');
+}
+
+console.log('');
+console.log('[9] 旗杆 → 走进城堡 → 结算（单机单人完整流程）');
+{
+  let allOk = true;
+  for (let i = 0; i < LV.LEVELS.length; i++) {
+    const level = EN.loadLevel(LV.LEVELS[i], LV.LEVEL_SPECS[i]);
+    const flagCol = EN.findFlagCol(level);
+    const castleCol = EN.findCastleCol(level);
+    const doorX = EN.findCastleDoorX(level);
+
+    // 城堡必须真的在旗杆右边。1-1 末段阶梯也是硬砖，
+    // 以前会把 col 82 的阶梯误判成城堡，抓杆后瞬间“完成”卡住。
+    if (!(castleCol > flagCol)) {
+      allOk = false;
+      console.log('    第 ' + (i + 1) + ' 关城堡列 ' + castleCol + ' 不在旗杆 ' + flagCol + ' 右边');
+    }
+    if (!(doorX > castleCol)) {
+      allOk = false;
+      console.log('    第 ' + (i + 1) + ' 关门洞 x=' + doorX + ' 不在城堡右侧');
+    }
+
+    // 单机模式只有一个玩家，必须能独立触发过关。
+    const p = EN.makePlayer(level, 1);
+    p.x = flagCol - 0.6; p.y = 14;
+    const inp = EN.makeInput();
+    inp.right = true;
+    let grabbed = -1, doneAt = -1;
+    for (let f = 0; f < 300; f++) {
+      EN.stepWorld(level, [p], { 1: inp }, EN.TICK);
+      if (p.onFlag && grabbed < 0) grabbed = f;
+      if (p.state === 'done') { doneAt = f; break; }
+    }
+    const took = grabbed >= 0 && doneAt >= 0 ? doneAt - grabbed : -1;
+    const cleared = EN.isLevelCleared(level, [p]);
+    console.log('    第 ' + (i + 1) + ' 关：抓杆 f' + grabbed + ' → 完成 f' + doneAt +
+      '（' + (took / 60).toFixed(2) + 's），x=' + p.x.toFixed(2) + ' / 门 ' + doorX.toFixed(2) +
+      '，cleared=' + cleared);
+    if (grabbed < 0 || doneAt < 0 || !cleared || p.x < doorX - 0.01) {
+      allOk = false;
+      console.log('      x 未完成完整过关流程');
+    }
+    if (took >= 0 && took < 15) {
+      allOk = false;
+      console.log('      x 抓杆后瞬间完成（<0.25s），城堡列判定有误');
+    }
+  }
+  check(allOk, '5 关都能从旗杆走到城堡门并结算（单人可通关）');
 }
 
 console.log('');
