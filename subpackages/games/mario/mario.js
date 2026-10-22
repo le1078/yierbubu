@@ -236,7 +236,8 @@ Page({
       this._startWatch();
     } catch (err) {
       log.e('[mario] createRoom fail', err);
-      wx.showToast({ title: '创建失败，请检查云环境', icon: 'none' });
+      const hint = roomkit.joinErrorText(err);
+      wx.showToast({ title: hint || '创建失败，请检查云环境', icon: 'none', duration: 3000 });
     } finally {
       wx.hideLoading();
       this._creating = false;
@@ -277,7 +278,8 @@ Page({
       this._startLoop();
     } catch (err) {
       log.e('[mario] joinRoom fail', err);
-      wx.showToast({ title: '加入失败：' + (err.errMsg || '未知错误'), icon: 'none' });
+      const hint = roomkit.joinErrorText(err);
+      wx.showToast({ title: hint || ('加入失败：' + (err.errMsg || '未知错误')), icon: 'none', duration: 3000 });
     } finally {
       wx.hideLoading();
       this._joining = false;

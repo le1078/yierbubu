@@ -86,6 +86,7 @@
         <view class="big-btn" bindtap="joinRoom">加入</view>
       </view>
       <view class="hint">💡 创建后点右上角「···」转发给微信好友，TA 点卡片直接进入</view>
+      <view class="hint">⚠️ 加入失败？请把云数据库房间集合权限设为「所有用户可读写」</view>
       <view class="big-btn ghost" bindtap="backToMenu">🚪 返回</view>
     </view>
   </view>

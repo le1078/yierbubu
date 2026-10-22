@@ -7,6 +7,7 @@ const SIZE = 15; // 15x15 棋盘
 // 注意：分包里引用主包 utils 要往上三级（subpackages/games/gomoku → 根目录）
 const C = require('../../../utils/constants.js');
 const log = require('../../../utils/log.js');
+const roomkit = require('../../../utils/roomkit.js');
 
 const AVATARS = ['/assets/avatar_a.gif', '/assets/avatar_b.gif'];
 
@@ -197,8 +198,8 @@ Page({
 
   async joinRoom(roomNoArg) {
     const roomNo = roomNoArg || this.data.roomNoInput;
-    if (!roomNo || roomNo.length !== 4) {
-      wx.showToast({ title: '请输入4位房间号', icon: 'none' });
+    if (!roomNo) {
+      wx.showToast({ title: '请输入房间号', icon: 'none' });
       return;
     }
     if (this._joining) return;
@@ -206,20 +207,10 @@ Page({
     wx.showLoading({ title: '加入中…', mask: true });
     try {
       const db = wx.cloud.database();
-      // 只取最近 24 小时内的同名房间，避免加入早已作废的孤儿房间
-      const since = new Date(Date.now() - C.ROOM_EXPIRE_MS);
-      const q = await db.collection(COLLECTION)
-        .where({ roomNo, createdAt: db.command.gte(since) })
-        .orderBy('createdAt', 'desc').limit(1).get();
-      if (!q.data || !q.data.length) {
-        wx.showToast({ title: '房间不存在', icon: 'none' });
-        return;
-      }
-      const room = q.data[0];
-      if (room.status !== 'waiting') {
-        wx.showToast({ title: '房间已开始或已结束', icon: 'none' });
-        return;
-      }
+      // 统一走 roomkit：单字段查询（不依赖复合索引）+ 24h 过期过滤
+      // + 权限/集合不存在的中文提示。
+      const room = await roomkit.findJoinableRoom(COLLECTION, roomNo);
+      if (!room) return;
       this._roomId = room._id;
       this._isJoiner = true;
       await db.collection(COLLECTION).doc(this._roomId).update({
@@ -232,7 +223,7 @@ Page({
       this._resetCanvas();
       this.setData({
         stage: 'playing',
-        roomNo,
+        roomNo: room.roomNo || roomNo,
         myColor: 2,
         myColorText: '⚪ 白棋（后手）',
         myAvatar: room.avatars.white,
@@ -251,7 +242,8 @@ Page({
       this._startWatch();
     } catch (err) {
       console.error('joinRoom fail', err);
-      wx.showToast({ title: '加入失败：' + (err.errMsg || '未知错误'), icon: 'none' });
+      const hint = roomkit.joinErrorText(err);
+      wx.showToast({ title: hint || ('加入失败：' + (err.errMsg || '未知错误')), icon: 'none', duration: 3000 });
     } finally {
       wx.hideLoading();
       this._joining = false;

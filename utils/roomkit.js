@@ -45,8 +45,31 @@ async function createRoom(collection, doc) {
   return { roomId: res._id, roomNo };
 }
 
+// 把云数据库的常见错误翻译成用户能照着做的提示。
+// 联机加入失败里最常见的不是代码问题，而是集合权限/索引没配好。
+function joinErrorText(err) {
+  const msg = (err && (err.errMsg || err.message)) || '';
+  if (/permission|denied|not authorized|-502003|权限/i.test(msg)) {
+    return '数据库权限不足：房间集合需设为「所有用户可读写」';
+  }
+  if (/index|索引/i.test(msg)) {
+    return '数据库缺少索引：请给 roomNo 建单字段索引';
+  }
+  if (/collection.*not exist|集合.*不存在|DATABASE_COLLECTION_NOT_EXIST/i.test(msg)) {
+    return '房间集合不存在，请先在云开发后台创建';
+  }
+  if (/env|环境|invalid.*env/i.test(msg)) {
+    return '云环境配置错误，请检查 app.js 的 cloud env';
+  }
+  return '';
+}
+
 // 加入房间。只认 24 小时内、状态为 waiting 的同名房间。
 // 返回房间文档；找不到/不可加入时 toast 说明原因并返回 null。
+//
+// 查询只用 roomNo 单字段，createdAt/status 在本地过滤：
+// 1) 避免 where + orderBy 触发复合索引要求（没建索引时直接报错）
+// 2) 权限不足时云数据库可能返回空数组而不是报错，这里至少给出可操作的提示
 async function findJoinableRoom(collection, roomNo) {
   const db = wx.cloud.database();
   const raw = String(roomNo || '').replace(/\D/g, '');
@@ -60,23 +83,42 @@ async function findJoinableRoom(collection, roomNo) {
   const padded = raw.padStart(4, '0');
   if (padded !== raw) candidates.push(padded);
   candidates.push(raw);
-  const since = new Date(Date.now() - C.ROOM_EXPIRE_MS);
-  let room = null;
+  const now = Date.now();
+  const since = now - C.ROOM_EXPIRE_MS;
+  let best = null;
+  let sawStarted = false;
+
   for (const cand of candidates) {
-    const q = await db.collection(collection)
-      .where({ roomNo: cand, createdAt: db.command.gte(since) })
-      .orderBy('createdAt', 'desc').limit(1).get();
-    if (q.data && q.data.length) { room = q.data[0]; break; }
+    let q;
+    try {
+      q = await db.collection(collection).where({ roomNo: cand }).limit(20).get();
+    } catch (err) {
+      log.e('[roomkit] find room fail', err);
+      const hint = joinErrorText(err);
+      wx.showToast({ title: hint || '查询房间失败', icon: 'none', duration: 3000 });
+      return null;
+    }
+    const list = (q && q.data) || [];
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
+      if (!r) continue;
+      // 兼容没有 createdAt 的旧房间；有 createdAt 的必须没过期
+      const t = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+      if (r.createdAt && t < since) continue;
+      if (r.status !== 'waiting') { sawStarted = true; continue; }
+      if (!best || t > best.t) best = { room: r, t: t };
+    }
+    if (best) break;
   }
-  if (!room) {
-    wx.showToast({ title: '房间不存在', icon: 'none' });
+
+  if (!best) {
+    wx.showToast({
+      title: sawStarted ? '房间已开始或已结束' : '房间不存在或无权读取',
+      icon: 'none', duration: 3000
+    });
     return null;
   }
-  if (room.status !== 'waiting') {
-    wx.showToast({ title: '房间已开始或已结束', icon: 'none' });
-    return null;
-  }
-  return room;
+  return best.room;
 }
 
 /* ========== Watch 同步（带退避重连 + 轮询兜底） ========== */
@@ -295,6 +337,7 @@ module.exports = {
   genRoomNo,
   createRoom,
   findJoinableRoom,
+  joinErrorText,
   startWatch,
   pollRoom,
   closeWatch,
