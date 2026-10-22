@@ -168,11 +168,21 @@ function startWatch(page, collection, docId, onChange, isRetry) {
 
   // 无条件轮询兜底：
   // - watch 正常时，轮询拿到的文档和 _pollKey 相同，直接跳过，几乎零开销
-  // - watch 不可用/被限流时，至少 500ms 也能拿到一次对方状态，不会「完全不动」
-  if (page._pollInterval) clearInterval(page._pollInterval);
-  page._pollInterval = setInterval(() => {
-    pollRoom(page, collection, docId, onChange);
-  }, 500);
+  // - watch 不可用/被限流时，至少能拿到对方状态，不会「完全不动」
+  // 注意用「串行自调度」而不是 setInterval：云数据库 get 有时要几百毫秒，
+  // setInterval 会重叠请求，旧响应可能后到并覆盖新状态（表现为延迟/回跳）。
+  startPollLoop(page, collection, docId, onChange, 0);
+}
+
+function startPollLoop(page, collection, docId, onChange, delay) {
+  if (page._pollTimer) clearTimeout(page._pollTimer);
+  page._pollTimer = setTimeout(async function () {
+    page._pollTimer = null;
+    if (page._destroyed) return;
+    await pollRoom(page, collection, docId, onChange);
+    if (page._destroyed) return;
+    startPollLoop(page, collection, docId, onChange, 200);
+  }, delay || 0);
 }
 
 // 轮询兜底：watch 延迟/断链时也能及时同步
@@ -205,6 +215,10 @@ function closeWatch(page) {
     try { page._watcher.close(); } catch (e) {}
     page._watcher = null;
   }
+  if (page._pollTimer) {
+    clearTimeout(page._pollTimer);
+    page._pollTimer = null;
+  }
   if (page._pollInterval) {
     clearInterval(page._pollInterval);
     page._pollInterval = null;
@@ -218,7 +232,7 @@ function closeWatch(page) {
 // onUnload 里一把梭：清理本模块 + 页面自己的所有 _xTimer / _pollInterval。
 // 漏一个定时器 → 回调对已卸载页面 setData → 控制台刷 "当前页面不存在" 报错
 const PAGE_TIMER_KEYS = [
-  '_waitPollTimer', '_pokeTimer', '_emojiFlyTimer', '_watchRetryTimer',
+  '_waitPollTimer', '_pokeTimer', '_emojiFlyTimer', '_watchRetryTimer', '_pollTimer',
   '_canvasRetryTimer', '_undoTimeoutTimer',
   '_thinkTimer', '_syncTimer', '_rafTimer', '_respawnTimer'
 ];

@@ -296,8 +296,19 @@ Page({
     // 无条件轮询兜底：watch 正常时按 _pollKey 去重，几乎零开销。
     // watch 在开发者工具里可能返回 reportRealtimeAction:fail not support，
     // 没有这条轮询就会「双方都看不到对方动」。
-    if (this._watchPollInterval) clearInterval(this._watchPollInterval);
-    this._watchPollInterval = setInterval(() => this._pollRoomStatus(), 500);
+    // 用串行自调度，避免 get 慢时多个请求重叠、旧响应覆盖新状态。
+    this._startPolling();
+  },
+
+  _startPolling(delay) {
+    if (this._pollTimer) clearTimeout(this._pollTimer);
+    this._pollTimer = setTimeout(async () => {
+      this._pollTimer = null;
+      if (this._destroyed) return;
+      await this._pollRoomStatus();
+      if (this._destroyed) return;
+      this._startPolling(200);
+    }, delay || 0);
   },
 
   _closeWatcher() {
@@ -309,6 +320,7 @@ Page({
       try { this._watcher.close(); } catch (e) {}
       this._watcher = null;
     }
+    if (this._pollTimer) { clearTimeout(this._pollTimer); this._pollTimer = null; }
     ['_waitPollInterval', '_watchPollInterval'].forEach(k => {
       if (this[k]) { clearInterval(this[k]); this[k] = null; }
     });
@@ -328,7 +340,7 @@ Page({
       this._pollKey = key;
       if (room.status === 'playing' && this.data.stage === 'waiting') {
         this._onRoomUpdate(room);
-      } else if (this.data.stage === 'playing' && this._watchPollInterval) {
+      } else if (this.data.stage === 'playing') {
         this._onRoomUpdate(room);
       }
     } catch (e) {

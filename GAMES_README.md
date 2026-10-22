@@ -128,10 +128,12 @@ ASCII 地图 + 实体配置。主关卡占 col 0~99，col 100~135 是管道通�
 
 ```
 mario_rooms 文档：
-  world:  JSON 字符串，只有 host（座位1）写，2.5Hz
-          含双方玩家 + 敌人 + 剩余金币 + Boss
-  input2: JSON 字符串，只有 guest（座位2）写，2.5Hz
-          含按键状态 + 已吃掉的金币 id
+  {roomId}          ← 房间元数据 + world（只有 host 写，2.5Hz）
+  {roomId}_input    ← guest 输入（只有 guest 写，2.5Hz）
+                     含按键状态 + 已吃掉的金币 id
+
+把 world 和 input2 拆成两个文档，是为了避免两个写者并发写同一个
+文档触发云数据库单文档写入限流（之前表现为对手 3 秒才动一次）。
 ```
 
 **每个座位只写自己的字段 → 两个写者永不冲突**，不需要 read-modify-write，
@@ -142,7 +144,9 @@ mario_rooms 文档：
 | 延迟掩盖 | guest 自己的角色用本地输入做死区推算（偏差 >0.8 格才拉回），手感即时 |
 | 平滑 | host 角色/敌人/金币/Boss 用权威值 + 帧间插值，消除 watch 推送的阶梯感 |
 | 限流保护 | 每人 2.5Hz（双人合计 5Hz，避开单文档 5 次/秒限流）；写失败降 1.25Hz → 0.625Hz |
-| watch 不可用 | 开发者工具可能报 `reportRealtimeAction:fail not support`；统一加 **500ms 无条件轮询兜底**，按文档 key 去重，watch 正常时几乎零开销 |
+| watch 不可用 | 开发者工具可能报 `reportRealtimeAction:fail not support`；统一加**串行自调度轮询**，按文档 key 去重，watch 正常时几乎零开销 |
+| 本地预测被拉回 | P2 走几步就瞬移回原位（橡皮筋） | 自己位置只在小偏差时不校正；仅首次/死亡/复活/偏差 >10 格才对齐 |
+| 轮询请求重叠 | get 较慢时旧响应后到，覆盖新状态 | 轮询改成「上一次完成后 200ms 再发下一次」，不再用 setInterval |
 | 防作弊 | 金币以 host 为权威：guest 只上报 `got:[id]`，host 做距离校验后才移除 |
 | 省额度 | `onHide` 停循环 + 停写入，切回来再续 |
 
@@ -206,7 +210,7 @@ node tools/game_page_flow_test.js # 页面流程 34 项（难度选择/悔棋/�
 node tools/roomkit_join_test.js   # 联机加入查询 16 项（房间号补零/24h过期/权限/集合）
 node tools/roomkit_sync_test.js   # 联机同步兜底 14 项（watch 不支持时轮询仍可用）
 node tools/join_arg_test.js       # 加入参数 13 项（bindtap 事件对象 / 分享自动加入）
-node tools/mario_online_flow_test.js # 马里奥联机页面同步 25 项（输入中继/世界/闭环/mode/边沿锁存/收发计数）
+node tools/mario_online_flow_test.js # 马里奥联机页面同步 26 项（输入中继/独立输入文档/闭环/mode/边沿锁存/收发计数）
 ```
 
 所有测试都是纯 node 可跑，不需要开微信开发者工具。
@@ -223,7 +227,7 @@ node tools/mario_online_flow_test.js # 马里奥联机页面同步 25 项（输�
    还要写入座位/走子/世界状态。设成 creator-only 后，加入方会看到
    「房间不存在或无权读取」，所有联机都无法加入。
    `gomoku_rooms`、`xiangqi_rooms`、`mario_rooms` 三个集合都要这样设。
-3. **旧房间清理**：可加定时云函数删除 24h 前的房间，避免集合无限增长
+3. **旧房间清理**：可加定时云函数删除 24h 前的房间，以及 `{roomId}_input` 输入文档，避免集合无限增长
 4. **真机联调**：watch 行为在模拟器与真机上有差异，马里奥/象棋联机必须两台真机验证
 5. **主包体积**：当前新增只进分包，主包余量仍约 320KB
 

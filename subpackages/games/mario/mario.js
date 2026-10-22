@@ -92,6 +92,7 @@ Page({
   onUnload() {
     this._destroyed = true;
     this._stopLoop();
+    this._stopInputPoll();
     roomkit.sweepTimers(this);
     // 通知对方离开
     if (this._roomId && this.data.mode === 'online') {
@@ -106,6 +107,7 @@ Page({
     // 切后台：停循环 + 停写入（否则白烧云数据库额度）
     this._paused = true;
     this._stopLoop();
+    this._stopInputPoll();
   },
 
   onShow() {
@@ -115,6 +117,9 @@ Page({
     if (this.data.stage === 'playing') {
       this._paused = false;
       this._startLoop();
+      if (this.data.mode === 'online' && this.data.mySeat === 1) {
+        this._startInputPoll();
+      }
     }
   },
 
@@ -169,6 +174,7 @@ Page({
   },
 
   backToMenu() {
+    this._stopInputPoll();
     roomkit.closeWatch(this);
     this._roomId = null;
     this._stopLoop();
@@ -300,6 +306,42 @@ Page({
     }
   },
 
+  // host 侧：轮询 guest 的独立输入文档。串行自调度，避免请求重叠。
+  _startInputPoll() {
+    if (this._inputPollTimer) {
+      clearTimeout(this._inputPollTimer);
+      this._inputPollTimer = null;
+    }
+    const tick = async () => {
+      this._inputPollTimer = null;
+      if (this._destroyed || this.data.mode !== 'online' ||
+          this.data.mySeat !== 1 || !this._roomId) return;
+      const docId = this._roomId + '_input';
+      try {
+        const db = wx.cloud.database();
+        const res = await db.collection(COLLECTION).doc(docId).get();
+        if (res && res.data && res.data.input2 && res.data.input2 !== this._lastInputRaw) {
+          this._lastInputRaw = res.data.input2;
+          this._applyInput2(JSON.parse(res.data.input2));
+          this._lastRemoteAt = Date.now();
+          this._rxInput = (this._rxInput || 0) + 1;
+        }
+      } catch (e) {
+        // 输入文档还没创建（guest 首次写入前）——下一轮再试
+      }
+      if (this._destroyed) return;
+      this._inputPollTimer = setTimeout(tick, 250);
+    };
+    tick();
+  },
+
+  _stopInputPoll() {
+    if (this._inputPollTimer) {
+      clearTimeout(this._inputPollTimer);
+      this._inputPollTimer = null;
+    }
+  },
+
   _startWatch() {
     roomkit.startWatch(this, COLLECTION, this._roomId, (room) => this._onRoomUpdate(room));
   },
@@ -319,7 +361,8 @@ Page({
         }, () => {
           this._over = false;
           this._startLoop();
-          this._doSync();   // 开局立刻写一次世界，别等第一个 400ms
+          this._startInputPoll();   // host 轮询 guest 的独立输入文档
+          this._doSync();           // 开局立刻写一次世界
         });
       }
       return;
@@ -344,16 +387,8 @@ Page({
         log.e('[mario] parse world fail', e);
       }
     }
-    if (me === 1 && room.input2) {
-      // host：读取 guest 的输入
-      try {
-        this._applyInput2(JSON.parse(room.input2));
-        this._lastRemoteAt = Date.now();
-        this._rxInput = (this._rxInput || 0) + 1;
-      } catch (e) {
-        log.e('[mario] parse input2 fail', e);
-      }
-    }
+    // host 的 guest 输入从独立的 {roomId}_input 文档读取（见 _startInputPoll），
+    // 房间文档里的 input2 只是旧版本兼容字段，不再使用。
   },
 
   // 把 host 的权威世界套到本地（guest 侧）
@@ -369,15 +404,21 @@ Page({
     if (myW && me) {
       const dx = Math.abs(myW.x - me.x);
       const dy = Math.abs(myW.y - me.y);
-      // 偏差超过阈值才拉回（死区），避免每帧抖动
-      if (dx > 0.8 || dy > 0.8 || initial) {
+      // 自己用本地预测，不要被权威位置的小偏差反复拉回（橡皮筋）。
+      // 只有这些情况才强制对齐：首次同步、死亡/过关、复活、偏差大到明显脱节。
+      const stateChanged = myW.st !== me.state;
+      const respawn = stateChanged && myW.st === 'alive';
+      const hardState = myW.st === 'dead' || myW.st === 'done';
+      const huge = dx > 10 || dy > 6;
+      if (initial || hardState || respawn || huge) {
         me.x = myW.x; me.y = myW.y;
         me.vx = myW.vx; me.vy = myW.vy;
-        me.starT = myW.sr || 0;
-        me.lives = myW.lv;
-        me.coins = myW.cn;
-        if (myW.st === 'dead' || myW.st === 'done') me.state = myW.st;
       }
+      // 形态/生命/金币/星星/状态始终同步（这些不是位置预测）
+      me.starT = myW.sr || 0;
+      me.lives = myW.lv;
+      me.coins = myW.cn;
+      if (hardState) me.state = myW.st;
       // 形态必须始终同步（不能只在拉回时同步，否则吃蘑菇对方看不到）。
       // 用 setForm 而不仅是赋值：它同时更新碰撞盒高度 h。
       const myForm = (myW.fm !== undefined) ? myW.fm : 0;
@@ -557,6 +598,7 @@ Page({
         this._lastRepairAt = Date.now();
         log.d('[mario] sync repair: restart watch/poll');
         this._startWatch();
+        if (this.data.mySeat === 1) this._startInputPoll();
         this._doSync();
       }
 
@@ -683,7 +725,9 @@ Page({
         });
         this._txWorld = (this._txWorld || 0) + 1;
       } else {
-        // guest 只写输入 + 已吃金币
+        // guest 只写输入 + 已吃金币。
+        // 写到独立文档 {roomId}_input：房间文档只由 host 写 world，
+        // 两个写者彻底分开，避免同一文档并发写被云数据库限流。
         const i2 = this._inputs[2];
         const payload = {
           t: Math.round(this._level.time * 1000),
@@ -695,8 +739,8 @@ Page({
           },
           got: this._pendingGot || []
         };
-        await db.collection(COLLECTION).doc(this._roomId).update({
-          data: { input2: JSON.stringify(payload) }
+        await db.collection(COLLECTION).doc(this._roomId + '_input').set({
+          data: { input2: JSON.stringify(payload), updatedAt: db.serverDate() }
         });
         this._txInput = (this._txInput || 0) + 1;
         this._pendingGot = [];
@@ -768,6 +812,7 @@ Page({
             });
           } catch (e) { log.e('[mario] leave notify fail', e); }
         }
+        this._stopInputPoll();
         roomkit.closeWatch(this);
         this._roomId = null;
         this._stopLoop();

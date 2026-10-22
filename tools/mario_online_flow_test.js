@@ -14,6 +14,7 @@ function check(cond, name) {
 let capturedPage = null;
 let lastUpdate = null;
 let updateError = null;
+let inputDocRaw = null;
 global.Page = function (def) { capturedPage = def; };
 global.getApp = function () { return { globalData: {} }; };
 global.wx = {
@@ -35,12 +36,23 @@ global.wx = {
           return {
             add: function (o) { return Promise.resolve({ _id: 'room1' }); },
             where: function () { return { limit: function () { return this; }, get: function () { return Promise.resolve({ data: [] }); } }; },
-            doc: function () {
+            doc: function (id) {
               return {
                 update: function (o) {
                   if (updateError) return Promise.reject(updateError);
                   lastUpdate = o && o.data;
                   return Promise.resolve({});
+                },
+                set: function (o) {
+                  lastUpdate = o && o.data;
+                  if (id && id.indexOf('_input') !== -1) inputDocRaw = o.data.input2;
+                  return Promise.resolve({});
+                },
+                get: function () {
+                  if (id && id.indexOf('_input') !== -1 && inputDocRaw) {
+                    return Promise.resolve({ data: { input2: inputDocRaw } });
+                  }
+                  return Promise.resolve({ data: {} });
                 },
                 watch: function () { return { close: function () {} }; }
               };
@@ -139,10 +151,15 @@ function setupWorld(page) {
     check(host._txWorld === 1, 'host 写 world 后发送计数 +1');
     check(guest._txInput === 1, 'guest 写 input2 后发送计数 +1');
 
-    // 收到远端数据后接收计数 +1
+    // host 从独立的 input 文档轮询 guest 输入，并计数
     host.data.stage = 'playing';
-    host._onRoomUpdate({ status: 'playing', input2: JSON.stringify({ keys: { r: 1 }, got: [] }) });
-    check(host._rxInput === 1, 'host 收到 input2 后接收计数 +1');
+    inputDocRaw = JSON.stringify({ keys: { r: 1, u: 0, d: 0, rn: 0 }, got: [] });
+    host._startInputPoll();
+    await new Promise(function (r) { setTimeout(r, 20); });
+    check(host._inputs[2].right === true, 'host 轮询 input 文档后 P2 输入生效');
+    check(host._rxInput >= 1, 'host 收到 input2 后接收计数 +1');
+    host._stopInputPoll();
+
     guest.data.stage = 'playing';
     guest._onRoomUpdate({
       status: 'playing',

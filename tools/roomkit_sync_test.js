@@ -66,8 +66,8 @@ function wait(ms) {
     let got = 0;
     roomkit.startWatch(page, 'rooms', 'r1', function () { got++; });
     check(page._usingPoll === true, '标记使用轮询');
-    check(!!page._pollInterval, '无条件轮询定时器已启动');
-    if (page._pollInterval) clearInterval(page._pollInterval);
+    check(!!page._pollTimer, '无条件轮询定时器已启动');
+    if (page._pollTimer) { clearTimeout(page._pollTimer); page._pollTimer = null; }
 
     // 手动触发一次轮询（避免测试等 800ms）
     page._pollKey = null;
@@ -84,7 +84,7 @@ function wait(ms) {
     check(got === 2, '文档变化后回调（got=' + got + '）');
 
     roomkit.closeWatch(page);
-    check(!page._pollInterval, 'closeWatch 会清掉轮询');
+    check(!page._pollTimer, 'closeWatch 会清掉轮询');
   }
 
   console.log('\n[2] watch 正常时轮询去重，避免重复处理');
@@ -94,9 +94,10 @@ function wait(ms) {
     const page = {};
     let got = 0;
     roomkit.startWatch(page, 'rooms', 'r1', function () { got++; });
+    // 先停掉 0ms 的兜底轮询，确保这次 got 来自 watch
+    if (page._pollTimer) { clearTimeout(page._pollTimer); page._pollTimer = null; }
     await wait(20);
     check(got === 1, 'watch 回调送达（got=' + got + '）');
-    if (page._pollInterval) clearInterval(page._pollInterval);
     await roomkit.pollRoom(page, 'rooms', 'r1', function () { got++; });
     check(got === 1, '同一文档轮询不重复回调（watch 已设置 _pollKey）');
     roomkit.closeWatch(page);
@@ -108,10 +109,11 @@ function wait(ms) {
     const page = {};
     let got = 0;
     roomkit.startWatch(page, 'rooms', 'r1', function () { got++; });
+    check(!!page._pollTimer, '轮询定时器已启动');
+    // 停掉 0ms 的首次轮询，让 got 只统计后面的手动 poll
+    if (page._pollTimer) { clearTimeout(page._pollTimer); page._pollTimer = null; }
     await wait(20);
     check(page._usingPoll === true, 'onError 后标记轮询');
-    check(!!page._pollInterval, '轮询定时器仍然存在');
-    if (page._pollInterval) clearInterval(page._pollInterval);
     page._pollKey = null;
     docData = { _id: 'r1', roomNo: '1234', status: 'playing', world: 'y' };
     await roomkit.pollRoom(page, 'rooms', 'r1', function () { got++; });
@@ -123,8 +125,8 @@ function wait(ms) {
   {
     const fs = require('fs');
     const src = fs.readFileSync(path.join(__dirname, '..', 'subpackages/games/gomoku/gomoku.js'), 'utf8');
-    check(/_watchPollInterval\s*=\s*setInterval\(\(\)\s*=>\s*this\._pollRoomStatus\(\),\s*500\)/.test(src),
-      'gomoku 启动 500ms 无条件轮询');
+    check(/_startPolling\s*\(/.test(src) && /_pollTimer\s*=\s*setTimeout/.test(src),
+      'gomoku 启动串行自调度轮询');
     check(/watch unsupported/.test(src), 'gomoku 捕获 watch 不支持');
     check(/_pollKey/.test(src), 'gomoku 轮询按 _pollKey 去重');
   }
