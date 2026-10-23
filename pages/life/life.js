@@ -224,19 +224,21 @@ Page({
     } catch (e) {
       console.error('本地存储失败', e);
     }
-    // 写入串行化：避免 toggleBought 连点产生并发全量写互相覆盖
+    // 写入串行化：避免 toggleBought 连点产生并发全量写互相覆盖。
+    // 注意只能写「最新」的一份：排空待写队列后绝不能再把本次进来的
+    // 旧 list 补写一遍 —— 它比队列里的新数据更旧，会后发覆盖导致丢改动
     if (this._persisting) {
       this._pendingPersist = list;
       return;
     }
     this._persisting = true;
     try {
-      while (this._pendingPersist !== undefined) {
-        const next = this._pendingPersist;
-        this._pendingPersist = undefined;
+      let next = list;
+      while (next !== undefined) {
         await this._persistNow(next);
+        next = this._pendingPersist;
+        this._pendingPersist = undefined;
       }
-      await this._persistNow(list);
     } finally {
       this._persisting = false;
     }
@@ -655,7 +657,7 @@ Page({
     if (!id) return;
     wx.showModal({
       title: '删除记录',
-      content: '这条购物记录会被移入「记录 · 回收站」，7 天内都能找回。',
+      content: '这条购物记录会被移入「记录 · 回收站」，最近 100 条内可随时找回。',
       confirmColor: '#FF5A5F',
       success: async (res) => {
         if (!res.confirm) return;

@@ -23,9 +23,11 @@ async function genRoomNo(collection) {
   while (tries++ < 5) {
     roomNo = String(Math.floor(Math.random() * (C.ROOM_NO_MAX + 1))).padStart(4, '0');
     const dup = await db.collection(collection).where({ roomNo }).limit(1).get();
-    if (!dup.data || !dup.data.length) break;
+    if (!dup.data || !dup.data.length) return roomNo;
   }
-  return roomNo;
+  // 5 次都撞号（理论极限）：宁可报错也不能返回重复号，
+  // 否则加入方会按「最新 waiting」进错别人的房间
+  throw new Error('房间号生成失败，请重试');
 }
 
 /* ========== 创建 / 加入 ========== */
@@ -191,6 +193,9 @@ async function pollRoom(page, collection, docId, onChange) {
   try {
     const db = wx.cloud.database();
     const res = await db.collection(collection).doc(docId).get();
+    // get 期间页面可能已卸载（onUnload 清了定时器但拦不住在途请求），
+    // 此时再回调会让页面 setData 报「当前页面不存在」
+    if (page._destroyed) return;
     if (!res || !res.data) return;
     const key = JSON.stringify(res.data);
     if (key === page._pollKey) return;
@@ -249,7 +254,7 @@ function sweepTimers(page) {
 // msg: { from, type:'text'|'emoji', content, ts }
 async function pushChat(page, collection, msg) {
   // 乐观更新：本地先插一条 pending 气泡，不等云端往返
-  const local = Object.assign({}, msg, { pending: true });
+  const local = Object.assign({}, msg, { pending: true, key: msg.from + '_' + msg.ts + '_p' });
   page.setData({ chatList: (page.data.chatList || []).concat([local]) });
 
   const db = wx.cloud.database();
@@ -261,6 +266,23 @@ async function pushChat(page, collection, msg) {
         updatedAt: db.serverDate()
       }
     });
+    // 聊天数组只增不减会撑爆房间文档（超限后连走子同步都会失败），
+    // 超过上限就整写截断一次。截断失败不影响主流程。
+    const localList = page.data.chatList || [];
+    if (localList.length >= C.CHAT_MAX) {
+      try {
+        const capped = [];
+        for (let i = 0; i < localList.length; i++) {
+          const m = localList[i];
+          if (m.pending) continue;
+          capped.push({ from: m.from, type: m.type, content: m.content, ts: m.ts });
+        }
+        const trimmed = capped.slice(Math.max(0, capped.length - C.CHAT_MAX + 1));
+        await db.collection(collection).doc(page._roomId).update({ data: { chat: trimmed } });
+      } catch (e) {
+        log.e('[roomkit] chat trim fail', e);
+      }
+    }
     return true;
   } catch (e) {
     // 发送失败：移除乐观插入的那条
@@ -270,17 +292,35 @@ async function pushChat(page, collection, msg) {
   }
 }
 
-// 把云端 chat 数组合并进本地 chatList，按 from+ts 去重，丢掉已确认的 pending
+// 把云端 chat 数组合并进本地 chatList，按 from+ts 去重。
+// pending 气泡在云端快照尚未包含它时保留（否则发出到回读之间会闪没）；
+// 云端已包含的 pending 丢弃，由下面的循环按云端数据补回。
 function mergeChat(existing, cloud, me) {
-  const seen = new Set(existing.map(m => m.from + '_' + m.ts));
-  const merged = existing.filter(m => !m.pending);
-  let addedNew = null;
-  for (const m of cloud) {
+  const cloudKeys = {};
+  for (let i = 0; i < cloud.length; i++) cloudKeys[cloud[i].from + '_' + cloud[i].ts] = true;
+  const seen = {};
+  const merged = [];
+  for (let i = 0; i < existing.length; i++) {
+    const m = existing[i];
     const key = m.from + '_' + m.ts;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (m.pending) {
+      if (cloudKeys[key]) continue;   // 已确认，稍后由云端数据补一条正式的
+      merged.push(m);
+      seen[key] = true;
+    } else {
+      merged.push(m);
+      seen[key] = true;
+    }
+  }
+  let addedNew = null;
+  for (let i = 0; i < cloud.length; i++) {
+    const m = cloud[i];
+    const key = m.from + '_' + m.ts;
+    if (seen[key]) continue;
+    seen[key] = true;
     merged.push({
       from: m.from, type: m.type, content: m.content, ts: m.ts,
+      key: key,
       mine: m.from === me
     });
     if (!addedNew) addedNew = m;

@@ -112,7 +112,13 @@ Page({
     // 否则切回来 initScratch 会被 _destroyed 拦掉，卡片再也画不上涂层。
     // 只清理定时器（避免后台空跑），canvas 引用保留到 onUnload 再释放。
     this._clearScratchTimers();
-    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    // 摇一摇动画被打断也要复位 rolling：定时器没了就没人再把它置回
+    // false，按钮会永久显示「摇一摇中…」且 onDraw 进不去
+    if (this._timer) {
+      clearInterval(this._timer);
+      this._timer = null;
+      this.setData({ rolling: false });
+    }
   },
 
   onUnload() {

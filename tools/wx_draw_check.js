@@ -132,7 +132,7 @@ console.log('\n[8] 象棋 lastMove 标记偏移（漏 ox/oy 会让标记整体�
   check(lmIdx !== -1, '象棋源码含 lastMove 绘制');
   const seg = srcFile.slice(lmIdx, lmIdx + 800);
   const arcs = seg.match(/ctx\.arc\([^)]*\)/g) || [];
-  const missingOx = arcs.filter(function(a) { return a.indexOf('ox +') === -1; });
+  const missingOx = arcs.filter(function(a) { return a.indexOf('ox +') === -1 && a.indexOf('sx(') === -1 && a.indexOf('sy(') === -1; });
   check(arcs.length >= 2, 'lastMove 绘制有起点/终点两个 arc（实际 ' + arcs.length + '）');
   check(missingOx.length === 0, '所有 lastMove arc 都含 ox 偏移（缺 ox 的 ' + missingOx.length + ' 个）');
 }

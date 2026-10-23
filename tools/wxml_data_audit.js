@@ -41,6 +41,12 @@ function topLevelKeys(src, start) {
       if (ch === quote) quote = null;
       continue;
     }
+    // 行注释：跳到行尾。不处理的话注释文本会拼进下一个 key，
+    // 「值后带注释的字段」会被误判成未定义（raceText 踩过）
+    if (ch === '/' && src[i + 1] === '/') {
+      while (i < src.length && src[i] !== '\n') i++;
+      continue;
+    }
     if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
     if (ch === '{' || ch === '[' || ch === '(') { depth++; if (depth === 1) continue; }
     else if (ch === '}' || ch === ']' || ch === ')') {

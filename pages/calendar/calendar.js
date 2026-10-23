@@ -75,6 +75,12 @@ Page({
     this._loadCloud();
   },
 
+  onUnload() {
+    // 备忘录输入有 400ms 防抖落盘：退页时把挂起的定时器清掉，
+    // 否则它在页面销毁后触发 persistMemo → setData 报「页面不存在」
+    this._clearEditState();
+  },
+
   async _loadCloud() {
     // 加载期间置为不可编辑：避免失败后用户基于空数据编辑，把共享数据冲掉
     this.setData({ cloudReady: false });
@@ -86,7 +92,8 @@ Page({
     } catch (e) {
       console.error('日历云端加载失败', e);
       // 不初始化空对象：保持 cloudReady=false 进入只读态，所有写操作被拦截
-      wx.showToast({ title: '云端加载失败，请下拉重试', icon: 'none' });
+      // 本页没有下拉刷新，重试入口是只读态里的「重试」按钮（reloadCloud）
+      wx.showToast({ title: '云端加载失败，请点击重试', icon: 'none' });
     }
     this.renderCalendar();
   },

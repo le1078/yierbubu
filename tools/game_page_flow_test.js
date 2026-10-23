@@ -40,6 +40,7 @@ global.wx = {
   cloud: {
     database: function () {
       return {
+        serverDate: function () { return new Date(); },
         collection: function () {
           return {
             doc: function () {
@@ -160,13 +161,15 @@ console.log('\n[2b] 五子棋悔棋轮次');
   let aiCalls = 0;
   page._aiTurn = function () { aiCalls++; };
 
-  // 我执白，历史里只有 AI 的黑棋首手 → 悔掉后应该还是 AI（黑）先走
+  // 我执白，历史里只有 AI 的黑棋首手 → 我还没落子，无棋可悔：
+  // 不能把 AI 的开局第一手删掉又重下（看起来像 AI 棋子凭空挪位）
   page._board = core.emptyBoard();
   page._board[7][7] = 1;
   page._history = [{ r: 7, c: 7, color: 1 }];
+  page.data.turn = 2;   // 轮到我（白）落子
   page.undo();
-  check(page.data.turn === 1 && aiCalls === 1,
-    '我执白、只剩 AI 首手时悔棋 → 轮到 AI 重走（turn=' + page.data.turn + '）');
+  check(page.data.turn === 2 && aiCalls === 0 && page._history.length === 1 && page._board[7][7] === 1,
+    '我执白、只剩 AI 首手时悔棋 → 提示无棋可悔，棋盘不动');
 
   // 我执白，AI 刚下完第二手 → 悔棋后轮到我（白）
   page._board = core.emptyBoard();
@@ -187,40 +190,53 @@ console.log('\n[2b] 五子棋悔棋轮次');
  * 3. 联机模式的危险操作必须被拦住
  * ============================================================ */
 console.log('\n[3] 联机模式：重开/悔棋不能本地分叉');
-{
-  // 象棋
+(async () => {
+  // 象棋（2026-10-24 起：联机悔棋/重开改为「双方确认」流程，不再是本地拒绝）
   const xqDef = loadPage('subpackages/games/xiangqi/xiangqi.js');
   const xq = instantiate(xqDef);
   xq.data.mode = 'online';
   xq.data.stage = 'playing';
+  xq._roomId = 'room1';
+  xq._board = require(path.join(__dirname, '..', 'subpackages/games/xiangqi/rules.js')).startBoard();
   xq._history = [{ from: 0, to: 0, captured: 0 }, { from: 1, to: 1, captured: 0 }];
   const beforeHistory = xq._history.length;
   toasts.length = 0;
-  xq.undo();
-  check(xq._history.length === beforeHistory, '象棋联机悔棋被拒绝（历史未变）');
-  check(toasts.some(function (t) { return t && t.indexOf('暂不支持') !== -1; }),
-    '象棋联机悔棋给出提示');
+  // requestUndo/requestRematch 是 async（先写云再进等待态），同步断言会读旧值
+  await xq.undo();
+  check(xq._history.length === beforeHistory, '象棋联机悔棋不直接改本地（走双方确认）');
+  check(xq.data.undoState === 'iRequested', '象棋联机悔棋进入等待对方确认态');
   toasts.length = 0;
-  xq.restart();
-  check(xq.data.stage === 'playing' && toasts.length > 0, '象棋联机重开被拒绝');
+  await xq.restart();
+  check(xq.data.rematchState === 'iRequested', '象棋联机重开进入等待对方确认态');
+  check(xq.data.stage === 'playing', '象棋联机重开不本地分叉（等对方同意）');
+  // 对方拒绝 → 等待态解除
+  xq._onRoomUpdate({ status: 'playing', undoRequest: 0, rematchRequest: 0, boardStr: '', turn: 1, chat: [] });
+  check(xq.data.undoState === null && xq.data.rematchState === null,
+    '对方处理后等待态解除');
 
   // 五子棋
   const gDef = loadPage('subpackages/games/gomokuai/gomokuai.js');
   const g = instantiate(gDef);
   g.data.mode = 'online';
   g.data.stage = 'playing';
+  g.data.myColor = 1;
+  g._roomId = 'r1';
   g._history = [{ r: 7, c: 7, color: 1 }];
   const gBefore = g._history.length;
   toasts.length = 0;
-  g.undo();
-  check(g._history.length === gBefore, '五子棋联机悔棋被拒绝（历史未变）');
-  check(toasts.some(function (t) { return t && t.indexOf('暂不支持') !== -1; }),
-    '五子棋联机悔棋给出提示');
+  // 2026-10-24 起：联机悔棋/重开改为「双方确认」，不再直接拒绝
+  await g.undo();
+  check(g._history.length === gBefore, '五子棋联机悔棋不直接改本地（走双方确认）');
+  check(g.data.undoState === 'iRequested', '五子棋联机悔棋进入等待确认态');
   toasts.length = 0;
-  g.restart();
-  check(g.data.mode === 'online' && toasts.length > 0,
-    '五子棋联机重开被拒绝（不会切成人机）');
-}
+  await g.restart();
+  check(g.data.mode === 'online' && g.data.rematchState === 'iRequested',
+    '五子棋联机重开进入等待确认态（不会切成人机）');
+  // 对方处理 → 等待态解除
+  g._onRoomUpdate({ status: 'playing', undoRequest: 0, rematchRequest: 0, boardStr: '', turn: 1, chat: [] });
+  check(g.data.undoState === null && g.data.rematchState === null,
+    '五子棋：对方处理后等待态解除');
+})();
 
 /* ============================================================
  * 4. 画布重建与 watcher 生命周期

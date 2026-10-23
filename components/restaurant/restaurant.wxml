@@ -24,7 +24,7 @@
     <scroll-view class="cat-tabs" scroll-x>
       <view
         wx:for="{{menu}}"
-        wx:key="*this"
+        wx:key="cat"
         class="cat-tab {{activeCat === index ? 'active' : ''}}"
         data-idx="{{index}}"
         bindtap="switchCat"
@@ -126,7 +126,7 @@
           <view class="ep-cat-list">
             <view
               wx:for="{{menu}}"
-              wx:key="*this"
+              wx:key="cat"
               class="ep-cat-item {{editCat === index ? 'active' : ''}}"
               data-idx="{{index}}"
               bindtap="switchEditCat"

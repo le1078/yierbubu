@@ -100,7 +100,8 @@ console.log('\n[5] 星星无敌');
   EN.hitHeadBlock(lv, p);
   const star = lv.items.filter(function (it) { return it.type === 'star'; })[0];
   check(!!star, '金币房问号砖出星星');
-  p.x = star.x; p.y = 10;
+  // 道具落在砖顶（不再半埋进砖里），要站到砖顶上才接得到
+  p.x = star.x; p.y = 9;
   EN.stepWorld(lv, [p], { 1: input() }, DT);
   check(p.starT > 0, '吃到星星进入无敌（' + p.starT.toFixed(1) + 's）');
 
@@ -128,7 +129,8 @@ console.log('\n[6] 1UP 蘑菇与隐藏砖');
   check(lv.grid[11][112] === EN.T.USED, '隐藏砖被顶后显形为空砖');
   const up = lv.items.filter(function (it) { return it.type === 'oneup'; })[0];
   check(!!up, '隐藏砖出 1UP 蘑菇');
-  p.x = up.x; p.y = 12;
+  // 道具落在砖顶（不再半埋进砖里），要站到砖顶上才接得到
+  p.x = up.x; p.y = 11;
   EN.stepWorld(lv, [p], { 1: input() }, DT);
   check(p.lives === livesBefore + 1, '吃到 1UP 加一条命（' + livesBefore + '→' + p.lives + '）');
 }

@@ -261,6 +261,81 @@ function setupWorld(page) {
       '房主开局时强制 mode=online');
   }
 
+  console.log('\n[6] 竞速终局与对方暂停（「同步中断」的两大来源）');
+  {
+    const w0 = EN.worldToWire(EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]),
+      [EN.makePlayer(EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]), 1)]);
+    const worldStr = JSON.stringify(Object.assign({}, w0, { level: 0, ep: 1 }));
+    const worldEp2 = JSON.stringify(Object.assign({}, w0, { level: 0, ep: 2 }));
+
+    // host 侧：guest 先到终点（房间文档 winner=2），host 还在对局中 → 自动收尾
+    const host = loadPage();
+    setupWorld(host);
+    host.data.mode = 'online';
+    host.data.mySeat = 1;
+    host.data.coop = false;
+    host.data.stage = 'playing';
+    host._over = false;
+    host._stopLoop = function () {};
+    host._onRoomUpdate({ status: 'playing', world: worldStr, winner: 0, pause: 0 });
+    check(host.data.stage === 'playing', 'winner=0 时 host 继续对局');
+    host._onRoomUpdate({ status: 'playing', world: worldStr, winner: 2, pause: 0 });
+    check(host.data.stage === 'ended' && host.data.winText === '😢 对方先到终点',
+      'guest 到终点后 host 自动收尾（不再一直「同步中断」空跑）');
+    host._onRoomUpdate({ status: 'playing', world: worldStr, winner: 2, pause: 0 });
+    check(host._seenRoomWinner === 2, 'winner 只处理一次（上升沿）');
+
+    // guest 侧：同一快照 epoch 刚换关 + winner 是上局残留 → 不能误判终局
+    const guest = loadPage();
+    setupWorld(guest);
+    guest.data.mode = 'online';
+    guest.data.mySeat = 2;
+    guest.data.coop = false;
+    guest.data.stage = 'playing';
+    guest._over = false;
+    guest._worldEpoch = 1;
+    guest._stopLoop = function () {};
+    guest._onRoomUpdate({ status: 'playing', world: worldEp2, winner: 2, pause: 0 });
+    check(guest.data.stage === 'playing',
+      '换关瞬间的残留 winner 不触发终局');
+
+    // guest 侧正常收到对方 winner → 收尾
+    guest._seenRoomWinner = 0;
+    guest._onRoomUpdate({ status: 'playing', world: worldEp2, winner: 1, pause: 0 });
+    check(guest.data.stage === 'ended' && guest.data.winText === '😢 对方先到终点',
+      'host 到终点后 guest 自动收尾');
+
+    // 合作模式忽略 winner（两端各自收敛，写了反而误判）
+    const coopGuest = loadPage();
+    setupWorld(coopGuest);
+    coopGuest.data.mode = 'online';
+    coopGuest.data.mySeat = 2;
+    coopGuest.data.coop = true;
+    coopGuest.data.stage = 'playing';
+    coopGuest._over = false;
+    coopGuest._worldEpoch = 1;
+    coopGuest._onRoomUpdate({ status: 'playing', world: worldStr, winner: 1, pause: 0 });
+    check(coopGuest.data.stage === 'playing', '合作模式不受 winner 字段影响');
+
+    // 对方切后台：pause 标记驱动提示语义（不再一律「⚠️ 同步中断」）
+    const p2 = loadPage();
+    setupWorld(p2);
+    p2.data.mode = 'online';
+    p2.data.mySeat = 2;
+    p2.data.stage = 'playing';
+    p2._worldEpoch = 2;
+    p2._onRoomUpdate({ status: 'playing', world: worldEp2, winner: 0, pause: 1 });
+    check(p2._peerPaused === true, '对方 pause 标记生效');
+    p2._onRoomUpdate({ status: 'playing', world: worldEp2, winner: 0, pause: 0 });
+    check(p2._peerPaused === false, '对方回来后 pause 解除');
+
+    // 开新局清残留标记
+    lastUpdate = null;
+    host._resetRoomEndFlags();
+    check(lastUpdate && lastUpdate.winner === 0 && lastUpdate.pause === 0,
+      '重开/下一关清掉 winner/pause 残留');
+  }
+
   console.log('\n========================================');
   console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
   if (fail > 0) {

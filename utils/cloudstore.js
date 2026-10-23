@@ -83,12 +83,18 @@ async function mutateDoc(docId, mergeFn) {
         });
         return doc;
       } catch (e) {
-        // 版本冲突（他人已写入）→ 重读重试；其它错误抛出
-        if (attempt < MAX_RETRY && /condition|version|冲突/i.test(String(e && (e.errCode || e.message || e)))) {
+        // errCode 与 message 拼在一起判：有的错误只带其中一个，
+        // 短路写法会漏掉另一半，把可重试的冲突当成致命错误抛给用户
+        const errText = String((e && e.errCode) || '') + ' ' +
+                        String((e && e.message) || '') + ' ' +
+                        String((e && e.errMsg) || '');
+        const conflict = /condition|version|conflict|冲突/i.test(errText);
+        const notExist = /-502005|DATABASE_NULL_DATA|not exist|不存在/i.test(errText);
+        // 版本/条件冲突（他人已写入），或创建竞争（文档被抢先建）→ 重读重试；
+        // 权限/配额等其它错误直接抛出，别白烧 4 次往返
+        if (attempt < MAX_RETRY && (conflict || notExist)) {
           continue;
         }
-        // 首次创建时若条件失败，说明文档已被他人创建，改为重读更新
-        if (rev === 0 && attempt < MAX_RETRY) continue;
         throw e;
       }
     }
@@ -243,27 +249,30 @@ async function trashShoppingById(id, record) {
   if (!rec) return;
 
   if (idx !== -1) {
-    await saveShopping(list.filter((_, i) => i !== idx));
+    // 过滤必须在 mutateDoc 内做：外读 → 内写之间他人的写入
+    // 会被这份旧快照整份覆盖（和 softRemove 之前的丢更新竞态一样）
+    await mutateDoc(DOC_SHOPPING, (doc) => {
+      doc.list = (doc.list || []).filter(it => String(it.id) !== String(id));
+    });
   }
-  const trash = await loadTrash();
-  trash.unshift(Object.assign({
-    id: newTrashId(),
-    deletedAt: Date.now()
-  }, { type: 'shopping', data: rec }));
-  await saveTrash(trash.slice(0, 100));
+  await mutateDoc(DOC_TRASH, (doc) => {
+    doc.list = [Object.assign({ id: newTrashId(), deletedAt: Date.now() },
+      { type: 'shopping', data: rec })].concat(doc.list || []).slice(0, 100);
+  });
 }
 
 /* ===== 批量操作 ===== */
 
 // 软删除：从 list 里取出该条，连同来源类型一起压入回收站
 async function softRemove(docId, id, trashItem) {
-  return mutateDoc(docId, (doc) => {
-    const list = (doc.list || []).filter(it => String(it.id) !== String(id));
-    doc.list = list;
-  }).then(async () => {
-    const trash = await loadTrash();
-    trash.unshift(Object.assign({ id: newTrashId(), deletedAt: Date.now() }, trashItem));
-    await saveTrash(trash.slice(0, 100));
+  await mutateDoc(docId, (doc) => {
+    doc.list = (doc.list || []).filter(it => String(it.id) !== String(id));
+  });
+  // 回收站同样在 mutateDoc 内改：外读 → unshift → 整写会把
+  // 期间其它端的删除/恢复覆盖掉
+  await mutateDoc(DOC_TRASH, (doc) => {
+    doc.list = [Object.assign({ id: newTrashId(), deletedAt: Date.now() }, trashItem)]
+      .concat(doc.list || []).slice(0, 100);
   });
 }
 

@@ -96,6 +96,8 @@ Component({
     detached() {
       if (this._todayTimer) clearInterval(this._todayTimer);
       this._todayTimer = null;
+      if (this._catNameTimer) clearTimeout(this._catNameTimer);
+      this._catNameTimer = null;
     }
   },
 
@@ -282,6 +284,12 @@ Component({
       const idx = Number(e.currentTarget.dataset.idx);
       // 路径 setData：只更新分类名字符串，避免整份菜单深拷贝 + 全量 diff
       this.setData({ [`menu[${idx}].cat`]: e.detail.value });
+      // 改名也要持久化：只 setData 的话，菜单缓存过期重读/下次进页就打回原名
+      if (this._catNameTimer) clearTimeout(this._catNameTimer);
+      this._catNameTimer = setTimeout(() => {
+        this._catNameTimer = null;
+        this._saveMenu(this.data.menu);
+      }, 500);
     },
 
     addCat() {
@@ -301,7 +309,13 @@ Component({
           if (!res.confirm) return;
           const newMenu = JSON.parse(JSON.stringify(this.data.menu));
           newMenu.splice(idx, 1);
-          this.setData({ menu: newMenu, editCat: Math.max(0, idx - 1) });
+          // activeCat 也要夹紧：删掉最后一个分类后它仍指向旧下标，
+          // menu[activeCat] 为 undefined，菜品列表渲染成空白
+          this.setData({
+            menu: newMenu,
+            editCat: Math.max(0, idx - 1),
+            activeCat: Math.min(this.data.activeCat, newMenu.length - 1)
+          });
           await this._saveMenu(newMenu);
           wx.showToast({ title: '已删除分类', icon: 'success' });
         }
