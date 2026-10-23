@@ -79,6 +79,10 @@
       </view>
 
       <scroll-view class="cp-list" scroll-y>
+        <view wx:if="{{cartList.length === 0}}" class="cp-empty">
+          <text class="cp-empty-icon">🛒</text>
+          <text class="cp-empty-text">购物车还是空的，去挑几道菜吧～</text>
+        </view>
         <view wx:for="{{cartList}}" wx:key="id" class="cp-item">
           <view class="cp-item-info">
             <image wx:if="{{item.img}}" class="cp-item-img" src="{{item.img}}" mode="aspectFill"/>
@@ -93,7 +97,7 @@
       </scroll-view>
 
       <view class="cp-footer">
-        <textarea class="cp-textarea" placeholder="备注（选填）" value="{{tableNo}}" bindinput="onTableNoInput" auto-height maxlength="100"/>
+        <textarea class="cp-textarea" placeholder="备注（选填）" value="{{tableNo}}" bindinput="onTableNoInput" auto-height maxlength="100" cursor-spacing="40"/>
         <view class="cp-total-row">
           <text>合计：</text>
           <text class="cp-total">¥{{cartTotal}}</text>
@@ -132,7 +136,7 @@
                 value="{{item.cat}}"
                 data-idx="{{index}}"
                 bindinput="onCatNameInput"
-                bindtap="switchEditCat"
+                catchtap="noop"
               />
               <text class="ep-cat-del" data-idx="{{index}}" catchtap="deleteCat" wx:if="{{menu.length > 1}}">✕</text>
             </view>
@@ -188,7 +192,7 @@
             <input class="ep-input" placeholder="菜品名称（必填）" value="{{form.name}}" data-field="name" bindinput="onFormInput"/>
             <input class="ep-input" type="digit" placeholder="价格（必填，如 28.5）" value="{{form.price}}" data-field="price" bindinput="onFormInput"/>
             <input class="ep-input" placeholder="口味（选填，如：微辣/酸甜）" value="{{form.taste}}" data-field="taste" bindinput="onFormInput"/>
-            <textarea class="ep-input ep-textarea" placeholder="备注描述（选填）" value="{{form.desc}}" data-field="desc" bindinput="onFormInput" auto-height maxlength="100"/>
+            <textarea class="ep-input ep-textarea" placeholder="备注描述（选填）" value="{{form.desc}}" data-field="desc" bindinput="onFormInput" auto-height maxlength="100" cursor-spacing="40"/>
 
             <view class="ep-form-btns">
               <view wx:if="{{editingDish}}" class="ep-btn danger" bindtap="deleteDish">删除</view>

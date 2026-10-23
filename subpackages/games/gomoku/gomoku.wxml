@@ -21,6 +21,7 @@
       </view>
 
       <view class="hint">💡 创建后点右上角「···」转发给微信好友，TA 点卡片直接进入你的房间</view>
+      <view class="hint">⚠️ 加入失败？请把云数据库房间集合权限设为「所有用户可读写」</view>
     </view>
   </view>
 
@@ -57,7 +58,7 @@
       </view>
       <view class="p-mid">
         <view class="p-status">{{statusText}}</view>
-        <view class="p-room">房间 {{roomNo}} · 第 {{moveCount}} 手</view>
+        <view class="p-room">房间 {{roomNo}} · 第 {{round}} 局 · {{moveCount}} 手</view>
       </view>
       <view class="p-item {{!isMyTurn && stage === 'playing' ? 'active' : ''}}">
         <image class="p-avatar" src="{{oppAvatar}}" mode="aspectFit"/>
@@ -73,8 +74,7 @@
     <view class="board-wrap">
       <canvas type="2d" id="gboard" class="board"
         style="width: {{boardW}}px; height: {{boardW}}px;"
-        bindtouchstart="onCanvasTap"
-        canvas-id="gboard"
+        bindtouchend="onCanvasTap"
         disable-scroll="true"></canvas>
     </view>
 
@@ -109,7 +109,7 @@
     <!-- 聊天区 -->
     <view class="chat-area">
       <scroll-view class="chat-list" scroll-y scroll-into-view="chat{{chatList.length - 1}}">
-        <view wx:for="{{chatList}}" wx:key="ts" id="chat{{index}}" class="chat-msg {{item.mine ? 'mine' : 'theirs'}}">
+        <view wx:for="{{chatList}}" wx:key="key" id="chat{{index}}" class="chat-msg {{item.mine ? 'mine' : 'theirs'}}">
           <text wx:if="{{item.type === 'text'}}" class="chat-bubble">{{item.content}}</text>
           <text wx:else class="chat-emoji">{{item.content}}</text>
         </view>

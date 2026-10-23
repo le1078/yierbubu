@@ -28,3 +28,6 @@ node_modules/
 *.log
 .DS_Store
 Thumbs.db
+
+# ZCode 本地配置
+.zcode/

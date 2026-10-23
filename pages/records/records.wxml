@@ -19,8 +19,18 @@
     </view>
   </view>
 
+  <!-- 加载中 / 加载失败态（原来 loading 是死字段，界面与空数据无法区分） -->
+  <view wx:if="{{loading}}" class="state-box">
+    <view class="spinner"></view>
+    <view class="state-tip">加载中…</view>
+  </view>
+  <view wx:elif="{{loadError}}" class="state-box" bindtap="render">
+    <view class="state-tip">加载失败了</view>
+    <view class="state-sub">点击重新加载</view>
+  </view>
+
   <!-- ===== 抽取记录 ===== -->
-  <block wx:if="{{activeTab === 'luck'}}">
+  <block wx:if="{{activeTab === 'luck' && !loading && !loadError}}">
     <view wx:if="{{records.length === 0}}" class="empty-box">
       <image class="empty-img" src="/assets/records.gif" mode="aspectFit"/>
       <view class="empty-tip">还没有抽取记录哦～</view>
@@ -40,7 +50,7 @@
           </view>
         </view>
         <view class="rg-chips">
-          <view wx:for="{{r.chips}}" wx:for-item="c" wx:key="index" class="rec-chip" style="background:{{c.color}};">{{c.label}}</view>
+          <view wx:for="{{r.chips}}" wx:for-item="c" wx:key="label" class="rec-chip" style="background:{{c.color}};">{{c.label}}</view>
         </view>
       </view>
 
@@ -58,7 +68,7 @@
   </block>
 
   <!-- ===== 吃饭记录 ===== -->
-  <block wx:if="{{activeTab === 'food'}}">
+  <block wx:if="{{activeTab === 'food' && !loading && !loadError}}">
     <view wx:if="{{orders.length === 0}}" class="empty-box">
       <image class="empty-img" src="/assets/empty_food.gif" mode="aspectFit"/>
       <view class="empty-tip">还没有吃饭记录哦～</view>
@@ -86,7 +96,7 @@
   </block>
 
   <!-- ===== 购物记录 ===== -->
-  <block wx:if="{{activeTab === 'shopping'}}">
+  <block wx:if="{{activeTab === 'shopping' && !loading && !loadError}}">
     <view wx:if="{{shopping.length === 0}}" class="empty-box">
       <image class="empty-img" src="/assets/emotes/shopping.gif" mode="aspectFit"/>
       <view class="empty-tip">还没有购物记录哦～</view>

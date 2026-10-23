@@ -48,10 +48,24 @@ const fakeCloud = {
 };
 
 /* ---------- 页面加载器 ---------- */
+// 真实模块白名单：页面里 require 的 utils 模块给真实实现，其余返回空桩
+const REAL_MODULES = {
+  'datetime.js': require(path.join(ROOT, 'utils/datetime.js')),
+  'platforms.js': require(path.join(ROOT, 'utils/platforms.js')),
+  'amount.js': require(path.join(ROOT, 'utils/amount.js')),
+  'constants.js': require(path.join(ROOT, 'utils/constants.js')),
+  'log.js': require(path.join(ROOT, 'utils/log.js'))
+};
 function loadPage(rel, stubs) {
   const base = path.join(ROOT, rel);
   let cfg = null;
-  const req = (r) => (r.indexOf('cloudstore') !== -1 ? stubs : {});
+  const req = (r) => {
+    if (r.indexOf('cloudstore') !== -1) return stubs;
+    for (const name of Object.keys(REAL_MODULES)) {
+      if (r.indexOf(name) !== -1) return REAL_MODULES[name];
+    }
+    return {};
+  };
   new Function('Page', 'Component', 'require', 'wx', 'getApp',
     fs.readFileSync(base + '.js', 'utf8'))(
     (c) => { cfg = c; }, (c) => { cfg = c; }, req, global.wx, () => ({ globalData: {} })
@@ -128,8 +142,9 @@ global.wx = {
   await records._loadTrash();
   records.setData({ showTrash: true });
   await records._loadTrash();
-  const mapped = records._mapTrash(fakeCloud._trash[0]);
-  ok(mapped.title === '🛍️ 购物记录', '回收站显示「购物记录」', mapped.title);
+  const mapped = records._mapTrashList(fakeCloud._trash)[0];
+  // 该条链接是 item.taobao.com → 应识别为「淘宝」
+  ok(mapped.title.indexOf('淘宝') !== -1, '回收站标题显示平台名', mapped.title);
   ok(mapped.desc.indexOf('想删掉的拖鞋') !== -1, '回收站显示商品名', mapped.desc);
   ok(mapped.amount === '¥39.90', '回收站显示金额', mapped.amount);
 

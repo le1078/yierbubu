@@ -1,10 +1,10 @@
 const cloud = require('../../utils/cloudstore.js');
+const dt = require('../../utils/datetime.js');
+const { PLATFORMS } = require('../../utils/platforms.js');
+const { CLOUD_CACHE_TTL } = require('../../utils/constants.js');
 
-function pad(n) { return n < 10 ? '0' + n : '' + n; }
-function fmtTime(ts) {
-  const d = new Date(ts);
-  return pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
-}
+const pad = dt.pad;
+const fmtTime = dt.fmtTime;
 
 // 抽取记录来源元数据
 const KIND_META = {
@@ -12,23 +12,37 @@ const KIND_META = {
   scratch: { label: '刮一刮', icon: '🪙', cls: 'k-scratch', verb: '刮开', unit: '张' }
 };
 
-// 购物记录的平台识别（与生活广场保持一致）
-const SHOP_PLATFORMS = [
-  { name: '淘宝', emoji: '🛒', color: '#FF6A00', domains: ['taobao.com', 'tmall.com', 'tb.cn'] },
-  { name: '京东', emoji: '🐶', color: '#E1251B', domains: ['jd.com', 'jd.hk', '3.cn'] },
-  { name: '拼多多', emoji: '🍑', color: '#E02E24', domains: ['pinduoduo.com', 'yangkeduo.com'] },
-  { name: '小红书', emoji: '📕', color: '#FF2442', domains: ['xiaohongshu.com', 'xhslink.com'] },
-  { name: '抖音', emoji: '🎵', color: '#161823', domains: ['douyin.com', 'iesdouyin.com'] },
-  { name: '唯品会', emoji: '💎', color: '#E4007F', domains: ['vip.com'] },
-  { name: '1688', emoji: '🏭', color: '#FF7300', domains: ['1688.com'] },
-  { name: '亚马逊', emoji: '📦', color: '#FF9900', domains: ['amazon.cn', 'amazon.com'] }
-];
+// 购物记录的平台识别：单一来源，与生活广场共用 utils/platforms.js
+const SHOP_EMOJI = {
+  '淘宝': '🛒', '京东': '🐶', '拼多多': '🍑', '小红书': '📕', '抖音': '🎵',
+  '唯品会': '💎', 'B站': '📺', '得物': '👟', '网易': '📮', '亚马逊': '📦',
+  '1688': '🏭'
+};
+const SHOP_COLOR = {
+  '淘宝': '#FF6A00', '京东': '#E1251B', '拼多多': '#E02E24', '小红书': '#FF2442',
+  '抖音': '#161823', '唯品会': '#E4007F', 'B站': '#FB7299', '得物': '#2B2B2B',
+  '网易': '#E60012', '亚马逊': '#FF9900', '1688': '#FF7300'
+};
 const SHOP_OTHER = { name: '链接', emoji: '🔗', color: '#FF8FAB' };
+
+// 平台域名 → 展示元数据（emoji/color 只此一份，域名表用共用的）
+const PLAT_META = {};
+PLATFORMS.forEach(p => {
+  PLAT_META[p.name] = { name: p.name, emoji: SHOP_EMOJI[p.name] || '🔗', color: SHOP_COLOR[p.name] || '#FF8FAB' };
+});
 
 function shopPlatOf(link) {
   if (!link) return SHOP_OTHER;
+  return PLAT_META[platNameOf(link)] || SHOP_OTHER;
+}
+
+// 直接复用共用平台的域名匹配逻辑
+function platNameOf(link) {
   const l = String(link).toLowerCase();
-  return SHOP_PLATFORMS.find(p => p.domains.some(d => l.indexOf(d) !== -1)) || SHOP_OTHER;
+  for (const p of PLATFORMS) {
+    if (p.hosts.some(d => l.indexOf(d) !== -1)) return p.name;
+  }
+  return '';
 }
 
 function shopMoney(n) {
@@ -48,31 +62,86 @@ Page({
   },
 
   onShow() {
+    // tab 页每次展示都会走这里：TTL 内的重复展示跳过拉取，避免来回切换就全量读 4 个文档
+    if (this._lastLoadAt && Date.now() - this._lastLoadAt < CLOUD_CACHE_TTL) return;
     this.render();
-    this._loadTrashBadge();
   },
 
   switchTab(e) {
     this.setData({ activeTab: e.currentTarget.dataset.tab });
   },
 
+  onPullDownRefresh() {
+    this._lastLoadAt = 0;
+    this.render().then(() => wx.stopPullDownRefresh());
+  },
+
   async render() {
-    this.setData({ loading: true });
+    this.setData({ loading: true, loadError: false });
     try {
-      const [recs, orders, shopping] = await Promise.all([
-        cloud.loadRecords().catch(() => []),
-        cloud.loadOrders().catch(() => []),
-        cloud.loadShopping().catch(() => [])
+      // 一次 Promise.all 拉齐 4 个文档（原来列表与回收站角标分两次拉，trash 读了两遍）
+      // 注意：用索引访问而不是数组解构 —— 数组解构会被 SWC 编译成
+      // require('@swc/runtime/_array_with_holes.js')，小程序运行时不提供该模块
+      const res = await Promise.all([
+        cloud.loadRecords(),
+        cloud.loadOrders(),
+        cloud.loadShopping(),
+        cloud.loadTrash()
       ]);
+      const recs = res[0], orders = res[1], shopping = res[2], trash = res[3];
+      this._lastLoadAt = Date.now();
       this.setData({
         records: this._mapRecords(recs),
         orders: this._mapOrders(orders),
         shopping: this._mapShopping(shopping),
+        trashList: this._mapTrashList(trash),
+        trashCount: trash.length,
         loading: false
       });
     } catch (e) {
-      this.setData({ loading: false });
+      console.error('记录加载失败', e);
+      this.setData({ loading: false, loadError: true });
+      wx.showToast({ title: '加载失败，请下拉重试', icon: 'none' });
     }
+  },
+
+  // 回收站列表映射：字段契约与 wxml 弹层一致（tid/type/title/desc/amount/time）
+  _mapTrashList(trash) {
+    return (trash || []).map(t => {
+      const d = t.data || {};
+      const base = {
+        tid: t.id,
+        type: t.type,
+        time: fmtTime(t.deletedAt)
+      };
+      if (t.type === 'order') {
+        return Object.assign(base, {
+          title: '🍽️ 吃饭记录',
+          desc: (d.items || []).map(x => (x.name || '') + '×' + (x.count || 1)).join('、') || '订单',
+          amount: '¥' + shopMoney(d.total)
+        });
+      }
+      if (t.type === 'shopping') {
+        const plat = shopPlatOf(d.link);
+        return Object.assign(base, {
+          title: plat.emoji + ' ' + plat.name,
+          desc: [d.title || '未命名', d.date || ''].filter(Boolean).join(' · '),
+          amount: '¥' + shopMoney(d.price)
+        });
+      }
+      const meta = KIND_META[d.kind] || KIND_META.shake;
+      const items = d.items || [];
+      const desc = items.length
+        ? items.map(it => (it.emoji || '') + (it.name || '')).join('、')
+        : (d.emoji || '') + (d.name || '');
+      return Object.assign(base, {
+        title: meta.icon + ' ' + meta.label,
+        desc,
+        amount: items.length
+          ? String(items.length) + meta.unit
+          : ((d.number < 10 ? '0' : '') + d.number)
+      });
+    });
   },
 
   _mapShopping(list) {
@@ -160,21 +229,26 @@ Page({
         if (!res.confirm) return;
         wx.showLoading({ title: '清空中', mask: true });
         try {
+          // 批量软删除：一次操作完成「过滤列表 + 批量入回收站」。
+          // 原实现逐条删，每条 6 次云调用，100 条约 600 次且中途失败无法回滚
           const list = isLuck ? await cloud.loadRecords()
             : isFood ? await cloud.loadOrders()
             : await cloud.loadShopping();
-          // 逐条软删除，保证都能进回收站找回
-          for (const it of list) {
-            if (isLuck) await cloud.trashRecordById(it.id);
-            else if (isFood) await cloud.trashOrderById(it.id);
-            else await cloud.trashShoppingById(it.id, it);
-          }
+          const type = isLuck ? 'record' : isFood ? 'order' : 'shopping';
+          const docId = isLuck ? 'shared_records'
+            : isFood ? 'shared_orders'
+            : 'shared_shopping';
+          const items = list.map(it => ({ id: it.id, type, data: it }));
+          await cloud.batchSoftRemove(docId, items);
+
           wx.hideLoading();
           wx.showToast({ title: '已清空', icon: 'success' });
+          this._lastLoadAt = 0;
           this.render();
         } catch (e) {
+          console.error('清空失败', e);
           wx.hideLoading();
-          wx.showToast({ title: '清空失败', icon: 'none' });
+          wx.showToast({ title: '清空失败，请重试', icon: 'none' });
         }
       }
     });
@@ -211,14 +285,6 @@ Page({
 
   /* ===== 回收站 ===== */
 
-  // 只更新角标数字（不渲染列表）
-  async _loadTrashBadge() {
-    try {
-      const list = await cloud.loadTrash();
-      if (list.length !== this.data.trashCount) this.setData({ trashCount: list.length });
-    } catch (e) {}
-  },
-
   openTrash() {
     this.setData({ showTrash: true });
     this._loadTrash();
@@ -235,44 +301,11 @@ Page({
     if (!this.data.showTrash) return;
     try {
       const list = await cloud.loadTrash();
-      this.setData({ trashList: list.map(t => this._mapTrash(t)), trashCount: list.length });
+      this.setData({ trashList: this._mapTrashList(list), trashCount: list.length });
     } catch (e) {
+      console.error('回收站加载失败', e);
       this.setData({ trashList: [] });
     }
-  },
-
-  _mapTrash(t) {
-    const base = {
-      tid: t.id,
-      type: t.type,
-      time: fmtTime(t.deletedAt)
-    };
-    if (t.type === 'order') {
-      return Object.assign(base, {
-        title: '🍽️ 吃饭记录',
-        desc: (t.data.items || []).map(d => d.name + '×' + d.count).join('、') || '订单',
-        amount: '¥' + (t.data.total || 0)
-      });
-    }
-    // 小笨生活 · 购物记录
-    if (t.type === 'shopping') {
-      const d = t.data || {};
-      return Object.assign(base, {
-        title: '🛍️ 购物记录',
-        desc: [d.title || '未命名', d.date || ''].filter(Boolean).join(' · '),
-        amount: '¥' + (Number(d.price) || 0).toFixed(2)
-      });
-    }
-    const meta = KIND_META[t.data.kind] || KIND_META.shake;
-    const items = t.data.items || [];
-    const desc = items.length
-      ? items.map(it => it.emoji + it.name).join('、')
-      : (t.data.emoji || '') + (t.data.name || '');
-    return Object.assign(base, {
-      title: meta.icon + ' ' + meta.label,
-      desc,
-      amount: items.length ? String(items.length) + meta.unit : ((t.data.number < 10 ? '0' : '') + t.data.number)
-    });
   },
 
   // 回收站 → 恢复：回填原列表并移出回收站

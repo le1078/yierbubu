@@ -1,0 +1,16 @@
+{
+  "name": "mario-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "小笨马里奥联机实时中继（WebSocket 房间转发，游戏语义无关）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=14"
+  },
+  "dependencies": {
+    "ws": "^8.17.0"
+  }
+}

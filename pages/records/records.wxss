@@ -45,6 +45,17 @@
 .empty-tip { color: #4A3F3A; font-size: 30rpx; font-weight: 700; margin-bottom: 10rpx; }
 .empty-sub { color: #8A7E78; font-size: 26rpx; }
 
+/* 加载中 / 加载失败态 */
+.state-box { text-align: center; padding: 80rpx 0; }
+.state-tip { color: #4A3F3A; font-size: 28rpx; font-weight: 700; margin-bottom: 10rpx; }
+.state-sub { color: #8A7E78; font-size: 24rpx; }
+.spinner {
+  width: 56rpx; height: 56rpx; margin: 0 auto 20rpx;
+  border: 6rpx solid #FFD9E3; border-top-color: #FF5A5F;
+  border-radius: 50%; animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* 批量分组 */
 .rec-group { background: #fff; border-radius: 24rpx; padding: 20rpx 24rpx; margin-bottom: 16rpx; border: 3rpx solid #F0E2D8; }
 .rg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16rpx; }

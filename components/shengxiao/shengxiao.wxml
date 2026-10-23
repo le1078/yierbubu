@@ -35,7 +35,7 @@
       <text class="empty-txt">还没有选择生肖哦，布布先躺一会儿～</text>
     </view>
 
-    <view class="result {{hasResult ? 'show' : ''}}">
+    <view class="result {{hasResult ? 'show' : ''}}" wx:if="{{hasResult}}">
       <image class="sticker" src="{{sticker}}" mode="aspectFit"/>
       <view class="result-body">
         <view class="r-h3">{{pickedEmoji}} {{pickedName}} 的相冲相配</view>

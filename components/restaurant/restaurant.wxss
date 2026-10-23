@@ -317,6 +317,16 @@
   max-height: 400rpx;
 }
 
+.cp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60rpx 0;
+}
+.cp-empty-icon { font-size: 64rpx; margin-bottom: 16rpx; }
+.cp-empty-text { font-size: 24rpx; color: #C4B5AE; }
+
 .cp-item {
   display: flex;
   justify-content: space-between;
@@ -353,16 +363,6 @@
   border-top: 2rpx solid #F5F0EB;
 }
 
-.cp-input {
-  background: #FFF8F5;
-  border: 2rpx solid #FCE8EF;
-  border-radius: 999rpx;
-  padding: 18rpx 28rpx;
-  font-size: 26rpx;
-  color: #4A3F3A;
-  margin-bottom: 20rpx;
-}
-
 .cp-total-row {
   display: flex;
   justify-content: flex-end;
@@ -395,165 +395,6 @@
   box-shadow: 0 8rpx 16rpx rgba(255, 90, 95, 0.3);
 }
 
-/* ===== 订单记录入口 ===== */
-.orders-entry {
-  margin: 32rpx 24rpx;
-  padding: 24rpx;
-  background: #FFFFFF;
-  border-radius: 24rpx;
-  text-align: center;
-  font-size: 28rpx;
-  color: #4A3F3A;
-  box-shadow: 0 6rpx 20rpx rgba(74, 63, 58, 0.08);
-  border: 2rpx solid #FCE8EF;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12rpx;
-}
-
-.orders-count {
-  background: #FF8FAB;
-  color: #FFFFFF;
-  font-size: 22rpx;
-  padding: 4rpx 16rpx;
-  border-radius: 999rpx;
-}
-
-/* ===== 订单记录面板 ===== */
-.orders-panel-mask {
-  position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  background: rgba(0, 0, 0, 0.45);
-  z-index: 100;
-  display: flex;
-  align-items: flex-end;
-}
-
-.orders-panel {
-  width: 100%;
-  background: #FFFDF8;
-  border-radius: 32rpx 32rpx 0 0;
-  padding: 32rpx 24rpx;
-  padding-bottom: calc(32rpx + env(safe-area-inset-bottom));
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.op-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24rpx;
-}
-
-.op-title {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: #4A3F3A;
-}
-
-.op-clear {
-  font-size: 24rpx;
-  color: #FF5A5F;
-  padding: 8rpx 16rpx;
-}
-
-.op-close {
-  font-size: 32rpx;
-  color: #C4B5AE;
-  padding: 8rpx;
-}
-
-.op-list {
-  flex: 1;
-}
-
-.order-card {
-  background: #FFFFFF;
-  border-radius: 20rpx;
-  padding: 24rpx;
-  margin-bottom: 20rpx;
-  box-shadow: 0 4rpx 16rpx rgba(74, 63, 58, 0.06);
-  border: 2rpx solid #FCE8EF;
-}
-
-.oc-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 12rpx;
-}
-
-.oc-time {
-  font-size: 24rpx;
-  color: #A08A80;
-}
-
-.oc-status {
-  font-size: 22rpx;
-  color: #52C41A;
-  background: #F6FFED;
-  padding: 4rpx 16rpx;
-  border-radius: 999rpx;
-}
-
-.oc-table {
-  font-size: 24rpx;
-  color: #8A7E78;
-  margin-bottom: 12rpx;
-}
-
-.oc-items {
-  margin-bottom: 12rpx;
-}
-
-.oc-dish {
-  font-size: 26rpx;
-  color: #4A3F3A;
-  line-height: 1.6;
-}
-
-.oc-dish-price {
-  color: #FF5A5F;
-  font-size: 24rpx;
-}
-
-.oc-total {
-  text-align: right;
-  font-size: 26rpx;
-  color: #4A3F3A;
-  border-top: 2rpx solid #F5F0EB;
-  padding-top: 12rpx;
-}
-
-.oc-total-num {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: #FF5A5F;
-}
-
-.op-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 80rpx 0;
-}
-
-.op-empty-icon {
-  font-size: 80rpx;
-  margin-bottom: 20rpx;
-}
-
-.op-empty-text {
-  font-size: 26rpx;
-  color: #C4B5AE;
-}
 
 /* ===== 菜单编辑按钮 ===== */
 .menu-header {
@@ -645,17 +486,6 @@
   font-weight: 600;
   color: #4A3F3A;
   margin-bottom: 16rpx;
-}
-
-.ep-cat-tabs {
-  display: flex;
-  white-space: nowrap;
-  gap: 12rpx;
-}
-
-.cat-tab.sm {
-  padding: 12rpx 24rpx;
-  font-size: 24rpx;
 }
 
 .ep-dish-list {
@@ -796,8 +626,10 @@
 }
 
 /* ===== 编辑面板滚动 ===== */
+/* 内层不再设 max-height：只保留 .editor-panel 一个滚动容器。
+   嵌套滚动容器在 iOS 上手势冲突（内层滚到底后外层不接管，要抬手再滑） */
 .ep-scroll {
-  max-height: 70vh;
+  width: 100%;
 }
 
 /* ===== 分类管理 ===== */
@@ -932,11 +764,4 @@
   height: 88rpx;
   line-height: 44rpx;
   text-align: center;
-}
-
-/* ===== 编辑面板 textarea ===== */
-.ep-textarea {
-  min-height: 120rpx;
-  height: auto;
-  line-height: 1.5;
 }

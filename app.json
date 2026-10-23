@@ -12,10 +12,20 @@
       "root": "subpackages/games",
       "name": "games",
       "pages": [
-        "gomoku/gomoku"
+        "gomoku/gomoku",
+        "gomokuai/gomokuai",
+        "xiangqi/xiangqi",
+        "mario/mario"
       ]
     }
   ],
+  "lazyCodeLoading": "requiredComponents",
+  "preloadRule": {
+    "pages/games/games": {
+      "network": "all",
+      "packages": ["games"]
+    }
+  },
   "window": {
     "navigationBarBackgroundColor": "#FF8FAB",
     "navigationBarTitleText": "小笨日历",

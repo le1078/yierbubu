@@ -1,0 +1,535 @@
+.page {
+  min-height: 100vh;
+  padding: 24rpx;
+  background: #FFFDF8;
+  box-sizing: border-box;
+}
+
+/* 横屏：原生导航栏仍占顶部（已去掉 navigationStyle: custom），
+   页面内容需要自己避开它，否则画面会被裁掉一截 */
+.page.land {
+  padding: 12rpx 20rpx;
+}
+
+/* ===== 菜单 ===== */
+.menu-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 30rpx;
+}
+
+.menu-title {
+  font-size: 48rpx;
+  font-weight: 700;
+  color: #E2547A;
+}
+
+.menu-sub {
+  text-align: center;
+  color: #A08A80;
+  font-size: 26rpx;
+  margin-top: 12rpx;
+}
+
+.menu-card {
+  margin-top: 30rpx;
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 30rpx 28rpx;
+  box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
+}
+
+.sec-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #6B4A52;
+  margin-bottom: 16rpx;
+}
+
+.opt-row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}
+
+.opt {
+  flex: 1;
+  background: #FFF8F5;
+  border: 2rpx solid #FCE8EF;
+  border-radius: 20rpx;
+  padding: 16rpx 12rpx;
+  text-align: center;
+}
+
+.opt.on {
+  border-color: #FF8FAB;
+  background: #FFF0F4;
+}
+
+.opt-name {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #6B4A52;
+}
+
+.opt.on .opt-name { color: #E2547A; }
+
+.opt-desc {
+  font-size: 22rpx;
+  color: #A08A80;
+  margin-top: 6rpx;
+}
+
+.big-btn {
+  background: #FFF0F4;
+  color: #E2547A;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 30rpx;
+  font-weight: 600;
+  padding: 22rpx 0;
+}
+
+.big-btn:active { opacity: 0.85; }
+
+.big-btn.primary {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+  box-shadow: 0 8rpx 20rpx rgba(255, 90, 95, 0.28);
+}
+
+.big-btn.ghost {
+  background: #FFF8F5;
+  color: #A08A80;
+  margin-top: 18rpx;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 24rpx 0 18rpx;
+  color: #C4B5AE;
+  font-size: 24rpx;
+}
+
+.divider::before, .divider::after {
+  content: '';
+  flex: 1;
+  height: 2rpx;
+  background: #F0E4DE;
+  margin: 0 16rpx;
+}
+
+.join-row {
+  display: flex;
+  gap: 20rpx;
+  align-items: stretch;
+}
+
+.room-input {
+  flex: 1;
+  height: 88rpx;
+  background: #FFF8F5;
+  border: 2rpx solid #FCE8EF;
+  border-radius: 999rpx;
+  padding: 0 32rpx;
+  font-size: 32rpx;
+  letter-spacing: 8rpx;
+}
+
+.menu-tip {
+  text-align: center;
+  color: #C4B5AE;
+  font-size: 22rpx;
+  margin-top: 20rpx;
+  line-height: 1.7;
+}
+
+/* ===== 等待 ===== */
+.wait-card {
+  margin-top: 50rpx;
+  background: #FFFFFF;
+  border-radius: 28rpx;
+  padding: 40rpx 32rpx;
+  box-shadow: 0 8rpx 24rpx rgba(74, 63, 58, 0.08);
+  text-align: center;
+}
+
+.wait-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #6B4A52;
+}
+
+.wait-no {
+  font-size: 68rpx;
+  font-weight: 700;
+  color: #E2547A;
+  letter-spacing: 12rpx;
+  margin: 20rpx 0 10rpx;
+}
+
+.wait-tip {
+  font-size: 24rpx;
+  color: #A08A80;
+}
+
+.wait-mode {
+  display: inline-block;
+  margin-top: 20rpx;
+  background: #FFF0F4;
+  color: #E2547A;
+  font-size: 26rpx;
+  font-weight: 600;
+  padding: 10rpx 26rpx;
+  border-radius: 999rpx;
+}
+
+.loading-dots {
+  display: flex;
+  gap: 10rpx;
+  justify-content: center;
+  margin-top: 32rpx;
+}
+
+.loading-dots .dot {
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #FF8FAB;
+  animation: blink 1.2s infinite;
+}
+
+.loading-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.loading-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes blink {
+  0%, 60%, 100% { opacity: 0.25; }
+  30% { opacity: 1; }
+}
+
+/* ===== 对局 HUD ===== */
+.hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #FFFFFF;
+  border-radius: 20rpx;
+  padding: 10rpx 20rpx;
+  box-shadow: 0 4rpx 16rpx rgba(74, 63, 58, 0.06);
+}
+
+.hud-side {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  min-width: 180rpx;
+}
+
+/* 玩家形象：用现有 GIF 素材 */
+.hud-avatar {
+  width: 54rpx;
+  height: 54rpx;
+  border-radius: 50%;
+  background: #FFF6F8;
+  border: 2rpx solid #FCE8EF;
+}
+
+.hud-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+}
+
+.hud-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.hud-name {
+  font-size: 22rpx;
+  font-weight: 700;
+  color: #6B4A52;
+}
+
+.hud-lives {
+  font-size: 20rpx;
+  color: #A08A80;
+}
+
+.hud-score {
+  font-size: 20rpx;
+  font-weight: 600;
+  color: #E2547A;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-coin {
+  font-size: 20rpx;
+  color: #C9A227;
+}
+
+.hud-mid { flex: 1; text-align: center; }
+
+.hud-status {
+  font-size: 24rpx;
+  color: #E2547A;
+  font-weight: 600;
+}
+
+/* 倒计时（剩余 60 秒内变红闪烁警示） */
+.hud-timer {
+  font-size: 26rpx;
+  font-weight: 700;
+  color: #6B4A52;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-timer.urgent {
+  color: #E74C3C;
+  animation: blink 0.8s infinite;
+}
+
+.hud-meta {
+  font-size: 20rpx;
+  color: #A08A80;
+  margin-top: 2rpx;
+}
+
+.hud-sync {
+  color: #E74C3C;
+  font-weight: 600;
+}
+
+/* ===== 竖屏主区：画面在上、按键在下 ===== */
+.stage-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 16rpx;
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.gcanvas {
+  border-radius: 14rpx;
+  box-shadow: 0 6rpx 20rpx rgba(74, 63, 58, 0.14);
+  background: #5C94FC;
+}
+
+/* 虚拟按键：竖屏时在画面下方，左右分置（左手方向、右手动作） */
+.pad {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20rpx;
+  padding: 0 12rpx;
+  box-sizing: border-box;
+}
+
+.pad-dpad, .pad-act {
+  display: flex;
+  gap: 20rpx;
+  align-items: center;
+}
+
+.p-btn {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  background: #FFFFFF;
+  color: #E2547A;
+  font-size: 38rpx;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4rpx 14rpx rgba(74, 63, 58, 0.12);
+  user-select: none;
+}
+
+.p-btn:active {
+  background: #FFF0F4;
+  transform: scale(0.94);
+}
+
+.p-btn.jump {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+  width: 140rpx;
+  height: 140rpx;
+  font-size: 40rpx;
+}
+
+.p-btn.run {
+  background: #FFF8F5;
+  color: #A08A80;
+  font-size: 34rpx;
+}
+
+.p-btn.down {
+  background: #FFF8F5;
+  font-size: 30rpx;
+}
+
+/* ===== 结算浮层 ===== */
+.end-mask {
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.end-card {
+  background: #FFFFFF;
+  border-radius: 24rpx;
+  padding: 30rpx 40rpx;
+  text-align: center;
+  min-width: 380rpx;
+}
+
+.end-text {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #E2547A;
+}
+
+.end-btns {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 22rpx;
+}
+
+.e-btn {
+  background: #FFF0F4;
+  color: #E2547A;
+  border-radius: 999rpx;
+  text-align: center;
+  font-size: 26rpx;
+  font-weight: 600;
+  padding: 16rpx 32rpx;
+}
+
+.e-btn.primary {
+  background: linear-gradient(135deg, #FF8FAB, #FF5A5F);
+  color: #FFFFFF;
+}
+
+.e-btn.ghost {
+  background: #FFF8F5;
+  color: #A08A80;
+}
+
+/* ===== 聊天（气泡挂在角色头顶，这里是入口 UI） ===== */
+.chat-fab {
+  position: absolute;
+  right: 16rpx;
+  top: 16rpx;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34rpx;
+  z-index: 5;
+}
+
+.chat-panel {
+  position: absolute;
+  left: 16rpx;
+  right: 16rpx;
+  top: 16rpx;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 20rpx;
+  padding: 14rpx 16rpx;
+  box-shadow: 0 6rpx 18rpx rgba(0, 0, 0, 0.2);
+  z-index: 6;
+}
+
+.chat-quick {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.chat-q {
+  flex: 1;
+  text-align: center;
+  font-size: 24rpx;
+  color: #5A4A42;
+  background: #F6E8E0;
+  border-radius: 999rpx;
+  padding: 8rpx 0;
+}
+
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.chat-in {
+  flex: 1;
+  background: #FFF;
+  border: 2rpx solid #E8D5CC;
+  border-radius: 999rpx;
+  padding: 10rpx 24rpx;
+  font-size: 26rpx;
+}
+
+.chat-send {
+  background: #FF8FAB;
+  color: #FFF;
+  font-size: 26rpx;
+  font-weight: bold;
+  border-radius: 999rpx;
+  padding: 10rpx 30rpx;
+}
+
+.chat-close {
+  color: #B9A99F;
+  font-size: 30rpx;
+  padding: 6rpx 10rpx;
+}
+
+.hud-race {
+  text-align: center;
+  font-size: 22rpx;
+  font-weight: bold;
+  color: #FF8FAB;
+  margin-top: 2rpx;
+}
+
+.mute-fab {
+  position: absolute;
+  right: 16rpx;
+  top: 92rpx;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+  z-index: 5;
+}

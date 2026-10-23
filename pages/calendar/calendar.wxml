@@ -1,4 +1,9 @@
 <view class="page">
+  <view wx:if="{{!cloudReady}}" class="cloud-warn">
+    <text class="cw-text">⚠️ 云端数据加载失败，当前为只读模式</text>
+    <text class="cw-retry" bindtap="reloadCloud">重试</text>
+  </view>
+
   <view class="mode-switch">
     <view class="mode {{mode === 'memo' ? 'on' : ''}}" data-mode="memo" bindtap="setMode">📝 日历备忘</view>
     <view class="mode {{mode === 'buy' ? 'on' : ''}}" data-mode="buy" bindtap="setMode">💰 买码日历</view>
@@ -19,7 +24,7 @@
   <view class="grid">
     <view
       wx:for="{{grid}}"
-      wx:key="ds"
+      wx:key="key"
       class="day {{item.empty ? 'empty' : ''}} {{item.isToday ? 'today' : ''}} {{item.isSel ? 'sel' : ''}}"
       data-ds="{{item.ds}}"
       bindtap="openDate">
