@@ -102,7 +102,7 @@ function ensureBackground(cache, w, h) {
 
 /* ========== 瓦片 ========== */
 
-function drawTile(ctx, ch, x, y, s) {
+function drawTile(ctx, ch, x, y, s, flagTop) {
   switch (ch) {
     case '#':   // 地面
       ctx.fillStyle = PAL.ground;
@@ -204,11 +204,13 @@ function drawTile(ctx, ch, x, y, s) {
     case 'F':   // 终点旗（杆 + 杆顶球）
       ctx.fillStyle = PAL.flagPole;
       ctx.fillRect(x + s * 0.45, y, s * 0.1, s);
-      // 杆顶小球（只在最顶端那格画）
-      ctx.fillStyle = '#FFD700';
-      ctx.beginPath();
-      ctx.arc(x + s * 0.5, y + s * 0.08, s * 0.12, 0, Math.PI * 2);
-      ctx.fill();
+      // 杆顶小球只画在最顶端的 F 格（调用方按「上方不是 F」判断传入）
+      if (flagTop) {
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.arc(x + s * 0.5, y + s * 0.08, s * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+      }
       break;
     default:
       break;
@@ -544,16 +546,21 @@ function drawFrame(ctx, opts) {
     for (let c = c0; c <= c1; c++) {
       const ch = level.grid[r][c];
       if (ch === '.') continue;
-      drawTile(ctx, ch, (c - cam) * s, (r - camY) * s, s);
+      // 旗杆顶球只画在杆顶那格（上方不是 F 才算顶）
+      const flagTop = ch === 'F' && (r === 0 || level.grid[r - 1][c] !== 'F');
+      drawTile(ctx, ch, (c - cam) * s, (r - camY) * s, s, flagTop);
     }
   }
 
   // 检查点小旗（走到这里会记录重生点）
   if (level.checkpoints) {
     for (const cp of level.checkpoints) {
-      // 空中关的检查点不在实地上，不画（否则会飘在半空）
-      const below = level.grid[Math.min(level.rowsH - 1, cp.row + 1)];
-      if (!below || below[cp.col] !== '#') continue;
+      // cp.row 就是站立行（脚底 y = cp.row），脚下的支撑瓦片必须实地：
+      // 地面 '#' 或平台砖 '='（空中关的检查点站在移动平台轨道砖上）
+      const row = level.grid[Math.min(level.rowsH - 1, Math.max(0, cp.row))];
+      if (!row) continue;
+      const bt = row[cp.col];
+      if (bt !== '#' && bt !== '=') continue;
       const cx = (cp.col + 0.5 - cam) * s;
       const cy = (cp.row - camY) * s;
       if (cx < -s || cx > opts.viewW + s) continue;
@@ -753,8 +760,12 @@ function drawFrame(ctx, opts) {
   }
 
   // Boss
-  if (level.boss && level.boss.hp > 0) {
-    drawBoss(ctx, level.boss, (level.boss.x - cam) * s, (level.boss.y - camY) * s, s);
+  // Boss（多 Boss 关逐个画）
+  const bossList = level.bosses || (level.boss ? [level.boss] : []);
+  for (const bs of bossList) {
+    if (bs.hp > 0) {
+      drawBoss(ctx, bs, (bs.x - cam) * s, (bs.y - camY) * s, s);
+    }
   }
 
   // 玩家：优先用 GIF 抽取的 PNG 帧直接画在 canvas 上。
@@ -818,6 +829,78 @@ function drawFrame(ctx, opts) {
       ctx.stroke();
     }
   }
+
+  // 聊天气泡：挂在发言者头顶，3 秒后消失（最后 0.5 秒淡出）
+  const bubbles = opts.bubbles;
+  if (bubbles) {
+    for (const p of players) {
+      const bub = bubbles[p.seat];
+      if (!bub || time > bub.until) continue;
+      if (p.state === 'dead' || p.state === 'done') continue;
+      if (p.x < cam - 2 || p.x > cam + viewW + 2) continue;
+      const left = bub.until - time;
+      const alpha = left < 0.5 ? Math.max(0, left / 0.5) : 1;
+      const bx = (p.x - cam) * s;
+      const byTop = (p.y - p.h - camY) * s - s * 1.5;   // 头顶名牌上方
+      ctx.font = 'bold ' + Math.floor(s * 0.36) + 'px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(bub.text).width;
+      const bw = Math.min(tw + s * 0.5, opts.viewW - s * 0.4);
+      const bh = s * 0.62;
+      const cx = Math.max(bw / 2 + s * 0.1, Math.min(opts.viewW - bw / 2 - s * 0.1, bx));
+      ctx.globalAlpha = alpha;
+      // 气泡体（圆角矩形）+ 小尾巴
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      roundRect(ctx, cx - bw / 2, byTop - bh, bw, bh, bh / 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(bx - s * 0.1, byTop);
+      ctx.lineTo(bx + s * 0.12, byTop);
+      ctx.lineTo(bx, byTop + s * 0.16);
+      ctx.closePath();
+      ctx.fill();
+      // 文字（超宽裁剪）
+      ctx.fillStyle = '#333';
+      let text = bub.text;
+      while (ctx.measureText(text).width > bw - s * 0.3 && text.length > 1) {
+        text = text.slice(0, -1);
+      }
+      ctx.fillText(text, cx, byTop - bh / 2);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // 分数飘字：+200 之类，向上飘 + 淡出（正版 SMB1 反馈）
+  if (level.popups) {
+    for (const pp of level.popups) {
+      const dx = (pp.x - cam) * s;
+      if (dx < -s || dx > opts.viewW + s) continue;
+      const dy = (pp.y - camY) * s - pp.t * s * 1.3;
+      const alpha = Math.max(0, 1 - pp.t / 0.9);
+      ctx.globalAlpha = alpha;
+      ctx.font = 'bold ' + Math.floor(s * 0.34) + 'px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = Math.max(2, s * 0.07);
+      ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+      ctx.strokeText(pp.text, dx, dy);
+      ctx.fillStyle = '#FFF7D6';
+      ctx.fillText(pp.text, dx, dy);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// 圆角矩形路径（不 fill/stroke，调用方自己画）
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arc(x + w - r, y + r, r, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(x + r, y + h);
+  ctx.arc(x + r, y + r, r, Math.PI / 2, -Math.PI / 2);
+  ctx.closePath();
 }
 
 module.exports = {

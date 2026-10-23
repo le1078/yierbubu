@@ -434,3 +434,102 @@
   background: #FFF8F5;
   color: #A08A80;
 }
+
+/* ===== 聊天（气泡挂在角色头顶，这里是入口 UI） ===== */
+.chat-fab {
+  position: absolute;
+  right: 16rpx;
+  top: 16rpx;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34rpx;
+  z-index: 5;
+}
+
+.chat-panel {
+  position: absolute;
+  left: 16rpx;
+  right: 16rpx;
+  top: 16rpx;
+  background: rgba(255, 255, 255, 0.94);
+  border-radius: 20rpx;
+  padding: 14rpx 16rpx;
+  box-shadow: 0 6rpx 18rpx rgba(0, 0, 0, 0.2);
+  z-index: 6;
+}
+
+.chat-quick {
+  display: flex;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.chat-q {
+  flex: 1;
+  text-align: center;
+  font-size: 24rpx;
+  color: #5A4A42;
+  background: #F6E8E0;
+  border-radius: 999rpx;
+  padding: 8rpx 0;
+}
+
+.chat-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.chat-in {
+  flex: 1;
+  background: #FFF;
+  border: 2rpx solid #E8D5CC;
+  border-radius: 999rpx;
+  padding: 10rpx 24rpx;
+  font-size: 26rpx;
+}
+
+.chat-send {
+  background: #FF8FAB;
+  color: #FFF;
+  font-size: 26rpx;
+  font-weight: bold;
+  border-radius: 999rpx;
+  padding: 10rpx 30rpx;
+}
+
+.chat-close {
+  color: #B9A99F;
+  font-size: 30rpx;
+  padding: 6rpx 10rpx;
+}
+
+.hud-race {
+  text-align: center;
+  font-size: 22rpx;
+  font-weight: bold;
+  color: #FF8FAB;
+  margin-top: 2rpx;
+}
+
+.mute-fab {
+  position: absolute;
+  right: 16rpx;
+  top: 92rpx;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32rpx;
+  z-index: 5;
+}

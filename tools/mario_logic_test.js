@@ -530,11 +530,16 @@ console.log('\n[14] 联机序列化');
   check(Array.isArray(w.es) && w.es.length === lv.enemies.length, '敌人数组序列化（' + w.es.length + ' 个）');
   check(Array.isArray(w.cs), '剩余金币 id 数组');
   check(typeof w.t === 'number', '时间戳字段');
-  check(w.bs === null, '关卡 1 无 Boss → bs 为 null');
-  // 关卡 5 有 Boss
-  const lv5 = EN.loadLevel(LV.LEVEL_4, LV.LEVEL_SPECS[3]);
-  const w5 = EN.worldToWire(lv5, [mkPlayer(lv5)]);
-  check(w5.bs !== null && w5.bs[0] === 3, '城堡关序列化含 Boss 血量');
+  check(Array.isArray(w.bs) && w.bs.length === 0, '关卡 1 无 Boss → bs 为空数组（多 Boss 协议）');
+  // 关卡 4（城堡）有 1 个 Boss
+  const lv4 = EN.loadLevel(LV.LEVEL_4, LV.LEVEL_SPECS[3]);
+  const w4 = EN.worldToWire(lv4, [mkPlayer(lv4)]);
+  check(Array.isArray(w4.bs) && w4.bs.length === 1 && w4.bs[0][0] === 3, '城堡关序列化含 Boss 血量');
+  // 关卡 7（双头城堡）有 2 个 Boss
+  const lv7 = EN.loadLevel(LV.LEVEL_7, LV.LEVEL_SPECS[6]);
+  const w7 = EN.worldToWire(lv7, [mkPlayer(lv7)]);
+  check(Array.isArray(w7.bs) && w7.bs.length === 2 && w7.bs[0][0] === 3 && w7.bs[1][0] === 4,
+    '双 Boss 关序列化两个 Boss（血量 ' + w7.bs[0][0] + '+' + w7.bs[1][0] + '）');
   // 序列化体积要小（云数据库单次写入限制）
   const s = JSON.stringify(w);
   check(s.length < 2000, '单帧世界序列化 < 2KB（实际 ' + s.length + ' 字节）');

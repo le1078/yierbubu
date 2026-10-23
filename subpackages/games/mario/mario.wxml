@@ -12,11 +12,21 @@
       <view class="opt-row">
         <view class="opt {{coop ? 'on' : ''}}" bindtap="toggleCoop">
           <view class="opt-name">🤝 合作</view>
-          <view class="opt-desc">双方到终点才过关</view>
+          <view class="opt-desc">双方到终点才过关 · 道具共享</view>
         </view>
         <view class="opt {{!coop ? 'on' : ''}}" bindtap="toggleCoop">
           <view class="opt-name">🏁 竞速</view>
           <view class="opt-desc">先到终点者胜（单机有电脑）</view>
+        </view>
+      </view>
+      <view class="opt-row">
+        <view class="opt {{infiniteLives ? 'on' : ''}}" bindtap="toggleInfiniteLives">
+          <view class="opt-name">💕 无限生命</view>
+          <view class="opt-desc">死亡不减命，随便玩</view>
+        </view>
+        <view class="opt {{muted ? '' : 'on'}}" bindtap="toggleMute">
+          <view class="opt-name">{{muted ? '🔇 静音' : '🔊 音效'}}</view>
+          <view class="opt-desc">8-bit 芯片音效</view>
         </view>
       </view>
 
@@ -32,8 +42,8 @@
 
     <view class="menu-tip">
       💡 创建后点右上角「···」转发给微信好友，TA 点卡片直接进房<br/>
-      ▼ 站在管道口按向下键，可以进入地下金币房<br/>
-      ⚠️ 联机模式下对方位置有约 0.3~0.8 秒延迟（云同步限制），手感已做预测优化<br/>
+      ▼ 站在管道口按向下键，可以进入地下金币房；💬 联机时可以聊天，气泡会出现在头顶<br/>
+      ⚡ 手机开「开发调试」走自建加速通道（HUD 显示 ⚡ms）；不开也能玩，走云端稍慢<br/>
       🔧 加入失败？请把云数据库房间集合权限设为「所有用户可读写」
     </view>
   </view>
@@ -63,6 +73,7 @@
       </view>
       <view class="hud-mid">
         <view class="hud-timer {{timeLeft <= 60 ? 'urgent' : ''}}">⏱ {{timeLeft}}</view>
+        <view wx:if="{{raceText}}" class="hud-race">{{raceText}}</view>
         <view class="hud-meta">{{statusText}} · {{metaText}}<text wx:if="{{syncText}}" class="hud-sync"> · {{syncText}}</text></view>
       </view>
       <view wx:if="{{mode === 'online' || !coop}}" class="hud-side">
@@ -84,6 +95,24 @@
         <!-- 玩家形象直接画在 canvas 上（GIF 抽帧 PNG）。
              不再用 <image> 叠加：部分基础库会把原生 canvas 盖在 image 上层，
              表现为只看得见名牌、看不见角色。 -->
+
+        <!-- 聊天：消息会以气泡挂在角色头顶几秒 -->
+        <view wx:if="{{stage === 'playing' && mode === 'online' && !showChat}}" class="chat-fab" bindtap="toggleChatPanel">💬</view>
+        <view wx:if="{{stage === 'playing'}}" class="mute-fab {{muted ? 'off' : ''}}" bindtap="toggleMute">{{muted ? '🔇' : '🔊'}}</view>
+        <view wx:if="{{showChat}}" class="chat-panel">
+          <view class="chat-quick">
+            <view class="chat-q" data-t="等等我！" bindtap="quickChat">等等我！</view>
+            <view class="chat-q" data-t="来啊！" bindtap="quickChat">来啊！</view>
+            <view class="chat-q" data-t="哈哈" bindtap="quickChat">哈哈</view>
+            <view class="chat-q" data-t="好样的！" bindtap="quickChat">好样的！</view>
+          </view>
+          <view class="chat-row">
+            <input class="chat-in" placeholder="说点什么，气泡会出现在头顶…" value="{{chatInput}}"
+              bindinput="onChatInput" maxlength="20" confirm-type="send" bindconfirm="sendChat"/>
+            <view class="chat-send" bindtap="sendChat">发</view>
+            <view class="chat-close" bindtap="toggleChatPanel">✕</view>
+          </view>
+        </view>
 
         <!-- 结算浮层 -->
         <view wx:if="{{stage === 'ended'}}" class="end-mask">

@@ -109,12 +109,14 @@ function evaluate(b, side) {
     const t = X.typeOf(p);
     const mine = X.sideOf(p) === side;
     let v = VALUE[t];
-    // 位置加成：黑方视角要上下镜像
+    // 位置加成：位置表是黑方视角（向 row 9 推进加分），
+    // 红方棋子必须镜像（row → 9 - row）后查表。
+    // 之前按「是否对方的黑子」镜像，红方兵前进反而扣分，
+    // 且 evaluate(b, RED) ≠ -evaluate(b, BLACK)，AI 执红时明显变弱。
     const table = TABLE_OF[t];
     if (table) {
       let pi = i;
-      if (!mine && X.sideOf(p) === X.BLACK) {
-        // 黑方棋子：镜像 row
+      if (X.sideOf(p) === X.RED) {
         const r = X.rowOf(i);
         pi = (9 - r) * X.COLS + X.colOf(i);
       }
@@ -220,12 +222,15 @@ function think(b, side, difficulty, opts) {
 
   const maxDepth = difficulty === 'hard' ? 4 : 2;
 
-  // 迭代加深：每层保存结果，超时就用上一层的最佳着法
+  // 迭代加深：每层保存结果，超时就用上一层的最佳着法。
+  // 只有完整搜完的一层才能覆盖 best：超时中断的那层根节点
+  // 只搜了前几个着法、叶子全是截断的静态分，拿来覆盖会更差
   let best = null;
   for (let d = 1; d <= maxDepth; d++) {
     const res = alphabeta(b, d, -Infinity, Infinity, side, deadline, nodes);
-    if (res.move) best = res.move;
-    if (Date.now() > deadline) break;
+    const complete = Date.now() <= deadline;
+    if (res.move && complete) best = res.move;
+    if (!complete) break;
   }
   if (!best) {
     // 搜索没结果（理论上不会）：退回排序第一

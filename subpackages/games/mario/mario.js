@@ -27,9 +27,11 @@ const COLLECTION = 'mario_rooms';
 const C = require('../../../utils/constants.js');
 const log = require('../../../utils/log.js');
 const roomkit = require('../../../utils/roomkit.js');
+const relaykit = require('../../../utils/relay.js');
 const EN = require('./engine.js');
 const LV = require('./levels.js');
 const R = require('./render.js');
+const AU = require('./audio.js');
 
 // 联机模式：'online' | 'solo'（solo = 单机试玩/开发用）
 Page({
@@ -56,7 +58,12 @@ Page({
     p2Coins: 0,
     timeLeft: 400,
     landscape: false,
-    syncText: ''          // 联机同步状态：长时间收不到远端数据时提示
+    syncText: '',         // 联机同步状态：长时间收不到远端数据时提示
+    raceText: '',         // 竞速模式：双方进度百分比
+    showChat: false,      // 聊天面板开关（联机）
+    chatInput: '',
+    infiniteLives: false, // 无限生命模式：死亡不减命（情侣休闲）
+    muted: false          // 音效开关
   },
 
   onLoad(options) {
@@ -93,6 +100,7 @@ Page({
     this._destroyed = true;
     this._stopLoop();
     this._stopInputPoll();
+    this._closeRelay();
     roomkit.sweepTimers(this);
     // 通知对方离开
     if (this._roomId && this.data.mode === 'online') {
@@ -104,10 +112,22 @@ Page({
   },
 
   onHide() {
-    // 切后台：停循环 + 停写入（否则白烧云数据库额度）
+    // 切后台：停循环 + 停写入 + 关订阅（watch/200ms 轮询在后台还会
+    // 持续读云数据库，白烧额度）
     this._paused = true;
     this._stopLoop();
     this._stopInputPoll();
+    if (this._roomId && this.data.mode === 'online') {
+      // 给对方留个标记：区分「人切后台了」和「同步坏了」，
+      // 否则对方只会看到吓人的「⚠️ 同步中断」。
+      // 中继模式下 socket 断开本身就是标记（服务器广播 peer offline）。
+      if (!(this._relay && this._relay.isReady()) &&
+          this.data.stage === 'playing' && !this._over) {
+        this._markPause(this.data.mySeat);
+      }
+      this._closeRelay();
+      roomkit.closeWatch(this);
+    }
   },
 
   onShow() {
@@ -117,10 +137,34 @@ Page({
     if (this.data.stage === 'playing') {
       this._paused = false;
       this._startLoop();
-      if (this.data.mode === 'online' && this.data.mySeat === 1) {
-        this._startInputPoll();
+      if (this.data.mode === 'online' && this._roomId) {
+        // 回来了：清掉自己的暂停标记，对方好恢复正常提示
+        this._markPause(0);
+        // 中继优先：先连中继；没就绪前由云数据库兜底，
+        // 中继 onReady 会自动把 DB watch/轮询关掉
+        this._startRelay();
+        this._startWatch();
+        if (this.data.mySeat === 1) {
+          this._startInputPoll();
+        }
       }
+    } else if (this.data.stage === 'waiting' && this._roomId &&
+               this.data.mode === 'online') {
+      // 等待页也要恢复订阅，否则收不到对方加入
+      this._startRelay();
+      this._startWatch();
     }
+  },
+
+  // 写「谁切后台了」标记到房间文档（0 = 都在）。失败无所谓，尽力而为。
+  _markPause(seat) {
+    if (!this._roomId) return;
+    try {
+      const db = wx.cloud.database();
+      db.collection(COLLECTION).doc(this._roomId).update({
+        data: { pause: seat }
+      }).catch(() => {});
+    } catch (e) { /* 云未初始化等极端情况直接忽略 */ }
   },
 
   /* ========== 布局 ========== */
@@ -148,6 +192,9 @@ Page({
     this._ctx = null;
     this._sprites = null;
     this._bgCache = { canvas: null, w: 0, h: 0 };
+    // 重试预算也要复位：上一局积累的失败次数不清零的话，
+    // 新对局 canvas 挂载稍慢就直接撞上限、永远不再尝试
+    this._canvasRetry = 0;
   },
 
   /* ========== 菜单 ========== */
@@ -158,6 +205,23 @@ Page({
 
   toggleCoop() {
     this.setData({ coop: !this.data.coop });
+  },
+
+  // 无限生命模式（情侣休闲）：死亡原地重生不减命，永远玩下去
+  toggleInfiniteLives() {
+    const on = !this.data.infiniteLives;
+    this.setData({ infiniteLives: on });
+    // 对局中切换立即生效（下一关 _setupLevel 也会重新注入）
+    if (this._players) {
+      for (const p of this._players) p.infiniteLives = on;
+    }
+  },
+
+  // 音效开关
+  toggleMute() {
+    const muted = !this.data.muted;
+    AU.setMuted(muted);
+    this.setData({ muted });
   },
 
   startSolo() {
@@ -175,6 +239,7 @@ Page({
 
   backToMenu() {
     this._stopInputPoll();
+    this._closeRelay();
     roomkit.closeWatch(this);
     this._roomId = null;
     this._stopLoop();
@@ -188,6 +253,26 @@ Page({
     const spec = LV.LEVEL_SPECS[idx];
     const level = EN.loadLevel(LV.LEVELS[idx], spec);
     this._level = level;
+    // 引擎事件 → 音效（钩子挂关卡上，换关自动带走；星星和踩敌等
+    // 只有表现层差异，不影响模拟结果，两端各自发声即可）
+    level.onEvent = (name, x, y) => {
+      AU.play(name);
+      // 踩敌/受击给一下轻震动（手上有反馈，手游玩平台跳跃很需要）
+      if (name === 'stomp' || name === 'hurt' || name === 'die') {
+        try { wx.vibrateShort({ type: 'light' }); } catch (e) {}
+      }
+      // 死亡回放镜头：联机时对方死了，镜头短暂切过去看一眼再回来
+      if ((name === 'die' || name === 'hurt') && this.data.mode === 'online' &&
+          this._players && this._players.length > 1) {
+        const victim = this._players[0].state === 'dying' || name === 'die'
+          ? this._players.find((q) => q.state === 'dying')
+          : null;
+        if (victim && victim.seat !== this.data.mySeat) {
+          this._replayFocus = victim.seat;
+          this._replayUntil = Date.now() + 1400;   // 1.4 秒切镜
+        }
+      }
+    };
     // 单机合作只需要 P1；单机竞速生成一个电脑 P2 和你比赛。
     const withAI = !!solo && !this.data.coop;
     this._aiSeat = withAI ? 2 : 0;
@@ -199,9 +284,34 @@ Page({
       this._players[1].x = level.start.col + 2.5;
       this._players[1].respawnX = level.start.col + 2.5;
     }
+    // 道具共享（合作模式）：引擎 resolveItemHit 按 level._players 同步变身
+    level._players = this._players;
+    // 无限生命模式：引擎按玩家字段判断，两关设置都注入
+    if (this.data.infiniteLives) {
+      for (const p of this._players) p.infiniteLives = true;
+    }
     this._inputs = { 1: EN.makeInput(), 2: EN.makeInput() };
     // 2.5Hz 输入采样会漏掉「快速点一下跳/下」，用边沿锁存到下一次上报
     this._edgeLatch = { u: false, d: false };
+    // 上一关吃剩的金币 id 必须清掉：新关卡金币 id 重新编号，
+    // 残留 id 恰好命中新关卡里 P2 身边的金币会被误判成已吃
+    this._pendingGot = [];
+    // 双车道去重的时间戳基线也要重置：新关卡 level.time 归零，旧基线会把
+    // 新关卡前几百毫秒的合法快照全部误判成「过期」丢掉
+    this._lastWorldT = -1;
+    this._lastInputT = -1;
+    this._lastDbWriteAt = 0;
+    this._lastDbAttemptAt = 0;
+    this._dbFails = 0;
+    // 聊天气泡（seat -> {text, until}）：until 用关卡时间，换关自动清
+    this._bubbles = {};
+    this._lastChatTs = 0;
+    // 竞速进度条的目标（旗杆列），进度百分比用它算
+    this._raceGoal = EN.findFlagCol(level);
+    // 云数据库兜底车道的节奏（独立于中继车道退避/恢复；
+    // 用实例字段而不是 data，避免中继成功把库车道的退避抵消掉）
+    this._dbInterval = C.MARIO_SYNC_MS;
+    this._lastSyncOk = true;
     this._acc = 0;                 // 物理累时器（固定步长的关键）
     this._syncAcc = 0;
     this._lastSyncOk = true;
@@ -213,7 +323,14 @@ Page({
   },
 
   nextLevel() {
+    // 联机时只有房主能推进关卡；guest 端由 world 里的 epoch 驱动重载
+    if (this.data.mode === 'online' && this.data.mySeat === 2) {
+      wx.showToast({ title: '联机模式由房主（P1）切换关卡', icon: 'none' });
+      return;
+    }
     const n = (this.data.level + 1) % LV.LEVEL_SPECS.length;
+    this._worldEpoch = (this._worldEpoch || 0) + 1;
+    this._resetRoomEndFlags();
     this._setupLevel(n, this.data.mode === 'solo');
     this.setData({ stage: 'playing', winText: '' }, () => {
       this._over = false;
@@ -222,11 +339,30 @@ Page({
   },
 
   restart() {
+    if (this.data.mode === 'online' && this.data.mySeat === 2) {
+      wx.showToast({ title: '联机模式由房主（P1）重开本关', icon: 'none' });
+      return;
+    }
+    this._worldEpoch = (this._worldEpoch || 0) + 1;
+    this._resetRoomEndFlags();
     this._setupLevel(this.data.level, this.data.mode === 'solo');
     this.setData({ stage: 'playing', winText: '' }, () => {
       this._over = false;
       this._startLoop();
     });
+  },
+
+  // 开新一局前清掉房间文档里上一局的终局/暂停标记，
+  // 否则 guest 在换关瞬间会把残留的 winner 误判成「对方先到终点」
+  _resetRoomEndFlags() {
+    this._seenRoomWinner = 0;
+    if (this.data.mode !== 'online' || !this._roomId) return;
+    try {
+      const db = wx.cloud.database();
+      db.collection(COLLECTION).doc(this._roomId).update({
+        data: { winner: 0, pause: 0 }
+      }).catch(() => {});
+    } catch (e) { /* 忽略：best effort */ }
   },
 
   /* ========== 联机 ========== */
@@ -246,10 +382,13 @@ Page({
         winner: 0
       });
       this._roomId = res.roomId;
+      this._worldEpoch = (this._worldEpoch || 0) + 1;
       this._setupLevel(0);
+      this._closeRelay();
       this._resetCanvas();
       this.setData({ stage: 'waiting', mode: 'online', roomNo: res.roomNo, mySeat: 1 });
       this._startWatch();
+      this._startRelay(res.roomNo);   // 实时中继（可选通道，连不上自动回退）
     } catch (err) {
       log.e('[mario] createRoom fail', err);
       const hint = roomkit.joinErrorText(err);
@@ -292,10 +431,15 @@ Page({
         mySeat: 2,
         coop: room.coop === 1,
         statusText: '联机闯关 · P2'
+      }, () => {
+        // 与 startSolo/nextLevel 相同的模式：在 setData 回调里启动，
+        // _tick 会检查 stage==='playing'，提前启动的第一帧会直接 return
+        // 且不再续 timer（代码库里已踩过的坑）
+        this._startWatch();
+        this._startLoop();
+        this._startRelay(roomNo);   // 实时中继（可选通道，连不上自动回退）
+        this._doSync();   // 开局立刻上报一次输入
       });
-      this._startWatch();
-      this._startLoop();
-      this._doSync();   // 开局立刻上报一次输入
     } catch (err) {
       log.e('[mario] joinRoom fail', err);
       const hint = roomkit.joinErrorText(err);
@@ -312,7 +456,13 @@ Page({
       clearTimeout(this._inputPollTimer);
       this._inputPollTimer = null;
     }
+    // 代际令牌：上一条链可能正卡在 await 上（此时它的 timer 句柄已是
+    // null，clearTimeout 清不到它）。它恢复后会盲目覆盖新链的 timer
+    // 句柄 → 两条链并行、读数翻倍。令牌不一致的旧链直接退出不再自调度。
+    this._pollGen = (this._pollGen || 0) + 1;
+    const gen = this._pollGen;
     const tick = async () => {
+      if (gen !== this._pollGen) return;   // 已被更新的链取代
       this._inputPollTimer = null;
       if (this._destroyed || this.data.mode !== 'online' ||
           this.data.mySeat !== 1 || !this._roomId) return;
@@ -320,6 +470,7 @@ Page({
       try {
         const db = wx.cloud.database();
         const res = await db.collection(COLLECTION).doc(docId).get();
+        if (gen !== this._pollGen) return;   // await 期间被新链取代
         if (res && res.data && res.data.input2 && res.data.input2 !== this._lastInputRaw) {
           this._lastInputRaw = res.data.input2;
           this._applyInput2(JSON.parse(res.data.input2));
@@ -329,7 +480,7 @@ Page({
       } catch (e) {
         // 输入文档还没创建（guest 首次写入前）——下一轮再试
       }
-      if (this._destroyed) return;
+      if (this._destroyed || gen !== this._pollGen) return;
       this._inputPollTimer = setTimeout(tick, 250);
     };
     tick();
@@ -342,8 +493,176 @@ Page({
     }
   },
 
+  /* ========== 自建 WebSocket 中继（加速车道，与云数据库并存） ========== */
+  // 云数据库单文档高频写会限流，是「同步中断」的根因。有自建服务器时
+  // （constants.MARIO_RELAY_URL），对局数据走中继（6.7~10Hz，低延迟）。
+  //
+  // 重要架构约束：中继是「加速车道」而不是「替代车道」。云数据库的
+  // watch/输入轮询/低频写全程保持——任何一端连不上中继（真机不允许
+  // ws://IP、开发者工具没勾豁免、服务器挂了），它就自动只用云数据库。
+  // 两条车道的数据按时间戳去重（见 _applyWorld/_applyInput2），
+  // 混合环境（比如开发者工具 + 真机）也不会出现各说各话的黑屏。
+
+  _startRelay(roomNo) {
+    if (!C.MARIO_RELAY_URL || this._relay) return;
+    const self = this;
+    const no = String(roomNo || this.data.roomNo || '');
+    if (!no) return;
+    this._relay = relaykit.create();
+    this._relay.connect(C.MARIO_RELAY_URL, no, this.data.mySeat, {
+      onReady() {
+        if (self._destroyed) return;
+        log.d('[mario] relay ready room=' + no + ' seat=' + self.data.mySeat);
+        self._lastRemoteAt = Date.now();
+        // 立刻推一帧（快车道首帧），别等下一个同步周期
+        self._doSync();
+      },
+      onData(v) { self._onRelayData(v); },
+      onPeer(online, seat, bye) {
+        if (self._destroyed || seat === self.data.mySeat) return;
+        // 对端是否在中继上：决定本端云数据库兜底车道的频率。
+        // 对端在快车道 → 库写降为心跳（省配额、避限流）；
+        // 对端不在 → 库写保持 _dbInterval（他是纯库端，全靠这条车道）
+        self._peerOnRelay = !!online;
+        if (bye) {
+          // 对方主动离开（离开房间按钮），等同云数据库路径的 leaver
+          if (!self._leaverHandled && self.data.stage !== 'menu') {
+            self._leaverHandled = true;
+            self._over = true;
+            self._stopLoop();
+            self._closeRelay();
+            self.setData({ stage: 'ended', winText: '对方已离开房间', statusText: '对局结束' });
+          }
+          return;
+        }
+        self._peerPaused = !online;
+        // 对方（重）上线：host 立刻推一帧世界，让他尽快追上进度
+        if (online && self.data.mySeat === 1 && self.data.stage === 'playing') self._doSync();
+      },
+      onDown() {
+        // 自己的中继断了（重连中）：对端在不在线变成未知，
+        // 保守起见立刻回到 400ms 库写节奏，别让对端饿着
+        self._peerOnRelay = false;
+      },
+      onGiveUp() {
+        // 服务器连不上（多半是手机没开调试模式连不了 ws://）：
+        // 云数据库兜底车道一直在，游戏照常可玩（HUD 显示收发计数、
+        // 延迟略高），不是故障——不弹窗打扰。
+        // 不是终态——_syncHud 里每 10 秒会尝试复活（手机网络抖动很常见）。
+        if (self._destroyed) return;
+        log.d('[mario] relay unavailable, cloud-db lane only');
+        self._relay = null;
+        self._peerOnRelay = false;
+      }
+    });
+  },
+
+  _closeRelay() {
+    if (this._relay) {
+      this._relay.close();
+      this._relay = null;
+    }
+  },
+
+  // 中继上的对局数据：语义与云数据库路径完全一致，只是通道不同
+  _onRelayData(v) {
+    if (!v || this._destroyed) return;
+    this._lastRemoteAt = Date.now();
+    if (v.k === 'world') {
+      let reloaded = false;
+      try {
+        reloaded = this._applyWorld(v.w, false);
+        this._rxWorld = (this._rxWorld || 0) + 1;
+      } catch (e) {
+        log.e('[mario] relay world fail', e);
+      }
+      this._handleRoomWinner(v.winner, reloaded);
+    } else if (v.k === 'input') {
+      this._applyInput2(v.i);
+      this._rxInput = (this._rxInput || 0) + 1;
+    } else if (v.k === 'end') {
+      this._handleRoomWinner(v.winner, false);
+    } else if (v.k === 'chat') {
+      this._receiveChat(v.m);
+    }
+  },
+
+  /* ========== 头顶聊天（双车道都通） ========== */
+
+  toggleChatPanel() {
+    this.setData({ showChat: !this.data.showChat });
+  },
+
+  onChatInput(e) {
+    this.setData({ chatInput: e.detail.value });
+  },
+
+  quickChat(e) {
+    const t = e.currentTarget.dataset.t;
+    if (t) this._sendChat(t);
+  },
+
+  sendChat() {
+    const text = (this.data.chatInput || '').trim();
+    if (!text) return;
+    this._sendChat(text);
+  },
+
+  _sendChat(text) {
+    if (this.data.stage !== 'playing') return;
+    const m = {
+      from: this.data.mySeat,
+      text: String(text).slice(0, 20),
+      ts: Date.now()
+    };
+    this.setData({ chatInput: '' });
+    // 自己先显示（不等往返），两条车道照发：谁连中继谁秒收，
+    // 纯云数据库端由房间文档 watch/轮询收到
+    this._receiveChat(m);
+    AU.play('chat');
+    if (this._relay && this._relay.isReady()) {
+      this._relay.send({ k: 'chat', m });
+    }
+    try {
+      const db = wx.cloud.database();
+      db.collection(COLLECTION).doc(this._roomId).update({
+        data: { chat: m }
+      }).catch(e => log.e('[mario] chat db fail', e));
+    } catch (e) { /* 云不可用就算了，中继那条可能已送达 */ }
+  },
+
+  // 收到聊天（自己的/中继的/云数据库的）：ts 去重，气泡挂 3 秒
+  _receiveChat(m) {
+    if (!m || !m.from || !m.text) return;
+    if (m.ts <= (this._lastChatTs || 0)) return;
+    this._lastChatTs = m.ts;
+    if (!this._level) return;
+    this._bubbles = this._bubbles || {};
+    this._bubbles[m.from] = {
+      text: String(m.text).slice(0, 20),
+      until: this._level.time + 3
+    };
+    // 对方的消息来一声提示音（自己的已经发过了）
+    if (m.from !== this.data.mySeat) AU.play('chat');
+  },
+
   _startWatch() {
     roomkit.startWatch(this, COLLECTION, this._roomId, (room) => this._onRoomUpdate(room));
+  },
+
+  // 竞速终局统一入口：云数据库路径（房间文档 winner 字段）和
+  // 中继路径（end 消息）都走这里。reloaded = 本帧刚好换关，
+  // 此时 winner 是上一局残留，不能当本局终局。
+  _handleRoomWinner(winner, reloaded) {
+    if (!winner || reloaded) return;
+    if (this._over || this.data.stage !== 'playing') return;
+    if (this.data.coop) return;                          // 合作模式两端各自收敛
+    if (winner === (this._seenRoomWinner || 0)) return;  // 只处理一次（上升沿）
+    this._seenRoomWinner = winner;
+    if (winner === this.data.mySeat) return;             // 自己赢，本地已结算
+    this._over = true;
+    this._stopLoop();
+    this.setData({ stage: 'ended', winText: '😢 对方先到终点', statusText: '本关完成' });
   },
 
   _onRoomUpdate(room) {
@@ -361,7 +680,7 @@ Page({
         }, () => {
           this._over = false;
           this._startLoop();
-          this._startInputPoll();   // host 轮询 guest 的独立输入文档
+          this._startInputPoll();   // host 轮询 guest 的输入（云数据库兜底车道）
           this._doSync();           // 开局立刻写一次世界
         });
       }
@@ -378,26 +697,62 @@ Page({
     }
 
     if (me === 2 && room.world) {
-      // guest：应用 host 的权威世界
+      // guest：应用 host 的权威世界（reloaded = 本帧刚好换了关卡/重开）
+      let reloaded = false;
       try {
-        this._applyWorld(JSON.parse(room.world), false);
+        reloaded = this._applyWorld(JSON.parse(room.world), false);
         this._lastRemoteAt = Date.now();
         this._rxWorld = (this._rxWorld || 0) + 1;
       } catch (e) {
         log.e('[mario] parse world fail', e);
       }
+      // 竞速终局：对方到终点后本地结束、停写数据，本端模拟可能永远
+      // 等不到他的终局帧（缺最后几百毫秒输入）→ 不处理就会一直
+      // 「同步中断」地空跑。对方结束时会把 winner 写进房间文档。
+      this._handleRoomWinner(room.winner, reloaded);
+    } else if (me === 1) {
+      // host：guest 先到终点（guest 不写 world，只能从房间文档感知）
+      this._handleRoomWinner(room.winner, false);
     }
+    // 对方是否切后台了（onHide 时对方会写 pause 标记）
+    if (room.pause && room.pause !== me && this.data.stage === 'playing') {
+      this._peerPaused = true;
+    } else if (!room.pause || room.pause === me) {
+      this._peerPaused = false;
+    }
+    // 聊天（云数据库车道）：中继不通的端靠这里收到气泡。
+    // 与中继同一条消息按 ts 去重（_receiveChat 内）
+    if (room.chat) this._receiveChat(room.chat);
     // host 的 guest 输入从独立的 {roomId}_input 文档读取（见 _startInputPoll），
     // 房间文档里的 input2 只是旧版本兼容字段，不再使用。
   },
 
-  // 把 host 的权威世界套到本地（guest 侧）
+  // 把 host 的权威世界套到本地（guest 侧）。
+  // 返回 true 表示本帧刚好重载了关卡（换关/重开）。
   _applyWorld(w, initial) {
-    if (!this._level || !w) return;
-    // 换关卡了要重载
-    if (w.level !== undefined && w.level !== this.data.level) {
-      this._setupLevel(w.level);
+    if (!this._level || !w) return false;
+    // epoch：host 每次建房/换关/重开时 +1。只比 w.level 不够 ——
+    // 同一关重开时 level 不变，guest 端被消灭的敌人/吃掉的金币会残留
+    const epMismatch = w.ep !== undefined && w.ep !== (this._worldEpoch || 0);
+    if (w.ep !== undefined) this._worldEpoch = w.ep;
+    const lvChanged = w.level !== undefined && w.level !== this.data.level;
+    if (!initial && (lvChanged || epMismatch)) {
+      this._setupLevel(w.level !== undefined ? w.level : this.data.level);
+      // 新一局：上一局的 winner 记录作废，避免把残留值当成本局终局
+      this._seenRoomWinner = 0;
+      // host 已开新关/重开：还在结算屏的 guest 也要回到对局
+      this._over = false;
+      this.setData({ stage: 'playing', winText: '' }, () => this._startLoop());
+      return true;
     }
+    // 双车道去重：同一世界快照会从中继（快）和云数据库（慢）各到一次，
+    // 慢车道的旧包也可能晚于快车道的新包到达 —— 只应用更新的（t 随关卡走）
+    if (!initial && typeof w.t === 'number') {
+      if (w.t <= (this._lastWorldT === undefined ? -1 : this._lastWorldT)) return false;
+      this._lastWorldT = w.t;
+    }
+    // 倒计时以 host 为准（两端帧率钳制差异会让本地倒数漂移）
+    if (w.tl !== undefined) this._level.timeLeft = w.tl;
     // 自己的角色：死区推算，不直接用权威值（否则延迟直接体现在手感上）
     const me = this._players[this.data.mySeat - 1];
     const myW = this.data.mySeat === 1 ? w.p1 : w.p2;
@@ -414,11 +769,18 @@ Page({
         me.x = myW.x; me.y = myW.y;
         me.vx = myW.vx; me.vy = myW.vy;
       }
-      // 形态/生命/金币/星星/状态始终同步（这些不是位置预测）
+      // 本地预测可能「幻觉死亡/复活」（敌我位置有延迟差），状态必须跟权威走：
+      // 只同步 dead/done 的话，本地一旦误判死亡就永远起不来（host 看他还在玩）
+      if (hardState || respawn) {
+        me.state = myW.st;
+        if (myW.st === 'alive') me.fellInPit = false;
+        if (myW.st === 'done') me.finishT = myW.ft || 0;
+      }
+      // 形态/生命/金币/星星/分数/状态始终同步（这些不是位置预测）
       me.starT = myW.sr || 0;
       me.lives = myW.lv;
       me.coins = myW.cn;
-      if (hardState) me.state = myW.st;
+      me.score = myW.sc || 0;
       // 形态必须始终同步（不能只在拉回时同步，否则吃蘑菇对方看不到）。
       // 用 setForm 而不仅是赋值：它同时更新碰撞盒高度 h。
       const myForm = (myW.fm !== undefined) ? myW.fm : 0;
@@ -436,6 +798,9 @@ Page({
       opp.starT = oppW.sr || 0;
       opp.lives = oppW.lv;
       opp.coins = oppW.cn;
+      if (oppW.sc !== undefined) opp.score = oppW.sc;
+      // 过关用时也要同步：竞速模式 raceWinner 靠它判定
+      if (oppW.ft !== undefined) opp.finishT = oppW.ft;
       if (oppW.f !== undefined) opp.face = oppW.f;
       if (oppW.g !== undefined) opp.onGround = !!oppW.g;
       opp.state = oppW.st === 'dead' ? 'dead' : (oppW.st === 'done' ? 'done' : 'alive');
@@ -474,10 +839,15 @@ Page({
       }
     }
     // Boss
-    if (w.bs && this._level.boss) {
-      this._level.boss.hp = w.bs[0];
-      this._level.boss.phase = w.bs[1];
-      this._level.boss._tx = w.bs[2];
+    // Boss：w.bs 是 [[hp,phase,x], ...]（多 Boss 关有多个）
+    if (w.bs && w.bs.length) {
+      const localBosses = this._level.bosses ||
+        (this._level.boss ? [this._level.boss] : []);
+      for (let bi = 0; bi < w.bs.length && bi < localBosses.length; bi++) {
+        localBosses[bi].hp = w.bs[bi][0];
+        localBosses[bi].phase = w.bs[bi][1];
+        localBosses[bi]._tx = w.bs[bi][2];
+      }
     }
   },
 
@@ -486,6 +856,12 @@ Page({
     if (!inp || !this._inputs) return;
     const i2 = this._inputs[2];
     if (!i2) return;
+    // 双车道去重：同一条输入会从中继（快）和云数据库（慢）各到一次，
+    // 慢车道的旧包也可能晚于快车道的新包到达 —— 只应用更新的快照
+    if (typeof inp.t === 'number') {
+      if (inp.t <= (this._lastInputT === undefined ? -1 : this._lastInputT)) return;
+      this._lastInputT = inp.t;
+    }
     i2.left = !!inp.keys.l;
     i2.right = !!inp.keys.r;
     i2.up = !!inp.keys.u;
@@ -502,6 +878,10 @@ Page({
         if (dx < 1.2 && dy < 1.5) {
           c.taken = true;
           p2.coins += 1;
+          // 分数与百金币加命要和 resolveCoinHit 一致，
+          // 否则 guest 端 HUD 分数一收到权威值就回落
+          p2.score += 200;
+          if (p2.coins % 100 === 0) p2.lives += 1;
         }
       }
     }
@@ -514,6 +894,12 @@ Page({
     if (this._destroyed) return;
     this._paused = false;
     this._lastFrame = Date.now();
+    // 同步调度器的基线必须在这里初始化：_tick 里那句
+    // acc += (now - (this._lastSyncAt || now)) 在未初始化时增量恒为 0，
+    // 累加器永远不涨 → _doSync 永远不会被调度（只靠开局/修复的零星调用
+    // 续命，表现为「动一下就同步中断」——从初版就存在的隐藏炸弹）
+    this._lastSyncAt = Date.now();
+    this._syncAcc = 0;
     this._rafTimer = setTimeout(() => this._tick(), C.MARIO_TICK_MS);
   },
 
@@ -555,9 +941,14 @@ Page({
     // 胜负检查
     this._checkEnd();
 
-    // 云同步（每人 2.5Hz，双人合计 5Hz）
+    // 云同步调度：中继就绪走快车道节奏（host 6.7Hz / guest 10Hz），
+    // 否则按兜底车道节奏（_dbInterval，默认 400ms）。_doSync 内部两条车道并存。
+    const relayUp = !!(this._relay && this._relay.isReady());
+    const interval = relayUp
+      ? (this.data.mySeat === 1 ? C.MARIO_RELAY_WORLD_MS : C.MARIO_RELAY_INPUT_MS)
+      : (this._dbInterval || C.MARIO_SYNC_MS);
     this._syncAcc += (now - (this._lastSyncAt || now));
-    if (this._syncAcc >= this.data.syncMs) {
+    if (this._syncAcc >= interval) {
       this._syncAcc = 0;
       this._lastSyncAt = now;
       if (this.data.mode === 'online' && this._roomId) this._doSync();
@@ -579,27 +970,60 @@ Page({
       if (b.score !== this.data.p2Score) patch.p2Score = b.score;
       if (b.coins !== this.data.p2Coins) patch.p2Coins = b.coins;
     }
+    // 竞速模式：双方到旗杆的进度百分比（一眼看出领先多少）
+    if (!this.data.coop && this._level) {
+      const goal = this._raceGoal || this._level.cols - 5;
+      const pct = (x) => Math.max(0, Math.min(100, Math.round(x / goal * 100)));
+      const mine = pct((a.x || 0));
+      const theirs = b ? pct(b.x || 0) : 0;
+      const raceText = '🏁 我' + mine + '% 对' + theirs + '%';
+      if (raceText !== this.data.raceText) patch.raceText = raceText;
+    } else if (this.data.raceText) {
+      patch.raceText = '';
+    }
     // 倒计时
     if (this._level && this._level.timeLeft !== this.data.timeLeft) {
       patch.timeLeft = this._level.timeLeft;
     }
-    // 联机同步健康度：显示收发计数；3 秒收不到对方就自动重启 watch/轮询
+    // 联机同步健康度：显示收发计数；持续收不到对方才提示中断
     if (this.data.mode === 'online') {
       if (this._lastRemoteAt === undefined) this._lastRemoteAt = Date.now();
       const isHost = this.data.mySeat === 1;
       const tx = isHost ? (this._txWorld || 0) : (this._txInput || 0);
       const rx = isHost ? (this._rxInput || 0) : (this._rxWorld || 0);
+      // 中继模式显示实时延迟；云数据库模式显示收发计数
       let syncText = (isHost ? '发W' : '发I') + tx + ' ' + (isHost ? '收I' : '收W') + rx;
-      const stale = this._lastRemoteAt && Date.now() - this._lastRemoteAt > 3000;
-      if (stale) syncText = '⚠️ 同步中断';
+      if (this._relay && this._relay.isReady()) {
+        const rtt = this._relay.rtt();
+        syncText = '⚡' + (rtt || '—') + 'ms';
+      }
+      // 兜底车道写失败计数（限流/配额）：直接暴露在 HUD 上，
+      // 否则只能靠控制台日志定位（真机上看不到）
+      if (this._dbFails > 0) {
+        syncText += ' 库写失败' + this._dbFails + (this._lastDbErr ? '(' + this._lastDbErr + ')' : '');
+      }
+      // 阈值 5 秒：云 watch/轮询正常也会抖 2~4 秒，3 秒就报会频繁误报
+      const stale = this._lastRemoteAt && Date.now() - this._lastRemoteAt > 5000;
+      if (stale) {
+        syncText = this._peerPaused ? '⏸ 对方暂时离开…' : '⚠️ 同步中断';
+      }
 
-      // 超过 3 秒没收到对方：主动重启订阅/轮询 + 立即写一次自己的数据
-      if (stale && Date.now() - (this._lastRepairAt || 0) > 5000) {
+      // 中继死掉（挂死/放弃）后自动复活：giveUp 不是终态，
+      // 手机网络抖一下就可能救回来，每 10 秒重试一次
+      if (!this._relay && C.MARIO_RELAY_URL && this.data.stage === 'playing' &&
+          Date.now() - (this._lastRelayReviveAt || 0) > 10000) {
+        this._lastRelayReviveAt = Date.now();
+        this._startRelay();
+      }
+
+      // 持续收不到对方：重启订阅/轮询。对方已知切后台时不必折腾
+      // （重启也救不回一个不在前台的人，反而多烧读配额），
+      // 也不再强制补写——常规节奏 400ms 内本来就会写，多写只会加重限流。
+      if (stale && !this._peerPaused && Date.now() - (this._lastRepairAt || 0) > 5000) {
         this._lastRepairAt = Date.now();
         log.d('[mario] sync repair: restart watch/poll');
         this._startWatch();
         if (this.data.mySeat === 1) this._startInputPoll();
-        this._doSync();
       }
 
       // 每 5 秒打一条同步计数日志，方便定位是哪一侧没写/没收到
@@ -632,8 +1056,13 @@ Page({
       e.x = lerp(e.x, e._tx);
       e.y = lerp(e.y, e._ty);
     }
-    if (this._level.boss && this._level.boss._tx !== undefined) {
-      this._level.boss.x = lerp(this._level.boss.x, this._level.boss._tx);
+    // Boss 插值（多 Boss 关逐个）
+    const bossList = this._level.bosses ||
+      (this._level.boss ? [this._level.boss] : []);
+    for (const bs of bossList) {
+      if (bs._tx !== undefined) {
+        bs.x = lerp(bs.x, bs._tx);
+      }
     }
   },
 
@@ -642,7 +1071,18 @@ Page({
     if (!ctx || !this._level) return;
     // 摄像机跟随「自己」：联机时 guest 的 mySeat=2，不能一直跟着 host，
     // 否则 guest 进管道/走到别处时画面会停在 host 身上。
-    const focusIdx = this.data.mode === 'online' ? Math.max(0, this.data.mySeat - 1) : 0;
+    // 死亡回放：对方死亡后 1.4 秒内镜头切到对方身上看一眼。
+    let focusIdx = this.data.mode === 'online' ? Math.max(0, this.data.mySeat - 1) : 0;
+    if (this._replayFocus && this._replayUntil > Date.now()) {
+      const idx = this._replayFocus - 1;
+      if (this._players[idx] && this._players[idx].state === 'dying') {
+        focusIdx = idx;
+      } else {
+        this._replayFocus = null;
+      }
+    } else if (this._replayFocus) {
+      this._replayFocus = null;
+    }
     const focus = this._players[focusIdx] || this._players[0] || { x: 0, y: 0 };
     const cam = R.cameraX(this._level, focus.x, this.data.canvasW / this._scale);
     const camY = R.cameraY(this._level, focus.y, this.data.canvasH / this._scale);
@@ -658,7 +1098,8 @@ Page({
       cam,
       camY,
       // 玩家形象帧（PNG）：直接画进 canvas，避免 <image> 被原生画布盖住
-      sprites: this._sprites
+      sprites: this._sprites,
+      bubbles: this._bubbles || null
     });
   },
 
@@ -694,7 +1135,14 @@ Page({
           ? '🎉 合作通关！'
           : (w === this.data.mySeat ? '🎉 你赢了！' : '😢 对方先到终点'));
       this.setData({ stage: 'ended', winText: text, statusText: '本关完成' });
-      if (this.data.mode === 'online' && this._roomId) {
+      // 竞速模式要把终局写到房间文档：对方（尤其 host 侧）可能永远
+      // 等不到本端模拟的终局帧——本端结束后停写数据，对方只能靠这个
+      // 字段收尾。合作模式两端各自收敛，不写（写了反而会被误读成终局）。
+      if (this.data.mode === 'online' && this._roomId && !this.data.coop) {
+        // 中继在线：走实时通道通知（对面 watch 可能已关）
+        if (this._relay && this._relay.isReady()) {
+          this._relay.send({ k: 'end', winner: this.data.mySeat });
+        }
         const db = wx.cloud.database();
         db.collection(COLLECTION).doc(this._roomId).update({
           data: { winner: this.data.mySeat }
@@ -713,23 +1161,45 @@ Page({
 
   async _doSync() {
     if (this._destroyed || !this._roomId) return;
+    const now = Date.now();
+    const relayUp = !!(this._relay && this._relay.isReady());
+    // 云数据库兜底车道。节奏按「尝试时间」而非「成功时间」计算：
+    // 限流拒绝也算一次尝试，否则失败后每个同步周期都会重试（6.7Hz
+    // 的失败风暴把限流越撞越深，双车道全灭永不恢复——实测踩过）。
+    // 对端在中继上时降为心跳频率（数据走快车道，库只留观察兜底）。
+    const dbInterval = this._peerOnRelay
+      ? C.MARIO_RELAY_DB_HEARTBEAT_MS
+      : (this._dbInterval || C.MARIO_SYNC_MS);
+    const dbDue = now - (this._lastDbAttemptAt || 0) >= dbInterval;
     const db = wx.cloud.database();
     const me = this.data.mySeat;
+    let dbWritten = false;   // 本次是否真的写成功过库（恢复节奏只看库本身）
     try {
       if (me === 1) {
-        // host 写权威世界
         const w = EN.worldToWire(this._level, this._players);
         w.level = this.data.level;
-        await db.collection(COLLECTION).doc(this._roomId).update({
-          data: { world: JSON.stringify(w) }
-        });
-        this._txWorld = (this._txWorld || 0) + 1;
+        w.ep = this._worldEpoch || 0;
+        const payload = JSON.stringify(w);
+        if (relayUp) {
+          this._relay.send({ k: 'world', w });
+          this._txWorld = (this._txWorld || 0) + 1;
+        }
+        if (!relayUp || dbDue) {
+          this._lastDbAttemptAt = now;
+          await db.collection(COLLECTION).doc(this._roomId).update({
+            data: { world: payload }
+          });
+          this._lastDbWriteAt = Date.now();
+          this._dbFails = 0;
+          this._txWorld = (this._txWorld || 0) + 1;
+          dbWritten = true;
+        }
       } else {
-        // guest 只写输入 + 已吃金币。
-        // 写到独立文档 {roomId}_input：房间文档只由 host 写 world，
-        // 两个写者彻底分开，避免同一文档并发写被云数据库限流。
         const i2 = this._inputs[2];
-        const payload = {
+        // 防御：边沿锁存必须存在（_setupLevel 初始化；异常路径缺失时
+        // 构建输入会抛错，而它在两条车道的发送之前——一炸双车道全灭）
+        if (!this._edgeLatch) this._edgeLatch = { u: false, d: false };
+        const input = {
           t: Math.round(this._level.time * 1000),
           keys: {
             l: i2.left ? 1 : 0, r: i2.right ? 1 : 0,
@@ -739,27 +1209,47 @@ Page({
           },
           got: this._pendingGot || []
         };
-        await db.collection(COLLECTION).doc(this._roomId + '_input').set({
-          data: { input2: JSON.stringify(payload), updatedAt: db.serverDate() }
-        });
-        this._txInput = (this._txInput || 0) + 1;
-        this._pendingGot = [];
-        this._edgeLatch.u = false;
-        this._edgeLatch.d = false;
+        let delivered = false;
+        if (relayUp) {
+          delivered = this._relay.send({ k: 'input', i: input });
+          if (delivered) this._txInput = (this._txInput || 0) + 1;
+        }
+        if (!relayUp || dbDue) {
+          this._lastDbAttemptAt = now;
+          await db.collection(COLLECTION).doc(this._roomId + '_input').set({
+            data: { input2: JSON.stringify(input), updatedAt: db.serverDate() }
+          });
+          this._lastDbWriteAt = Date.now();
+          this._dbFails = 0;
+          this._txInput = (this._txInput || 0) + 1;
+          delivered = true;
+          dbWritten = true;
+        }
+        if (delivered) {
+          // 金币/边沿锁存只要有一条车道送达就算消耗，不能双扣也不能丢
+          this._pendingGot = [];
+          this._edgeLatch.u = false;
+          this._edgeLatch.d = false;
+        }
       }
-      // 写成功：逐步恢复同步频率
-      if (!this._lastSyncOk) {
-        this._lastSyncOk = true;
-        this.setData({ syncMs: C.MARIO_SYNC_MS });
+      // 库写成功：兜底车道节奏逐步恢复（×0.7 回落到 400ms）。
+      // 只有真的写库成功才恢复——中继发送成功不能替库「疗伤」，
+      // 否则退避立刻被抵消，限流压力降不下来。
+      if (dbWritten && (this._dbInterval || C.MARIO_SYNC_MS) > C.MARIO_SYNC_MS) {
+        this._dbInterval = Math.max(C.MARIO_SYNC_MS,
+          Math.round((this._dbInterval || C.MARIO_SYNC_MS) * 0.7));
       }
     } catch (err) {
-      log.e('[mario] sync fail', err && err.errMsg);
-      // 写失败（多半是限流）：自动降频，避免连续失败被云数据库封
+      log.e('[mario] db sync fail', err && (err.errCode || err.errMsg), err);
+      this._dbFails = (this._dbFails || 0) + 1;
+      this._lastDbErr = String(err && (err.errCode || err.errMsg) || '').slice(0, 60);
+      // 兜底车道写失败（多半是限流）：独立加倍退避（400→800→…→3200 封顶）。
+      // 中继在跑时静默处理，不弹 toast（快车道上的对局不受影响）。
+      const cur = this._dbInterval || C.MARIO_SYNC_MS;
+      this._dbInterval = Math.min(3200, cur * 2);
       if (this._lastSyncOk) {
         this._lastSyncOk = false;
-        const slow = this.data.syncMs >= C.MARIO_SYNC_MS ? C.MARIO_SYNC_SLOW_MS : C.MARIO_SYNC_MIN_MS;
-        this.setData({ syncMs: slow });
-        wx.showToast({ title: '网络不稳定，已降低同步频率', icon: 'none' });
+        if (!relayUp) wx.showToast({ title: '网络不稳定，已降低同步频率', icon: 'none' });
       }
     }
   },
@@ -812,7 +1302,10 @@ Page({
             });
           } catch (e) { log.e('[mario] leave notify fail', e); }
         }
+        // 中继在线：发 bye 让对方立刻收到「已离开」（区别于掉线）
+        if (this._relay) this._relay.bye();
         this._stopInputPoll();
+        this._closeRelay();
         roomkit.closeWatch(this);
         this._roomId = null;
         this._stopLoop();

@@ -71,7 +71,6 @@ function playLevel(idx, maxFrames) {
   const spec = LV.LEVEL_SPECS[idx];
   const level = EN.loadLevel(LV.LEVELS[idx], spec);
   const p = EN.makePlayer(level, 1);
-  const inp = EN.makeInput();
 
   let flag = null;
   for (let r = 0; r < level.rowsH; r++) {
@@ -79,30 +78,14 @@ function playLevel(idx, maxFrames) {
     if (c !== -1) { flag = { col: c, row: r }; break; }
   }
 
-  let maxX = p.x, deaths = 0, jumped = 0, wasDying = false;
+  // 用引擎的真机器人（makeAutoInput）驱动：它带落点预判/敌人威胁窗口/
+  // 等待行为。之前这里复刻了一份旧版决策逻辑，引擎机器人一改进两边就
+  // 分叉——新关 L6/L7 就是这样误报「不可通关」的（旧逻辑必死，新的能过）。
+  let maxX = p.x, deaths = 0, jumped = 0, wasDying = false, wasUp = false;
   for (let f = 0; f < maxFrames; f++) {
-    inp.right = true;
-    inp.run = false;
-    inp.up = false;
-
-    const colAhead = Math.floor(p.x + p.w / 2 + 0.15);
-    const curCol = Math.floor(p.x);
-
-    if (p.onGround) {
-      let needJump = false;
-      if (!groundAhead(level, colAhead, p.y)) needJump = true;
-      if (!groundAhead(level, colAhead + 1, p.y)) needJump = true;
-      if (obstacleAhead(level, colAhead)) needJump = true;
-      if (obstacleAhead(level, colAhead + 1)) needJump = true;
-      if (spikeAhead(level, colAhead)) needJump = true;
-      if (spikeAhead(level, colAhead + 1)) needJump = true;
-      if (brickAbove(level, curCol, Math.floor(p.y)) &&
-          !spikeBetween(level, curCol, curCol + 6)) needJump = true;
-      if (enemyAhead(level, p)) needJump = true;
-      if (needJump) { inp.up = true; jumped++; }
-    } else if (p.vy < 0) {
-      inp.up = true;
-    }
+    const inp = EN.makeAutoInput(level, p);
+    if (inp.up && !wasUp) jumped++;
+    wasUp = inp.up;
 
     EN.stepWorld(level, [p], { 1: inp }, EN.TICK);
 
