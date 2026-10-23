@@ -65,6 +65,18 @@ module.exports = {
   MARIO_BOSS_HITS: 3,                 // Boss 需踩头次数
   MARIO_DEATH_RESPAWN_MS: 900,        // 死亡到重生的间隔
 
+  // 自建 WebSocket 实时中继（server/mario-relay/，部署在你的云机器上）。
+  // 云数据库限流是同步中断的根因；中继没有配额限制，延迟也从 200~500ms 降到几十 ms。
+  // 生产需 wss://已备案域名（小程序后台配 socket 合法域名）；
+  // 开发调试用 ws://（开发者工具勾选「不校验合法域名」）。
+  // 留空 '' = 不用中继，走云数据库同步（老通道，仍完整可用）。
+  // 已部署（2026-10-24）：腾讯云 root@81.70.22.49，systemd 服务名 mario-relay，
+  // nginx 按机房惯例把随机前缀反代到 127.0.0.1:9000（配置在 litellm.conf）。
+  MARIO_RELAY_URL: 'ws://81.70.22.49/e8f31a5c27/',
+  MARIO_RELAY_WORLD_MS: 150,          // 中继模式：host 世界快照 ~6.7Hz
+  MARIO_RELAY_INPUT_MS: 100,          // 中继模式：guest 输入上报 10Hz
+  MARIO_RELAY_DB_HEARTBEAT_MS: 2000,  // 对端也在中继上时，云数据库兜底降为 0.5Hz 心跳
+
   // 云存储
   CLOUD_CACHE_TTL: 5000,      // 短缓存，避免 tab 反复切换重复拉取
   MENU_CACHE_TTL: 30 * 1000   // 菜单缓存

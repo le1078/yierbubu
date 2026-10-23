@@ -37,6 +37,10 @@
       {
         "type": "file",
         "value": "test_update.js"
+      },
+      {
+        "type": "folder",
+        "value": "server"
       }
     ],
     "include": []
