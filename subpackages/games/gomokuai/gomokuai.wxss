@@ -543,3 +543,55 @@
   padding: 14rpx 28rpx;
   border-radius: 999rpx;
 }
+
+/* ===== 戳一戳 / 扔水果 / 请求等待 ===== */
+.poke-banner {
+  margin-top: 16rpx;
+  background: #FFF3E6;
+  border: 2rpx solid #FFB35C;
+  color: #C8641E;
+  border-radius: 18rpx;
+  padding: 16rpx 28rpx;
+  text-align: center;
+  font-size: 26rpx;
+  animation: poke-shake 0.4s ease;
+}
+
+@keyframes poke-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-10rpx); }
+  75% { transform: translateX(10rpx); }
+}
+
+.req-tip {
+  margin-top: 12rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #A08A80;
+}
+
+.fruit-btns {
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+}
+
+.fruit {
+  font-size: 40rpx;
+  padding: 4rpx;
+}
+
+.emoji-fly {
+  position: fixed;
+  left: -80rpx;
+  top: 40%;
+  font-size: 80rpx;
+  z-index: 99;
+  pointer-events: none;
+  animation: fly-across 1.2s ease-in forwards;
+}
+
+@keyframes fly-across {
+  from { transform: translateX(0) rotate(0deg); }
+  to { transform: translateX(900rpx) rotate(360deg); }
+}

@@ -109,7 +109,7 @@
     <!-- 聊天区 -->
     <view class="chat-area">
       <scroll-view class="chat-list" scroll-y scroll-into-view="chat{{chatList.length - 1}}">
-        <view wx:for="{{chatList}}" wx:key="ts" id="chat{{index}}" class="chat-msg {{item.mine ? 'mine' : 'theirs'}}">
+        <view wx:for="{{chatList}}" wx:key="key" id="chat{{index}}" class="chat-msg {{item.mine ? 'mine' : 'theirs'}}">
           <text wx:if="{{item.type === 'text'}}" class="chat-bubble">{{item.content}}</text>
           <text wx:else class="chat-emoji">{{item.content}}</text>
         </view>

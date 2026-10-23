@@ -84,7 +84,7 @@ Page({
       { key: 'melon', icon: '🍉', label: '扔西瓜' },
       { key: 'durian',icon: '🍈', label: '扔榴莲' },
       { key: 'berry', icon: '🍓', label: '扔草莓' },
-      { key: 'ginseng',icon:'🫐', label: '扔人参果' }
+      { key: 'ginseng',icon:'🫐', label: '扔蓝莓' }
     ],
     emojiFlying: null,       // { icon } 当前飞行动画
     boardW: 300              // canvas 尺寸（px），onReady 时计算
@@ -340,7 +340,9 @@ Page({
       this._pollKey = key;
       if (room.status === 'playing' && this.data.stage === 'waiting') {
         this._onRoomUpdate(room);
-      } else if (this.data.stage === 'playing') {
+      } else if (this.data.stage === 'playing' || this.data.stage === 'ended') {
+        // ended 也要喂给 _onRoomUpdate：再来一局的复位、对方离开的提示
+        // 都在 stage==='ended' 时到达；watch 挂掉只靠轮询时会漏掉
         this._onRoomUpdate(room);
       }
     } catch (e) {
@@ -377,6 +379,15 @@ Page({
         // 不能关闭 watcher：开局后还要继续接收对方落子。
         // 关掉后只有本端能写、看不到对方，联机会变成各下各的。
         const turnNow = room.turn || 1;
+        // 棋盘先就位再切 stage：setData 的数据立即生效而回调晚一帧，
+        // 期间若用户点了棋盘，_board 还没建好会直接抛错
+        this._board = room.boardStr ? JSON.parse(room.boardStr) : emptyBoard();
+        this._history = room.history || [];
+        // 开局了就停掉等待页的 2 秒轮询，200ms 串行轮询已在跑
+        if (this._waitPollInterval) {
+          clearInterval(this._waitPollInterval);
+          this._waitPollInterval = null;
+        }
         this._resetCanvas();
         this.setData({
           stage: 'playing',
@@ -385,8 +396,6 @@ Page({
           round: room.round || 1,
           statusText: turnNow === me ? '轮到你落子' : '等待对方落子…'
         }, () => {
-          this._board = room.boardStr ? JSON.parse(room.boardStr) : emptyBoard();
-          this._history = room.history || [];
           this._ensureCanvas();
         });
       }
@@ -411,6 +420,8 @@ Page({
       this._board = room.boardStr ? JSON.parse(room.boardStr) : (room.board ? room.board : emptyBoard());
       this._boardKey = newBoardKey;
       this._history = room.history || [];
+      // 最后一手跟着房间走：否则对方的落子/悔棋/新一局都不会更新红点标记
+      this._lastMove = room.lastMove && room.lastMove.r !== undefined ? room.lastMove : null;
     }
     if (!this._canvas) {
       // canvas 首次渲染完成后再画
@@ -422,8 +433,9 @@ Page({
     // 戳一戳
     if (room.poke && room.poke.from && room.poke.from !== me) {
       const ts = room.poke.ts || 0;
-      // 留出容差：双方设备时钟偏差时避免漏判/重复触发
-      if (ts > (this._lastPokeTs || 0) - 3000) {
+      // 同一个 poke（同一 ts）只触发一次：ts 来自发送方、对其单调，
+      // 用「容差」比较会让早已过去的戳在每次房间写入后反复弹横幅
+      if (ts > (this._lastPokeTs || 0)) {
         this._lastPokeTs = ts;
         this._showPoke(room.poke.from);
       }
@@ -434,7 +446,8 @@ Page({
     const chat = room.chat || [];
     const existing = this.data.chatList || [];
     const seen = new Set(existing.map(m => m.from + '_' + m.ts));
-    const merged = existing.filter(m => !m.pending);   // 丢掉已被确认/已失败的 pending
+    const cloudKeys = new Set(chat.map(m => m.from + '_' + m.ts));
+    const merged = existing.filter(m => !m.pending || !cloudKeys.has(m.from + '_' + m.ts));
     let addedNew = null;
     for (const m of chat) {
       const key = m.from + '_' + m.ts;
@@ -442,6 +455,7 @@ Page({
       seen.add(key);
       merged.push({
         from: m.from, type: m.type, content: m.content, ts: m.ts,
+        key,
         // 用局部变量 me（可能已被翻转为新颜色）
         mine: m.from === me
       });
@@ -490,12 +504,19 @@ Page({
     // 胜负
     if (room.winner) {
       patch.stage = 'ended';
-      patch.winText = room.winner === me ? '🎉 你赢了！' : '😢 对方获胜';
+      // winner: 1黑 2白 3和（满盘无胜局时的哨兵值）
+      patch.winText = room.winner === 3 ? '🤝 平局，棋盘已满' : (room.winner === me ? '🎉 你赢了！' : '😢 对方获胜');
       patch.statusText = '对局结束';
     } else if (room.status === 'playing') {
       patch.isMyTurn = room.turn === me;
       patch.statusText = room.turn === me ? '轮到你落子' : '等待对方落子…';
     }
+
+    // 对方已应答（请求标志被清空）：撤掉「对方未响应」定时器，
+    // 否则 60 秒后照样弹「对方未响应」，甚至打断已经开始的新一局
+    ['undoState', 'firstState', 'rematchState'].forEach(k => {
+      if (patch[k] === null && this._requestTimeoutKey === k) this._clearRequestTimeout();
+    });
 
     // 对方离开：加「已处理」标记，否则房间文档后续任何写入都会重复弹窗
     if (room.status === 'ended' && room.leaver && room.leaver !== me && !this._leaverHandled) {
@@ -639,6 +660,7 @@ Page({
     const c = Math.round(x / cell);
     const r = Math.round(y / cell);
     if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return;
+    if (!this._board) return;   // 开局瞬间棋盘尚未就位（setData 回调前）
     if (this._board[r][c]) {
       wx.showToast({ title: '这里已经有棋子了', icon: 'none' });
       return;
@@ -655,6 +677,8 @@ Page({
     this._drawBoard();
 
     const win = this._checkWin(r, c, me);
+    // 满盘无五连 = 平局：不判定的话双方都点不进任何格子、也永不结束
+    const draw = !win && (this._history || []).length + 1 >= SIZE * SIZE;
     const db = wx.cloud.database();
     const history = (this._history || []).concat([{ r, c, color: me }]);
     const prevHistory = this._history;
@@ -669,6 +693,7 @@ Page({
       updatedAt: db.serverDate()
     };
     if (win) update.winner = me;
+    else if (draw) update.winner = 3;
 
     try {
       await db.collection(COLLECTION).doc(this._roomId).update({ data: update });
@@ -679,6 +704,13 @@ Page({
           stage: 'ended',
           winner: me,
           winText: '🎉 你赢了！',
+          statusText: '对局结束'
+        });
+      } else if (draw) {
+        this.setData({
+          stage: 'ended',
+          winner: 3,
+          winText: '🤝 平局，棋盘已满',
           statusText: '对局结束'
         });
       } else {
@@ -759,6 +791,7 @@ Page({
         this._history = history;
         this._boardKey = '';
         const prevLast = history.length ? history[history.length - 1] : null;
+        this._lastMove = prevLast ? { r: prevLast.r, c: prevLast.c } : null;
         await db.collection(COLLECTION).doc(this._roomId).update({
           data: {
             boardStr: JSON.stringify(this._board),
@@ -1002,7 +1035,7 @@ Page({
 
   async _pushChat(msg) {
     // 乐观更新：本地先插一条 pending 气泡，不等云端往返
-    const local = Object.assign({}, msg, { pending: true });
+    const local = Object.assign({}, msg, { pending: true, key: msg.from + '_' + msg.ts + '_p' });
     const optimistic = (this.data.chatList || []).concat([local]);
     this.setData({ chatList: optimistic });
 

@@ -30,10 +30,23 @@ Page({
     roomNo: '',
     showChat: false,
     chatList: [],
-    chatInput: ''
+    chatInput: '',
+
+    // 联机互动（悔棋/再来一局/戳一戳/扔水果）
+    undoState: null,        // null | 'iRequested' | 'oppRequested'
+    rematchState: null,     // null | 'iRequested' | 'oppRequested'
+    pokeVisible: false,
+    pokeText: '',
+    emojiFlying: null
   },
 
-  onLoad() {},
+  onLoad(options) {
+    // 从分享卡片进入：自动加入房间
+    if (options && options.roomNo) {
+      this.setData({ roomNoInput: String(options.roomNo) });
+      this._autoJoin = String(options.roomNo);
+    }
+  },
 
   onReady() {
     // 棋盘尺寸：屏幕宽度 - 页面左右边距 24rpx*2
@@ -43,6 +56,11 @@ Page({
     const boardW = Math.floor(w - 48 * rpx2px);
     this._boardW = boardW;
     this.setData({ boardW });
+    if (this._autoJoin) {
+      const no = this._autoJoin;
+      this._autoJoin = null;
+      this.joinRoom(no);
+    }
   },
 
   onUnload() {
@@ -156,6 +174,13 @@ Page({
         chat: []
       });
       this._roomId = res.roomId;
+      // 复位上一局残留：对方离开标记、上一局的胜利连线/最后一手
+      this._leaverHandled = false;
+      this._winLine = null;
+      this._lastMove = null;
+      this._board = core.emptyBoard();
+      this._history = [];
+      this._over = false;
       this.setData({ stage: 'waiting', roomNo: res.roomNo, myColor: 1 });
       this._startWatch();
     } catch (err) {
@@ -172,6 +197,10 @@ Page({
     // bindtap 会把事件对象作为第一个参数传进来；只有字符串才是
     // onLoad/分享卡片主动传的房间号，否则回退到输入框的值。
     const roomNo = (typeof roomNoArg === 'string') ? roomNoArg : this.data.roomNoInput;
+    if (!roomNo) {
+      wx.showToast({ title: '请输入房间号', icon: 'none' });
+      return;
+    }
     if (this._joining) return;
     this._joining = true;
     wx.showLoading({ title: '加入中…', mask: true });
@@ -186,6 +215,8 @@ Page({
       this._board = room.boardStr ? JSON.parse(room.boardStr) : core.emptyBoard();
       this._history = room.history || [];
       this._over = false;
+      this._leaverHandled = false;
+      this._winLine = null;
       this._boardKey = room.boardStr || '';
       this._resetCanvas();
       this.setData({
@@ -221,6 +252,8 @@ Page({
         this._board = room.boardStr ? JSON.parse(room.boardStr) : core.emptyBoard();
         this._history = room.history || [];
         this._over = false;
+        this._leaverHandled = false;
+        this._winLine = null;
         this._boardKey = room.boardStr || '';
         this._resetCanvas();
         this.setData({
@@ -238,7 +271,79 @@ Page({
       this._leaverHandled = true;
       roomkit.closeWatch(this);
       this.setData({ stage: 'ended', winText: '对方已离开，对局结束', statusText: '对局结束' });
+      // 弹窗告知（静默切结算屏不够友好），确认后回菜单
+      wx.showModal({
+        title: '对方已离开',
+        content: '对局已结束，回到大厅吧',
+        showCancel: false,
+        confirmText: '回到大厅',
+        success: () => {
+          this._roomId = null;
+          this._resetCanvas();
+          this.setData({ stage: 'menu', chatList: [] });
+        }
+      });
       return;
+    }
+    // 联机请求状态：悔棋 / 再来一局（双方确认流程）
+    if (room.undoRequest && room.undoRequest !== me) {
+      if ((this._seenUndoSide || 0) !== room.undoRequest && this.data.stage === 'playing') {
+        this._seenUndoSide = room.undoRequest;
+        this.setData({ undoState: 'oppRequested' });
+        wx.showModal({
+          title: '对方请求悔棋',
+          content: '同意撤回对方的上一手吗？',
+          confirmText: '同意',
+          cancelText: '拒绝',
+          success: (res) => {
+            if (this.data.stage !== 'playing') return;
+            this.respondUndo({ currentTarget: { dataset: { agree: res.confirm ? '1' : '0' } } });
+          }
+        });
+      }
+    } else if (room.undoRequest === me) {
+      if (this.data.undoState !== 'iRequested') this.setData({ undoState: 'iRequested' });
+    } else {
+      if (this.data.undoState === 'iRequested') {
+        this.setData({ undoState: null });
+        this._clearRequestTimeout();
+      } else if (this.data.undoState === 'oppRequested') {
+        this.setData({ undoState: null });
+      }
+      this._seenUndoSide = 0;
+    }
+    if (room.rematchRequest && room.rematchRequest !== me) {
+      if ((this._seenRematchSide || 0) !== room.rematchRequest) {
+        this._seenRematchSide = room.rematchRequest;
+        this.setData({ rematchState: 'oppRequested' });
+        wx.showModal({
+          title: '对方请求再来一局',
+          content: '回到空盘重新开始？',
+          confirmText: '同意',
+          cancelText: '拒绝',
+          success: (res) => {
+            this.respondRematch({ currentTarget: { dataset: { agree: res.confirm ? '1' : '0' } } });
+          }
+        });
+      }
+    } else if (room.rematchRequest === me) {
+      if (this.data.rematchState !== 'iRequested') this.setData({ rematchState: 'iRequested' });
+    } else {
+      if (this.data.rematchState === 'iRequested') {
+        this.setData({ rematchState: null });
+        this._clearRequestTimeout();
+      } else if (this.data.rematchState === 'oppRequested') {
+        this.setData({ rematchState: null });
+      }
+      this._seenRematchSide = 0;
+    }
+    // 戳一戳：ts 严格大于上次才触发
+    if (room.poke && room.poke.from && room.poke.from !== me) {
+      const ts = room.poke.ts || 0;
+      if (ts > (this._lastPokeTs || 0)) {
+        this._lastPokeTs = ts;
+        this._showPoke();
+      }
     }
     const newKey = room.boardStr || '';
     const changed = newKey !== (this._boardKey || '');
@@ -255,7 +360,8 @@ Page({
     if (room.winner) {
       this._over = true;
       patch.stage = 'ended';
-      patch.winText = room.winner === me ? '🎉 你赢了！' : '😢 对方获胜';
+      // winner: 1黑 2白 3和（3 是满盘判和时同步的哨兵值）
+      patch.winText = room.winner === 3 ? '🤝 平局' : (room.winner === me ? '🎉 你赢了！' : '😢 对方获胜');
       patch.statusText = '对局结束';
     } else {
       patch.statusText = room.turn === me ? '轮到你落子' : '等待对方落子…';
@@ -264,13 +370,21 @@ Page({
     const merged = roomkit.mergeChat(this.data.chatList, room.chat || [], me);
     if (merged.list.length !== this.data.chatList.length || merged.addedNew) {
       this.setData({ chatList: merged.list });
+      // 对方扔的水果：播飞行动画
+      if (merged.addedNew && merged.addedNew.type === 'emoji' && merged.addedNew.from !== me) {
+        this._playEmojiFly(merged.addedNew.content);
+      }
     }
   },
 
   onCanvasTap(e) {
     if (this.data.stage !== 'playing' || this._over) return;
-    if (this.data.turn !== this.data.myColor) return;
+    // 同屏模式双方轮流点同一块屏：轮到谁就落谁的颜色，不能用 myColor 拦截，
+    // 否则黑方下完（turn=2 ≠ myColor=1）白方永远点不进
+    const color = this.data.mode === 'local' ? this.data.turn : this.data.myColor;
+    if (this.data.mode !== 'local' && this.data.turn !== this.data.myColor) return;
     if (this._thinking) return;
+    if (!this._board) return;
 
     const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]);
     if (!t || t.x == null || t.y == null) return;
@@ -280,7 +394,7 @@ Page({
       wx.showToast({ title: '这里已经有棋子了', icon: 'none' });
       return;
     }
-    this._place(hit.r, hit.c, this.data.myColor);
+    this._place(hit.r, hit.c, color);
   },
 
   // 落子并推进回合。color: 1黑 2白
@@ -294,26 +408,34 @@ Page({
     if (win) this._winLine = winLine;
 
     const count = this._history.length;
+    const draw = !win && count >= core.SIZE * core.SIZE;
     this.setData({ moveCount: count, lastMove: this._lastMove }, () => {
       this._drawBoard();
     });
+
+    // 终局（胜/平）也要同步：_syncMove 是房间文档唯一的写入方，
+    // 若先 return，对方永远收不到最后一手，会一直卡在「等待对方落子…」
+    if (this.data.mode === 'online') {
+      this._syncMove(r, c, color, win ? color : (draw ? 3 : 0), count);
+    }
 
     if (win) {
       this._finish(color);
       return;
     }
-    if (count >= core.SIZE * core.SIZE) {
+    if (draw) {
       this._finish(0);   // 平局
       return;
     }
 
     const next = color === 1 ? 2 : 1;
-    this.setData({
-      turn: next,
-      statusText: next === this.data.myColor ? '轮到你落子' : 'AI 思考中…'
-    });
-    if (this.data.mode === 'ai' && next !== this.data.myColor) this._aiTurn();
-    if (this.data.mode === 'online') this._syncMove(r, c, color, win ? color : 0, count);
+    const myColor = this.data.myColor;
+    // 同屏模式按颜色提示；「AI 思考中…」只属于人机模式
+    const statusText = this.data.mode === 'ai'
+      ? (next === myColor ? '轮到你落子' : 'AI 思考中…')
+      : (next === 1 ? '黑方走棋' : '白方走棋');
+    this.setData({ turn: next, statusText });
+    if (this.data.mode === 'ai' && next !== myColor) this._aiTurn();
   },
 
   async _syncMove(r, c, color, winner, count) {
@@ -333,6 +455,18 @@ Page({
       this._boardKey = JSON.stringify(this._board);
     } catch (err) {
       log.e('[gomokuai] sync fail', err);
+      // 写失败必须回滚本地（棋子/历史/回合/终局状态），否则本地与云端永久分叉，
+      // 对方重试也补不回来 —— gomoku.js _placeStone 的失败路径就是这么做的
+      this._board[r][c] = 0;
+      this._history.pop();
+      const prev = this._history[this._history.length - 1];
+      this._lastMove = prev ? { r: prev.r, c: prev.c } : null;
+      if (winner) {
+        this._over = false;
+        this._winLine = null;
+        this.setData({ stage: 'playing', winText: '', statusText: '轮到你落子' });
+      }
+      this.setData({ turn: color, moveCount: count - 1 }, () => this._drawBoard());
       wx.showToast({ title: '同步失败，请重试', icon: 'none' });
     }
   },
@@ -423,12 +557,19 @@ Page({
       return;
     }
     if (this.data.mode === 'online') {
-      wx.showToast({ title: '联机模式暂不支持悔棋', icon: 'none' });
+      // 联机悔棋走「双方确认」（requestUndo），不再直接拒绝
+      this.requestUndo();
       return;
     }
     // AI 正在思考时先停掉，避免它把棋子下到悔棋后的棋盘上
     this._stopAIThink();
     const myColor = this.data.myColor;
+    // 我还没落过子就没有可悔的：否则会把 AI 的开局第一手删掉又立刻重下，
+    // 看起来像 AI 的棋子凭空挪位
+    if (this.data.mode !== 'local' && !this._history.some(h => h.color === myColor)) {
+      wx.showToast({ title: '无棋可悔', icon: 'none' });
+      return;
+    }
     const popped = [];
     // 最多撤两手：把「AI 那一手 + 我那一手」一起撤掉；
     // 如果上一手本来就是我的（AI 尚未应招），只撤一手。
@@ -458,7 +599,9 @@ Page({
       turn: next,
       moveCount: n,
       winText: '',
-      statusText: next === myColor ? '轮到你落子' : 'AI 思考中…',
+      statusText: this.data.mode === 'ai'
+        ? (next === myColor ? '轮到你落子' : 'AI 思考中…')
+        : (next === 1 ? '黑方走棋' : '白方走棋'),
       thinking: false
     }, () => {
       this._drawBoard();
@@ -468,10 +611,209 @@ Page({
 
   restart() {
     if (this.data.mode === 'online') {
-      wx.showToast({ title: '联机模式请离开后重新建房', icon: 'none' });
+      // 联机重开走「双方确认」（requestRematch），不再直接拒绝
+      this.requestRematch();
       return;
     }
     this._startGame(this.data.mode === 'ai' ? 'ai' : 'local');
+  },
+
+  /* ========== 联机：悔棋 / 再来一局（双方确认） ========== */
+
+  _armRequestTimeout(stateKey) {
+    this._clearRequestTimeout();
+    this._requestTimeoutKey = stateKey;
+    this._undoTimeoutTimer = setTimeout(() => {
+      if (this._destroyed) return;
+      this.setData({ [stateKey]: null });
+      wx.showToast({ title: '对方未响应', icon: 'none' });
+    }, C.UNDO_TIMEOUT_MS);
+  },
+
+  _clearRequestTimeout() {
+    if (this._undoTimeoutTimer) {
+      clearTimeout(this._undoTimeoutTimer);
+      this._undoTimeoutTimer = null;
+    }
+    this._requestTimeoutKey = null;
+  },
+
+  async requestUndo() {
+    if (this.data.stage !== 'playing' || this._over) return;
+    if (this.data.undoState) return;
+    const history = this._history || [];
+    const last = history[history.length - 1];
+    if (!last || last.color !== this.data.myColor) {
+      wx.showToast({ title: '只能撤回自己的上一手', icon: 'none' });
+      return;
+    }
+    const db = wx.cloud.database();
+    try {
+      await db.collection(COLLECTION).doc(this._roomId).update({
+        data: { undoRequest: this.data.myColor, updatedAt: db.serverDate() }
+      });
+      this.setData({ undoState: 'iRequested' });
+      this._armRequestTimeout('undoState');
+    } catch (e) {
+      wx.showToast({ title: '请求失败', icon: 'none' });
+    }
+  },
+
+  async respondUndo(e) {
+    const agree = e.currentTarget.dataset.agree === '1';
+    const db = wx.cloud.database();
+    try {
+      if (agree) {
+        // 弹掉请求方的最后一手，turn 还给请求方
+        const history = (this._history || []).slice();
+        const last = history.pop();
+        if (last && this._board[last.r] && this._board[last.r][last.c] === last.color) {
+          this._board[last.r][last.c] = 0;
+        }
+        this._history = history;
+        const prevLast = history.length ? history[history.length - 1] : null;
+        this._lastMove = prevLast ? { r: prevLast.r, c: prevLast.c } : null;
+        const reqColor = last ? last.color : 1;
+        await db.collection(COLLECTION).doc(this._roomId).update({
+          data: {
+            boardStr: JSON.stringify(this._board),
+            history,
+            turn: reqColor,
+            lastMove: prevLast ? { r: prevLast.r, c: prevLast.c } : {},
+            moveCount: history.length,
+            undoRequest: 0,
+            updatedAt: db.serverDate()
+          }
+        });
+        this._boardKey = JSON.stringify(this._board);
+        this._seenUndoSide = 0;
+        this.setData({ undoState: null, statusText: reqColor === this.data.myColor ? '轮到你落子' : '等待对方落子…' }, () => this._drawBoard());
+        wx.showToast({ title: '已同意悔棋', icon: 'none' });
+      } else {
+        await db.collection(COLLECTION).doc(this._roomId).update({
+          data: { undoRequest: 0, updatedAt: db.serverDate() }
+        });
+        this.setData({ undoState: null });
+        wx.showToast({ title: '已拒绝', icon: 'none' });
+      }
+      this._clearRequestTimeout();
+    } catch (e2) {
+      wx.showToast({ title: '操作失败', icon: 'none' });
+    }
+  },
+
+  async requestRematch() {
+    if (this.data.rematchState) return;
+    const db = wx.cloud.database();
+    try {
+      await db.collection(COLLECTION).doc(this._roomId).update({
+        data: { rematchRequest: this.data.myColor, updatedAt: db.serverDate() }
+      });
+      this.setData({ rematchState: 'iRequested' });
+      this._armRequestTimeout('rematchState');
+    } catch (e) {
+      wx.showToast({ title: '请求失败', icon: 'none' });
+    }
+  },
+
+  async respondRematch(e) {
+    const agree = e.currentTarget.dataset.agree === '1';
+    const db = wx.cloud.database();
+    try {
+      if (agree) {
+        this._board = core.emptyBoard();
+        this._history = [];
+        this._lastMove = null;
+        this._winLine = null;
+        this._over = false;
+        this._leaverHandled = false;
+        this.setData({
+          stage: 'playing',
+          turn: 1,
+          moveCount: 0,
+          winText: '',
+          undoState: null,
+          rematchState: null,
+          statusText: this.data.myColor === 1 ? '轮到你落子' : '等待对方落子…'
+        }, () => this._drawBoard());
+        await db.collection(COLLECTION).doc(this._roomId).update({
+          data: {
+            boardStr: JSON.stringify(this._board),
+            history: [],
+            turn: 1,
+            lastMove: {},
+            moveCount: 0,
+            winner: 0,
+            undoRequest: 0,
+            rematchRequest: 0,
+            updatedAt: db.serverDate()
+          }
+        });
+        this._boardKey = JSON.stringify(this._board);
+        this._seenUndoSide = 0;
+        this._seenRematchSide = 0;
+        wx.showToast({ title: '新一局开始！黑棋先行', icon: 'none' });
+      } else {
+        await db.collection(COLLECTION).doc(this._roomId).update({
+          data: { rematchRequest: 0, updatedAt: db.serverDate() }
+        });
+        this.setData({ rematchState: null });
+        wx.showToast({ title: '已拒绝', icon: 'none' });
+      }
+      this._clearRequestTimeout();
+    } catch (e2) {
+      wx.showToast({ title: '操作失败', icon: 'none' });
+    }
+  },
+
+  /* ========== 戳一戳 + 扔水果 ========== */
+
+  async poke() {
+    if (this.data.mode !== 'online' || this.data.stage !== 'playing') return;
+    const now = Date.now();
+    if (this._lastPokeSent && now - this._lastPokeSent < C.POKE_COOLDOWN) {
+      wx.showToast({ title: '戳得太频繁啦', icon: 'none' });
+      return;
+    }
+    this._lastPokeSent = now;
+    const db = wx.cloud.database();
+    try {
+      await db.collection(COLLECTION).doc(this._roomId).update({
+        data: { poke: { from: this.data.myColor, ts: now }, updatedAt: db.serverDate() }
+      });
+    } catch (e) {
+      log.e('[gomokuai] poke fail', e);
+    }
+  },
+
+  _showPoke() {
+    if (this._destroyed) return;
+    this.setData({ pokeVisible: true, pokeText: '👉 对方戳了戳你：快落子！' });
+    clearTimeout(this._pokeTimer);
+    this._pokeTimer = setTimeout(() => {
+      if (this._destroyed) return;
+      this.setData({ pokeVisible: false });
+    }, 2500);
+  },
+
+  async throwFruit(e) {
+    if (this.data.mode !== 'online' || this.data.stage !== 'playing') return;
+    const icon = e.currentTarget.dataset.icon;
+    if (!icon) return;
+    await roomkit.pushChat(this, COLLECTION, {
+      from: this.data.myColor, type: 'emoji', content: icon, ts: Date.now()
+    });
+    this._playEmojiFly(icon);
+  },
+
+  _playEmojiFly(icon) {
+    if (this._destroyed) return;
+    this.setData({ emojiFlying: { icon } });
+    clearTimeout(this._emojiFlyTimer);
+    this._emojiFlyTimer = setTimeout(() => {
+      if (this._destroyed) return;
+      this.setData({ emojiFlying: null });
+    }, 1200);
   },
 
   /* ========== 聊天 ========== */
@@ -514,6 +856,16 @@ Page({
         this.setData({ stage: 'menu' });
       }
     });
+  },
+
+  /* ========== 分享 ========== */
+
+  onShareAppMessage() {
+    const no = this.data.roomNo;
+    return {
+      title: no ? '来和我下小笨五子棋！房间号 ' + no : '来小笨游戏大厅一起玩！',
+      path: no ? '/subpackages/games/gomokuai/gomokuai?roomNo=' + no : '/pages/games/games'
+    };
   },
 
   /* ========== Canvas ========== */

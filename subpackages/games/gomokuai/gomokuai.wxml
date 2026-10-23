@@ -129,6 +129,16 @@
         disable-scroll="true"></canvas>
     </view>
 
+    <!-- 戳一戳横幅 -->
+    <view wx:if="{{pokeVisible}}" class="poke-banner">{{pokeText}}</view>
+
+    <!-- 扔水果飞行 -->
+    <view wx:if="{{emojiFlying}}" class="emoji-fly">{{emojiFlying.icon}}</view>
+
+    <!-- 请求等待提示 -->
+    <view wx:if="{{undoState === 'iRequested'}}" class="req-tip">⏳ 已请求悔棋，等待对方…</view>
+    <view wx:if="{{rematchState === 'iRequested'}}" class="req-tip">⏳ 已请求再来一局，等待对方…</view>
+
     <!-- 胜负横幅 -->
     <view wx:if="{{stage === 'ended'}}" class="end-banner">
       <view class="end-text">{{winText}}</view>
@@ -138,6 +148,12 @@
     <view class="actions">
       <view class="act-btn" bindtap="restart">🔄 重开</view>
       <view class="act-btn" bindtap="undo">↩️ 悔棋</view>
+      <view wx:if="{{mode === 'online'}}" class="act-btn" bindtap="poke">👉 戳一戳</view>
+      <view wx:if="{{mode === 'online'}}" class="fruit-btns">
+        <text class="fruit" data-icon="🥭" bindtap="throwFruit">🥭</text>
+        <text class="fruit" data-icon="🍉" bindtap="throwFruit">🍉</text>
+        <text class="fruit" data-icon="🍈" bindtap="throwFruit">🍈</text>
+      </view>
       <view wx:if="{{mode === 'online'}}" class="act-btn" bindtap="toggleChat">💬 聊天</view>
       <view class="act-btn ghost" bindtap="leaveRoom">🚪 离开</view>
     </view>
@@ -145,7 +161,7 @@
     <!-- 聊天面板（联机模式） -->
     <view wx:if="{{mode === 'online' && showChat}}" class="chat-area">
       <scroll-view class="chat-list" scroll-y scroll-into-view="chat{{chatList.length - 1}}">
-        <view wx:for="{{chatList}}" wx:key="ts" id="chat{{index}}" class="chat-msg {{item.mine ? 'mine' : 'theirs'}}">
+        <view wx:for="{{chatList}}" wx:key="key" id="chat{{index}}" class="chat-msg {{item.mine ? 'mine' : 'theirs'}}">
           <text class="chat-bubble">{{item.content}}</text>
         </view>
       </scroll-view>
