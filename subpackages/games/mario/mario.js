@@ -561,6 +561,9 @@ Page({
         if (self._destroyed) return;
         log.d('[mario] relay ready room=' + no + ' seat=' + self.data.mySeat);
         self._lastRemoteAt = Date.now();
+        // 连上了就把退避清回去：下次断线仍按 10 秒开始重试
+        self._relayReviveCount = 0;
+        self._relayReviveGap = 10000;
         // 立刻推一帧（快车道首帧），别等下一个同步周期
         self._doSync();
       },
@@ -1103,10 +1106,16 @@ Page({
       }
 
       // 中继死掉（挂死/放弃）后自动复活：giveUp 不是终态，
-      // 手机网络抖一下就可能救回来，每 10 秒重试一次
+      // 手机网络抖一下就可能救回来。间隔指数退避 10s→20→40→60s 封顶：
+      // 正式版里 ws:// 根本不被允许（只在开调试时可用），若固定 10 秒
+      // 重试，一整局都在「3 次失败连接 + 等 10 秒」地空转。
+      const reviveGap = this._relayReviveGap || 10000;
       if (!this._relay && C.MARIO_RELAY_URL && this.data.stage === 'playing' &&
-          Date.now() - (this._lastRelayReviveAt || 0) > 10000) {
+          Date.now() - (this._lastRelayReviveAt || 0) > reviveGap) {
         this._lastRelayReviveAt = Date.now();
+        const n = (this._relayReviveCount || 0) + 1;
+        this._relayReviveCount = n;
+        this._relayReviveGap = Math.min(60000, 10000 * Math.pow(2, Math.min(3, n - 1)));
         this._startRelay();
       }
 
