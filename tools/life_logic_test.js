@@ -172,6 +172,20 @@ function loadPage(rel, stubs) {
   }
   ok(platBad === 0, '平台识别按主机名后缀匹配（' + platCases.length + ' 个用例，含钓鱼式 URL）');
 
+  // 11) 粘贴后立刻保存：延迟的自动解析不能把已清空的表单又填回去
+  const p3 = loadPage('pages/life/life', cloudStub);
+  p3.onLoad();
+  await new Promise((r) => setTimeout(r, 10));
+  const beforeCount = p3.data.shopCount;
+  p3.setData({ 'form.title': '拖鞋', 'form.price': '39.9' });
+  p3.onDraftInput({ detail: { value: '【淘宝】https://m.tb.cn/h.abc 奶油拖鞋 ¥59.90' } });
+  p3.onFormInput({ currentTarget: { dataset: { field: 'title' } }, detail: { value: '拖鞋' } });
+  await p3.quickSave();
+  await new Promise((r) => setTimeout(r, 500));   // 等过 300ms 防抖窗口
+  ok(p3.data.form.title === '', '保存后表单保持清空（不被延迟解析回填）：' + JSON.stringify(p3.data.form.title));
+  ok(p3.data.shopCount === beforeCount + 1, '保存后列表只 +1 条（没有重复记录）：' + beforeCount + '→' + p3.data.shopCount);
+  if (p3._parseTimer) clearTimeout(p3._parseTimer);
+
   console.log(failures ? `\n共 ${failures} 项失败` : '\n全部通过 ✓');
   process.exit(failures ? 1 : 0);
 })();

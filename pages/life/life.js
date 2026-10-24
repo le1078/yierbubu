@@ -497,6 +497,9 @@ Page({
   async quickSave() {
     // 防重：网络慢时连点会产生重复记录
     if (this._saving) return;
+    // 粘贴后 300ms 内的自动解析必须取消：否则保存完表单已清空，
+    // 解析结果随后又把标题/价格填回去，看起来像"没保存成功"
+    clearTimeout(this._parseTimer);
     const f = this.data.form;
     const title = String(f.title || '').trim();
     const price = String(f.price || '').trim();

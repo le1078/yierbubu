@@ -76,8 +76,9 @@ Page({
   },
 
   onUnload() {
-    // 备忘录输入有 400ms 防抖落盘：退页时把挂起的定时器清掉，
-    // 否则它在页面销毁后触发 persistMemo → setData 报「页面不存在」
+    // 退页时先把挂起的防抖写入落盘（静默、不 setData），再清定时器；
+    // 只清定时器会把用户最后几个字的输入丢掉
+    this._flushPendingEdits();
     this._clearEditState();
   },
 
@@ -112,6 +113,7 @@ Page({
 
   setMode(e) {
     const mode = e.currentTarget.dataset.mode;
+    this._flushPendingEdits();
     this._clearEditState();
     this.setData({ mode, sheetDate: '' });
     this.renderCalendar();
@@ -120,6 +122,7 @@ Page({
   prevM() {
     let y = this.data.calY, m = this.data.calM - 1;
     if (m < 0) { m = 11; y--; }
+    this._flushPendingEdits();
     this._clearEditState();
     this.setData({ calY: y, calM: m, mapping: buildMapping(y), sheetDate: '' });
     this.renderCalendar();
@@ -128,6 +131,7 @@ Page({
   nextM() {
     let y = this.data.calY, m = this.data.calM + 1;
     if (m > 11) { m = 0; y++; }
+    this._flushPendingEdits();
     this._clearEditState();
     this.setData({ calY: y, calM: m, mapping: buildMapping(y), sheetDate: '' });
     this.renderCalendar();
@@ -174,6 +178,30 @@ Page({
 
   // 清理编辑快照与待执行定时器：切换日期/模式前必须调用，
   // 否则残留的 _memoSnapshot/_buySnapshotRec 会在下次 cancelEdit 时覆盖新日期的数据
+  // 把挂起的防抖写入立即落盘（不 setData，可在 onUnload 里安全调用）。
+  // 备忘/买码都是 400ms 防抖：用户敲完字马上点别的日期时，如果只
+  // clearTimeout 不落盘，刚输入的内容就丢了（真实丢数据路径）。
+  _flushPendingEdits() {
+    const ds = this.data.sheetDate;
+    if (!ds) return;
+    if (this._memoSaveTimer) {
+      clearTimeout(this._memoSaveTimer);
+      this._memoSaveTimer = null;
+      if (this.data.cloudReady) {
+        const memoCal = this._memoCal || (this._memoCal = {});
+        const text = this.data.memoText || '';
+        if (text) memoCal[ds] = { memo: text };
+        else delete memoCal[ds];
+        this._saveMemo(memoCal);
+      }
+    }
+    if (this._buySaveTimer) {
+      clearTimeout(this._buySaveTimer);
+      this._buySaveTimer = null;
+      if (this.data.cloudReady) this._persistBuyNow();
+    }
+  },
+
   _clearEditState() {
     clearTimeout(this._memoSaveTimer);
     clearTimeout(this._buySaveTimer);
@@ -185,6 +213,8 @@ Page({
   openDate(e) {
     const ds = e.currentTarget.dataset.ds;
     if (!ds) return;
+    // 切到别的日期前先把当前日期的挂起输入落盘，否则丢字
+    this._flushPendingEdits();
     this._clearEditState();
     if (this.data.mode === 'memo') {
       const memoCal = this._memoCal;

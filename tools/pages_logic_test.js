@@ -418,6 +418,135 @@ console.log('\n[4] 餐厅组件：购物车与菜单编辑');
       check(rc.data.menu[0].items[0].name === '菜A', '错分类保存被拒绝（原菜不变）');
     }
 
+    /* ===== [8] 日历：输入后立刻切日期，内容不能丢 ===== */
+    console.log('\n[8] 日历：防抖输入在切换日期/翻月/退页时必须落盘');
+    {
+      const { buildMapping } = require('../utils/zodiac.js');
+      const def4 = loadDef('pages/calendar/calendar.js');
+      const cal = instantiate(def4, false);
+      cal.data.cloudReady = true;
+      cal.data.calY = 2026;
+      cal.data.calM = 9;
+      cal.data.mapping = buildMapping(2026);
+      cal._memoCal = {};
+      cal._buyCal = {};
+      cal.renderCalendar();
+
+      // 备忘：输入后马上切到另一天
+      cal.openDate({ currentTarget: { dataset: { ds: '2026-10-01' } } });
+      cal.toggleMemoEdit();
+      cal.onMemoInput({ detail: { value: '写到一半就跑' } });
+      cal.openDate({ currentTarget: { dataset: { ds: '2026-10-02' } } });
+      check(cal._memoCal['2026-10-01'] && cal._memoCal['2026-10-01'].memo === '写到一半就跑',
+        '切日期前把备忘落盘（不丢字）');
+
+      // 备忘：输入后马上翻月
+      cal.toggleMemoEdit();
+      cal.onMemoInput({ detail: { value: '翻月前的输入' } });
+      cal.nextM();
+      check(cal._memoCal['2026-10-02'] && cal._memoCal['2026-10-02'].memo === '翻月前的输入',
+        '翻月前把备忘落盘');
+
+      // 备忘：输入后直接退页
+      cal.openDate({ currentTarget: { dataset: { ds: '2026-10-03' } } });
+      cal.toggleMemoEdit();
+      cal.onMemoInput({ detail: { value: '退页前的输入' } });
+      cal.onUnload();
+      check(cal._memoCal['2026-10-03'] && cal._memoCal['2026-10-03'].memo === '退页前的输入',
+        '退页前把备忘落盘');
+
+      // 买码：输入后马上切日期
+      const cal2 = instantiate(loadDef('pages/calendar/calendar.js'), false);
+      cal2.data.cloudReady = true;
+      cal2.data.calY = 2026;
+      cal2.data.mapping = buildMapping(2026);
+      cal2._memoCal = {};
+      cal2._buyCal = {};
+      cal2.data.mode = 'buy';
+      cal2.openDate({ currentTarget: { dataset: { ds: '2026-10-05' } } });
+      cal2.data.extraAmount = '88';
+      cal2.persistBuy();                       // 排入 400ms 防抖
+      cal2.openDate({ currentTarget: { dataset: { ds: '2026-10-06' } } });
+      const savedBuy = cal2._buyCal['2026-10-05'];
+      check(!!savedBuy && savedBuy.extra === 88,
+        '切日期前把买码记录落盘（extra=' + (savedBuy && savedBuy.extra) + '）');
+
+      // cancelEdit 语义相反：取消要丢弃挂起输入并回滚
+      const cal3 = instantiate(loadDef('pages/calendar/calendar.js'), false);
+      cal3.data.cloudReady = true;
+      cal3.data.mapping = buildMapping(2026);
+      cal3._memoCal = { '2026-10-07': { memo: '原来的备忘' } };
+      cal3._buyCal = {};
+      cal3.openDate({ currentTarget: { dataset: { ds: '2026-10-07' } } });
+      cal3.toggleMemoEdit();
+      cal3.onMemoInput({ detail: { value: '改了但要取消' } });
+      cal3.cancelEdit();
+      check(cal3._memoCal['2026-10-07'].memo === '原来的备忘', '点取消回滚到原文');
+      check(cal3.data.memoText === '原来的备忘', '取消后输入框恢复原文');
+
+      if (cal._memoSaveTimer) clearTimeout(cal._memoSaveTimer);
+      if (cal2._buySaveTimer) clearTimeout(cal2._buySaveTimer);
+      if (cal3._memoSaveTimer) clearTimeout(cal3._memoSaveTimer);
+    }
+
+    /* ===== [9] 刮刮卡：刮开比例判定 ===== */
+    console.log('\n[9] 刮刮卡：刮开比例与翻开判定');
+    {
+      const C = require('../utils/constants.js');
+      const def5 = loadDef('pages/index/index.js');
+      const idx = instantiate(def5, false);
+      idx.data.scratchCards = [
+        { id: 'c0', revealed: false, coated: true, result: { number: 1 } },
+        { id: 'c1', revealed: false, coated: true, result: { number: 2 } }
+      ];
+      idx._scratch = [null, null];
+
+      // 假 canvas：按「请求区域」生成数据——该区域内前 clearRatio 的像素 alpha=0
+      const W = 200, H = 220;
+      function fakeStroke(clearRatio) {
+        return {
+          canvas: { width: W, height: H },
+          ctx: {
+            getImageData: function (x, y, rw, rh) {
+              const n = rw * rh;
+              const cleared = Math.floor(n * clearRatio);
+              const out = new Uint8ClampedArray(n * 4);
+              for (let i = 0; i < n; i++) {
+                out[i * 4] = 200; out[i * 4 + 1] = 150; out[i * 4 + 2] = 180;
+                out[i * 4 + 3] = i < cleared ? 0 : 255;
+              }
+              return { data: out };
+            }
+          },
+          w: W, h: H, lastX: null, lastY: null
+        };
+      }
+
+      // 刮开 20%：不该翻开
+      idx._scratch[0] = fakeStroke(0.2);
+      idx._checkReveal(0);
+      check(idx.data.scratchCards[0].revealed === false, '刮开 20% 不翻开');
+
+      // 刮开 50%（低于阈值 0.7）：不该翻开
+      idx._scratch[0] = fakeStroke(0.5);
+      idx._checkReveal(0);
+      check(idx.data.scratchCards[0].revealed === false, '刮开 50% 仍不翻开（阈值 70%）');
+
+      // 刮开 95%：翻开，并释放 canvas 引用
+      idx._scratch[0] = fakeStroke(0.95);
+      idx._checkReveal(0);
+      check(idx.data.scratchCards[0].revealed === true, '刮开 95% 自动翻开');
+      check(idx._scratch[0] === null, '翻开后释放 canvas 引用');
+
+      // 未刮开的卡保持覆盖层
+      check(idx.data.scratchCards[1].revealed === false, '其他卡不受影响');
+
+      // 全部翻开后才写一条记录（这里用假 push：直接检查 flush 的幂等标记）
+      idx._lastScratchRecordId = 'rec1';
+      idx.flushScratchRecord();
+      check(idx._lastScratchRecordId === 'rec1', '已有记录时 flush 不重复写入');
+    }
+
     console.log('\n========================================');
     console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
     if (fail > 0) {
