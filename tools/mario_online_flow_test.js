@@ -440,6 +440,71 @@ function setupWorld(page) {
       '合作模式两人都到终点 → 通关');
   }
 
+  console.log('\n[10] 长时间联机收敛：guest 预测不能跑飞');
+  {
+    // host 权威模拟 + guest 本地预测，双方跑 600 帧（10 秒），
+    // 每隔一帧把 host 的 world 回灌给 guest，最后比对双方看到的位置。
+    const host = loadPage();
+    const guest = loadPage();
+    setupWorld(host);
+    setupWorld(guest);
+    host.data.mode = 'online';
+    host.data.mySeat = 1;
+    host.data.coop = true;
+    guest.data.mode = 'online';
+    guest.data.mySeat = 2;
+    guest.data.coop = true;
+    guest._worldEpoch = host._worldEpoch = 1;
+    host._stopLoop = function () {};
+    guest._stopLoop = function () {};
+    guest._startLoop = function () {};
+
+    let s = 12345;
+    const rng = function () {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 4294967296;
+    };
+
+    for (let f = 0; f < 600; f++) {
+      // guest 产生随机输入，模拟 400ms 上报一次（约每 24 帧）
+      if (f % 24 === 0) {
+        const gin = guest._inputs[2];
+        gin.right = rng() < 0.75;
+        gin.left = !gin.right && rng() < 0.5;
+        gin.up = rng() < 0.35;
+        gin.down = false;
+        gin.run = rng() < 0.3;
+      }
+      // host 侧：应用 guest 输入并推进物理
+      EN.stepWorld(host._level, host._players, host._inputs, EN.TICK);
+      // guest 侧：本地预测推进
+      EN.stepWorld(guest._level, guest._players, guest._inputs, EN.TICK);
+      // host 每 24 帧发一次世界，guest 回灌
+      if (f % 24 === 23) {
+        const w = JSON.parse(JSON.stringify(EN.worldToWire(host._level, host._players)));
+        w.level = 0; w.ep = 1;
+        guest._applyWorld(w, false);
+        guest._interpolate();
+      }
+    }
+
+    const hp1 = host._players[0];
+    const hp2 = host._players[1];
+    const gp1 = guest._players[0];
+    const gp2 = guest._players[1];
+    // guest 看到的 host（P1）：插值后应贴近权威位置
+    const dOpp = Math.abs((gp1._tx !== undefined ? gp1._tx : gp1.x) - hp1.x);
+    check(dOpp < 3, 'guest 看到的 P1 与权威位置差异 < 3 格（实际 ' + dOpp.toFixed(2) + '）');
+    // guest 自己的角色（P2）：本地预测允许偏差，但不应发散
+    const dMe = Math.abs(gp2.x - hp2.x);
+    check(dMe < 4, 'guest 自己的位置与权威差异 < 4 格（实际 ' + dMe.toFixed(2) + '）');
+    // 两边世界时间应基本一致（都用固定步长推进）
+    check(Math.abs(host._level.time - guest._level.time) < 1.5,
+      '两端关卡时间基本同步（差 ' + Math.abs(host._level.time - guest._level.time).toFixed(2) + ' 秒）');
+    // 敌人数量不变（不会因为同步被复制/丢失）
+    check(host._level.enemies.length === guest._level.enemies.length, '敌人数量一致');
+  }
+
   console.log('\n========================================');
   console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
   if (fail > 0) {

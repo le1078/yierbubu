@@ -191,27 +191,24 @@ watch 不可用时由 500ms 轮询兜底，延迟会更大一些，但不会出�
 
 ## 七、自测工具
 
+**一键全量**（交付前必跑；任何一项失败都会以非 0 退出码结束）：
+
 ```
-node tools/wx_compat_check.js     # SWC 白屏陷阱（数组解构/对象展开/可选链）
-node tools/wx_require_check.js    # 分包 require 相对路径（少写一级就白屏）
-node tools/gomoku_ai_test.js      # 五子棋 AI 27 项（含 AI vs AI 自我对局）
-node tools/xiangqi_logic_test.js  # 象棋规则 133 项
-node tools/xiangqi_ai_test.js     # 象棋 AI 22 项
-node tools/mario_logic_test.js    # 马里奥引擎 94 项（含双跑确定性）
-node tools/mario_sync_test.js     # 马里奥联机同步 25 项
-node tools/mario_level_test.js    # 马里奥关卡 13 项（含 5 关端到端通关 + 旗杆完整流程）
-node tools/mario_mechanics_test.js # 马里奥机制 48 项
-node tools/mario_render_test.js   # 马里奥渲染 8 项（角色必须画出来）
-node tools/mario_features_test.js # 马里奥扩展玩法 29 项（管道/金币房/食人花/星星/1UP/隐藏砖/电脑对手）
-node tools/mario_page_check.js    # 页面-引擎一致性 19 项（含竞速蓝屏回归）
-node tools/wxml_event_audit.js    # WXML 事件处理函数是否都在 JS 里定义
-node tools/wxml_data_audit.js     # WXML 数据字段是否都在 data/setData 里
-node tools/game_page_flow_test.js # 页面流程 34 项（难度选择/悔棋/联机守卫/画布重建/watcher）
-node tools/roomkit_join_test.js   # 联机加入查询 16 项（房间号补零/24h过期/权限/集合）
-node tools/roomkit_sync_test.js   # 联机同步兜底 14 项（watch 不支持时轮询仍可用）
-node tools/join_arg_test.js       # 加入参数 13 项（bindtap 事件对象 / 分享自动加入）
-node tools/mario_online_flow_test.js # 马里奥联机页面同步 26 项（输入中继/独立输入文档/闭环/mode/边沿锁存/收发计数）
+node tools/run_all_tests.js               # 41 组：语法 + 静态契约 + 单元 + 模糊 + 联机仿真
+node tools/run_all_tests.js --with-relay  # 额外跑线上中继冒烟（需要云机在线）
 ```
+
+分层说明（需要单跑某一层时用；具体项数会随测试演进，不在此固定）：
+
+| 层 | 脚本 | 覆盖什么 |
+| --- | --- | --- |
+| 静态契约 | wxml_structure_check / wxml_key_check / wxml_event_audit / wxml_data_audit / wx_page_check / js_method_check / wx_require_check / wx_compat_check / wx_canvas_check / wx_draw_check | 标签闭合、列表 key、事件与数据字段、方法调用、分包路径、SWC 白屏陷阱、画布尺寸 |
+| 游戏引擎 | mario_logic / mario_mechanics / mario_features / mario_level / level_data_check / mario_render / mario_page_check / xiangqi_logic / xiangqi_ai / gomoku_logic / gomoku_ai | 物理与机制、规则正确性、AI 合法性、关卡可达性与数据完整性 |
+| 模糊测试 | mario_fuzz / xiangqi_fuzz / gomoku_fuzz | 随机输入长跑 + 不变量断言；象棋用独立实现的将军判定交叉验证；五子棋胜负与暴力全盘扫描对照 |
+| 联机 | mario_sync / mario_online_flow / mario_relay / online_convergence / roomkit_join / roomkit_sync / join_arg | 输入中继、双车道、乱序保护、双客户端随机操作收敛 |
+| 页面与数据 | game_page_flow / pages_logic / life_logic / life_check / trash_flow / cloudstore_load / cloudstore_real / shengxiao_logic | 页面流程、日历网格与买码结算、记录映射、回收站链路、跨设备原子写 |
+| 真机 | 见《真机验收清单.md》 | 手感、音频发声、触摸命中、断网恢复（自动化覆盖不到的部分） |
+
 
 所有测试都是纯 node 可跑，不需要开微信开发者工具。
 

@@ -41,6 +41,10 @@
       {
         "type": "folder",
         "value": "server"
+      },
+      {
+        "type": "suffix",
+        "value": ".md"
       }
     ],
     "include": []
