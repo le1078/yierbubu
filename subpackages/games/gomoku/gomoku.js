@@ -517,6 +517,9 @@ Page({
       });
       if (!addedNew) addedNew = m;
     }
+    // 本地聊天列表封顶：云端的 chat 数组会一直增长，existing 也只增不减，
+    // 一局聊久了聊天面板要渲染整段历史（越聊越卡）
+    if (merged.length > C.CHAT_MAX) merged.splice(0, merged.length - C.CHAT_MAX);
     patch.chatList = merged;
     // 新消息是表情且来自对方 → 播放飞行动画
     if (addedNew && addedNew.type === 'emoji' && addedNew.from !== me) {
@@ -1104,6 +1107,20 @@ Page({
           updatedAt: db.serverDate()
         }
       });
+      // 聊天数组只增不减会撑爆房间文档（超限后落子同步也会一起失败），
+      // 到上限就整写截断一次；失败不影响主流程
+      const list = this.data.chatList || [];
+      if (list.length >= C.CHAT_MAX) {
+        try {
+          const capped = [];
+          for (let i = 0; i < list.length; i++) {
+            if (list[i].pending) continue;
+            capped.push({ from: list[i].from, type: list[i].type, content: list[i].content, ts: list[i].ts });
+          }
+          const trimmed = capped.slice(Math.max(0, capped.length - C.CHAT_MAX + 1));
+          await db.collection(COLLECTION).doc(this._roomId).update({ data: { chat: trimmed } });
+        } catch (e) { log.e('[gomoku] chat trim fail', e); }
+      }
     } catch (e) {
       // 发送失败：移除乐观插入的那条
       this.setData({ chatList: (this.data.chatList || []).filter(m => m !== local) });
