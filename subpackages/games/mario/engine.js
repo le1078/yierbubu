@@ -234,9 +234,11 @@ function stepPopups(level, dt) {
 // 页面把回调挂到 level.onEvent 上即可；引擎内只 emit 不实现，
 // 保持纯逻辑可单测。事件名固定小写字符串。
 function emit(level, name, x, y) {
-  if (level.onEvent) {
-    try { level.onEvent(name, x, y); } catch (e) { /* 表现层异常不影响模拟 */ }
-  }
+  // level 可能为 null（手工构造的玩家对象没有 .level 引用）；
+  // 属性访问必须在判空之后，否则 null.onEvent 直接抛错，
+  // 而 hurtPlayer 等调用点跑在主循环里 —— 一崩就是整局卡死
+  if (!level || !level.onEvent) return;
+  try { level.onEvent(name, x, y); } catch (e) { /* 表现层异常不影响模拟 */ }
 }
 
 /* ========== 关卡装载 ========== */
@@ -842,7 +844,10 @@ function stepBoss(level, boss, players, dt) {
     if (boss.fireCd <= 0) {
       boss.fireCd = 2.0;
       const target = nearestPlayer(players, boss.x);
-      if (target) {
+      // 近身 4 格内不放火球：Boss 悬空、判定盒正压在玩家跳跃弧线里，
+      // 贴脸火球会逼玩家起跳，一起跳就撞上 Boss 本体——必死且无解
+      // （实测：双 Boss 关机器人反复撞死在同一格）。留出反应距离。
+      if (target && Math.abs(target.x - boss.x) >= 4) {
         if (!level.fireballs) level.fireballs = [];
         level.fireballs.push({
           x: boss.x, y: boss.y - 0.5,
@@ -875,6 +880,15 @@ function stepFireballs(level, dt) {
     f.vy += PHYS.GRAVITY * 0.35 * dt;
     f.x += f.vx * dt;
     f.y += f.vy * dt;
+    // 落地即熄：不这么做的话火球会继续穿过地面、从站在地上的玩家身上
+    // 穿过去（视觉上明明在脚下爆炸）——既不公平也很难躲（实测双 Boss 关
+    // 机器人反复被远距离火球穿身击杀）。正版里火球打到地面就消失。
+    const groundRow = Math.floor(f.y + 0.05);
+    if (isSolid(level.grid, Math.floor(f.x), groundRow)) {
+      if (!level.debris) level.debris = [];
+      level.debris.push({ x: f.x, y: f.y, t: 0, kind: 'coin' });   // 复用金币特效当爆点
+      continue;
+    }
     if (f.life > 0 && f.y < PHYS.DEATH_FALL_Y) keep.push(f);
   }
   // 保留玩家火球
@@ -1532,6 +1546,16 @@ function isGameOver(level, players) {
   return true;
 }
 
+// 任意一人命用完（state='dead'）。
+// 合作模式必须用它判负：过关要求「全员 done」、全员死才算 gameOver，
+// 于是「一人活着 + 一人阵亡」两边条件都不成立 —— 对局永久卡死（实测确认）。
+function anyPlayerDead(players) {
+  for (const p of players) {
+    if (p.state === 'dead') return true;
+  }
+  return false;
+}
+
 /* ========== 序列化（联机同步） ========== */
 
 function playerToWire(p) {
@@ -1543,7 +1567,10 @@ function playerToWire(p) {
     st: p.state, lv: p.lives, cn: p.coins, sc: p.score,
     // 过关用时必须同步：竞速模式的 raceWinner 比的是 finishT，
     // 缺了它 guest 端永远算不出 host 的获胜者，两边各宣布自己赢
-    ft: round3(p.finishT || 0)
+    ft: round3(p.finishT || 0),
+    // 无限生命也要同步：host 权威，否则 guest 单方面打开开关不生效
+    //（guest 的 lives 每次世界更新都会被 host 的权威值覆盖）
+    il: p.infiniteLives ? 1 : 0
   };
 }
 
@@ -1571,7 +1598,7 @@ function worldToWire(level, players) {
 
 /* ========== 单机竞速的电脑对手 ========== */
 // 一个“会玩”的自动输入：一直向右，遇到坑/管道/尖刺/敌人才跳。
-// 和关卡测试里的机器人同一套规则，5 关都能零死亡通关。
+// 和关卡测试里的机器人同一套规则，全 7 关都能通关。
 
 function autoGroundAhead(level, col, feetY) {
   if (feetY < 13.5) return isSolid(level.grid, col, Math.floor(feetY + 0.001));
@@ -1775,6 +1802,6 @@ module.exports = {
   hitHeadBlock, hitHiddenBlock, openBlock, hurtPlayer, kickShell, spawnFireball,
   addPopup, stepPopups,
   tryPipeWarp, stepClearSequence, findFlagCol, findFlagTop, findCastleCol, findCastleDoorX,
-  isLevelCleared, raceWinner, isGameOver,
+  isLevelCleared, raceWinner, isGameOver, anyPlayerDead,
   playerToWire, worldToWire, round3, makeAutoInput
 };

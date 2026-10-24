@@ -164,6 +164,50 @@ console.log('[3] 机器人端到端通关（每关都能走到终点旗）');
 }
 
 console.log('');
+console.log('[3b] 所有 Boss 都在旗杆之前（否则玩家到不了，等于没做）');
+{
+  let ok = true;
+  for (let i = 0; i < LV.LEVELS.length; i++) {
+    const level = EN.loadLevel(LV.LEVELS[i], LV.LEVEL_SPECS[i]);
+    const bosses = level.bosses || [];
+    if (!bosses.length) continue;
+    let flagCol = -1;
+    for (let r = 0; r < level.rowsH; r++) {
+      const c = level.grid[r].indexOf('F');
+      if (c !== -1 && flagCol < 0) flagCol = c;
+    }
+    for (const b of bosses) {
+      if (b.homeX >= flagCol) {
+        ok = false;
+        console.log('    第 ' + (i + 1) + ' 关 Boss 在 ' + b.homeX + '，旗杆在 ' + flagCol + ' —— 玩家碰不到');
+      }
+    }
+    check(bosses.every((b) => b.homeX < flagCol),
+      '第 ' + (i + 1) + ' 关 ' + bosses.length + ' 个 Boss 都在旗杆前（旗杆 ' + flagCol + '）');
+  }
+  if (!ok) console.log('    ⚠️ 存在玩家无法到达的 Boss');
+}
+
+console.log('');
+console.log('[3c] 每个 Boss 都能被玩家接近（可达性）');
+{
+  for (let i = 0; i < LV.LEVELS.length; i++) {
+    const level = EN.loadLevel(LV.LEVELS[i], LV.LEVEL_SPECS[i]);
+    if (!level.bosses || !level.bosses.length) continue;
+    const p = EN.makePlayer(level, 1);
+    const near = level.bosses.map(() => false);
+    for (let f = 0; f < 60 * 180; f++) {
+      const inp = EN.makeAutoInput(level, p);
+      EN.stepWorld(level, [p], { 1: inp }, EN.TICK);
+      level.bosses.forEach((b, bi) => { if (Math.abs(b.x - p.x) < 6) near[bi] = true; });
+      if (p.state === 'done' || p.state === 'dead') break;
+    }
+    check(near.every(Boolean),
+      '第 ' + (i + 1) + ' 关机器人跑到了每个 Boss 附近（' + near.join(',') + '）');
+  }
+}
+
+console.log('');
 console.log('[4] 所有砖块都有支撑（无浮空砖）');
 {
   let allOk = true;

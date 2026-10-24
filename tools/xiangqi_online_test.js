@@ -254,8 +254,33 @@ function loadPage() {
     check(modals.length === 1, '重复的离开事件不再弹（_leaverHandled）');
   }
 
-  /* ============ [7] 同屏/人机悔棋仍是直接悔 ============ */
-  console.log('\n[7] 同屏/人机模式行为不变');
+  /* ============ [7] 终局后悔棋/重开：请求方必须回到对局 ============ */
+  console.log('\n[7] 终局后退回对局的恢复');
+  {
+    // 我是请求方（自己发过悔棋），对方同意后 room.winner 清 0。
+    // 我不写盘，只能靠 _onRoomUpdate 恢复，否则会一直卡在结算屏。
+    const xq = loadPage();
+    xq.data.mode = 'online';
+    xq.data.mySide = X.RED;
+    xq.data.stage = 'playing';
+    xq._roomId = 'r1';
+    xq._board = X.startBoard();
+    xq._history = [];
+    xq._prevWinner = 0;
+    // 先进入终局
+    xq._onRoomUpdate({ status: 'playing', winner: 2, boardStr: X.boardToStr(xq._board), turn: 2, moveCount: 5, chat: [] });
+    check(xq.data.stage === 'ended' && xq._over === true, '收到 winner 进入结算屏');
+    // 对方同意悔棋：winner 清 0（棋盘回退）
+    xq._onRoomUpdate({ status: 'playing', winner: 0, boardStr: X.boardToStr(xq._board), turn: 1, moveCount: 2, chat: [] });
+    check(xq.data.stage === 'playing' && xq._over === false && xq.data.winText === '',
+      'winner 归零后请求方自动回到对局（不再卡结算屏）');
+    // 重复更新不应反复触发
+    xq._onRoomUpdate({ status: 'playing', winner: 0, boardStr: X.boardToStr(xq._board), turn: 1, moveCount: 2, chat: [] });
+    check(xq.data.stage === 'playing', '后续同状态更新保持对局');
+  }
+
+  /* ============ [8] 同屏/人机悔棋仍是直接悔 ============ */
+  console.log('\n[8] 同屏/人机模式行为不变');
   {
     const xq = loadPage();
     xq.data.mode = 'ai';

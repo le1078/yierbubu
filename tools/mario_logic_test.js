@@ -451,10 +451,20 @@ console.log('\n[11] Boss');
   // 火球撞玩家致死（火球无 w/h，靠 stepFireballs 补默认值）
   const lv2 = EN.loadLevel(LV.LEVEL_4, LV.LEVEL_SPECS[3]);
   const p2 = mkPlayer(lv2);
-  lv2.fireballs = [{ x: p2.x, y: p2.y, vx: 0, vy: 0, life: 1 }];
+  // 放在玩家身体高度（脚底 14 / 头顶 13.1），不要放在正好贴地的 14：
+  // 贴地的火球会先触发「落地熄灭」，那是正确行为（见下一条断言）
+  lv2.fireballs = [{ x: p2.x, y: p2.y - 0.4, vx: 0, vy: 0, life: 1 }];
   p2.hurtT = 0; p2.big = false; p2.state = 'alive';
   EN.stepWorld(lv2, [p2], { 1: input() }, DT);
   check(p2.state === 'dying', '火球命中且未变大 → 死亡');
+
+  // 火球落地熄灭：不能穿地继续飞（否则会从站在地上的玩家身上穿过去）
+  const lv3 = EN.loadLevel(LV.LEVEL_4, LV.LEVEL_SPECS[3]);
+  const p3 = mkPlayer(lv3);
+  p3.x = 3; p3.y = 14;                       // 远离火球，避免提前撞死
+  lv3.fireballs = [{ x: 8, y: 13.98, vx: -3, vy: 2, life: 3, fromPlayer: false }];
+  EN.stepFireballs(lv3, DT);
+  check(lv3.fireballs.length === 0, 'Boss 火球落地即熄灭（不会穿地）');
 }
 
 /* ========== 12. 确定性（联机根基） ========== */
@@ -580,6 +590,107 @@ console.log("\n[15] 问号砖");
   EN.hitHeadBlock(lv, p);
   check(p.coins === coinsBefore && lv.items.length === itemsBefore, '已用过的砖再顶不出东西');
 }
+
+/* ========== 16. 无限生命 / 事件钩子 / 道具共享 ========== */
+console.log('\n[16] 无限生命 · 事件钩子 · 道具共享');
+{
+  // --- 无限生命：死亡不掉命、永不进入 dead ---
+  const lv = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
+  const p = EN.makePlayer(lv, 1);
+  p.infiniteLives = true;
+  const lives0 = p.lives;
+  for (let round = 0; round < 5; round++) {
+    p.hurtT = 0;   // 复活后有 1.2s 无敌，测试要显式清掉再撞
+    p.starT = 0;
+    EN.hurtPlayer(p);
+    check(p.state === 'dying', '第 ' + (round + 1) + ' 次受伤进入死亡动画');
+    // 等复活
+    for (let f = 0; f < 120 && p.state === 'dying'; f++) EN.stepPlayer(lv, p, EN.makeInput(), EN.TICK);
+  }
+  check(p.lives === lives0, '无限生命：连死 5 次仍剩 ' + p.lives + ' 条命');
+  check(p.state === 'alive', '无限生命：每次都能复活（不会 dead）');
+
+  // --- 对照组：正常模式会掉命 ---
+  const p2 = EN.makePlayer(lv, 1);
+  const l0 = p2.lives;
+  EN.hurtPlayer(p2);
+  for (let f = 0; f < 120 && p2.state === 'dying'; f++) EN.stepPlayer(lv, p2, EN.makeInput(), EN.TICK);
+  check(p2.lives === l0 - 1, '普通模式死亡扣 1 条命（' + l0 + '→' + p2.lives + '）');
+
+  // --- 事件钩子：受伤/死亡/金币都发事件 ---
+  const events = [];
+  lv.onEvent = (name) => events.push(name);
+  const p3 = EN.makePlayer(lv, 1);
+  EN.hurtPlayer(p3);
+  check(events.indexOf('die') !== -1, '死亡触发 die 事件（音效来源）');
+  events.length = 0;
+  p3.state = 'alive';
+  p3.form = EN.FORM.SUPER;
+  p3.hurtT = 0;
+  EN.hurtPlayer(p3);
+  check(events.indexOf('hurt') !== -1, '受伤触发 hurt 事件');
+  events.length = 0;
+  const c = lv.coins.find((x) => !x.taken);
+  p3.x = c.col + 0.5; p3.y = c.row + 0.5;
+  EN.resolveCoinHit(lv, p3);
+  check(events.indexOf('coin') !== -1, '吃金币触发 coin 事件');
+
+  // --- 事件钩子为空/level 为 null 不能崩 ---
+  let crashed = false;
+  const orphan = { state: 'alive', form: 0, starT: 0, hurtT: 0, combo: 0, x: 0, y: 0, vy: 0 };
+  try { EN.hurtPlayer(orphan); } catch (e) { crashed = true; }
+  check(!crashed, '玩家没有 level 引用时受伤不抛错（emit 判空）');
+
+  // --- 合作模式道具共享 ---
+  const lv2 = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
+  const a = EN.makePlayer(lv2, 1);
+  const b = EN.makePlayer(lv2, 2);
+  lv2._players = [a, b];
+  lv2.items.push({ id: 99, type: 'mushroom', x: a.x, y: a.y - 0.4, w: 0.7, h: 0.7, vx: 0, vy: 0, active: true, emerge: 0 });
+  EN.resolveItemHit(lv2, a);
+  check(a.form === EN.FORM.SUPER && b.form === EN.FORM.SUPER,
+    '合作共享：一人吃蘑菇两人都变大');
+
+  const lv3 = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
+  const c1 = EN.makePlayer(lv3, 1);
+  const c2 = EN.makePlayer(lv3, 2);
+  lv3._players = [c1, c2];
+  lv3.items.push({ id: 98, type: 'flower', x: c1.x, y: c1.y - 0.4, w: 0.7, h: 0.7, vx: 0, vy: 0, active: true, emerge: 0 });
+  EN.resolveItemHit(lv3, c1);
+  check(c1.form === EN.FORM.FIRE && c2.form === EN.FORM.FIRE,
+    '合作共享：一人吃花两人都能发火球');
+
+  // --- 星星不共享（共享就没挑战了）---
+  const lv4 = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
+  const s1 = EN.makePlayer(lv4, 1);
+  const s2 = EN.makePlayer(lv4, 2);
+  lv4._players = [s1, s2];
+  lv4.items.push({ id: 97, type: 'star', x: s1.x, y: s1.y, w: 0.7, h: 0.7, vx: 0, vy: 0, active: true, emerge: 0 });
+  EN.resolveItemHit(lv4, s1);
+  check(s1.starT > 0 && s2.starT === 0, '星星只作用于吃到的人（不共享）');
+
+  // --- 无限生命进联机序列化 ---
+  const lv5 = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
+  const w1 = EN.makePlayer(lv5, 1);
+  w1.infiniteLives = true;
+  check(EN.playerToWire(w1).il === 1, '无限生命写进联机协议（il=1）');
+  const w2 = EN.makePlayer(lv5, 2);
+  check(EN.playerToWire(w2).il === 0, '默认关闭（il=0）');
+
+  // --- 合作模式死锁：一人阵亡必须能判负 ---
+  const lv6 = EN.loadLevel(LV.LEVEL_1, LV.LEVEL_SPECS[0]);
+  const d1 = EN.makePlayer(lv6, 1);
+  const d2 = EN.makePlayer(lv6, 2);
+  d2.state = 'dead';
+  check(EN.isLevelCleared(lv6, [d1, d2]) === false, '一人阵亡时不算通关（符合预期）');
+  check(EN.isGameOver(lv6, [d1, d2]) === false, '一人阵亡时 isGameOver 仍为 false（所以需要下面的判据）');
+  check(EN.anyPlayerDead([d1, d2]) === true, 'anyPlayerDead 识别出阵亡者（合作模式据此判负，不会卡死）');
+  d1.state = 'done';
+  d2.state = 'done';
+  check(EN.anyPlayerDead([d1, d2]) === false && EN.isLevelCleared(lv6, [d1, d2]) === true,
+    '全员到达终点仍正常通关');
+}
+
 /* ========== 汇总 ========== */
 console.log('\n========================================');
 console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');

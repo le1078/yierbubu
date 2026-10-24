@@ -525,13 +525,14 @@ Page({
         // 对端不在 → 库写保持 _dbInterval（他是纯库端，全靠这条车道）
         self._peerOnRelay = !!online;
         if (bye) {
-          // 对方主动离开（离开房间按钮），等同云数据库路径的 leaver
+          // 对方主动离开（离开房间按钮）：和云数据库车道的 leaver 一样弹窗告知
           if (!self._leaverHandled && self.data.stage !== 'menu') {
             self._leaverHandled = true;
             self._over = true;
             self._stopLoop();
             self._closeRelay();
             self.setData({ stage: 'ended', winText: '对方已离开房间', statusText: '对局结束' });
+            self._notifyPeerLeft();
           }
           return;
         }
@@ -650,6 +651,23 @@ Page({
     roomkit.startWatch(this, COLLECTION, this._roomId, (room) => this._onRoomUpdate(room));
   },
 
+  // 对方离开的统一提示（中继/云数据库两条车道共用）
+  _notifyPeerLeft() {
+    if (this._destroyed) return;
+    wx.showModal({
+      title: '对方已离开',
+      content: '对局已结束，回到大厅吧',
+      showCancel: false,
+      confirmText: '回到大厅',
+      success: () => {
+        if (this._destroyed) return;
+        this._roomId = null;
+        this._resetCanvas();
+        this.setData({ stage: 'menu' });
+      }
+    });
+  },
+
   // 竞速终局统一入口：云数据库路径（房间文档 winner 字段）和
   // 中继路径（end 消息）都走这里。reloaded = 本帧刚好换关，
   // 此时 winner 是上一局残留，不能当本局终局。
@@ -681,18 +699,22 @@ Page({
           this._over = false;
           this._startLoop();
           this._startInputPoll();   // host 轮询 guest 的输入（云数据库兜底车道）
+          // 等待期间中继若放弃过，开局立刻重连（不用等 10s 的复活周期）
+          if (!this._relay) this._startRelay();
           this._doSync();           // 开局立刻写一次世界
         });
       }
       return;
     }
 
-    // 对方离开
+    // 对方离开（云数据库车道）
     if (room.status === 'ended' && room.leaver && room.leaver !== me && !this._leaverHandled) {
       this._leaverHandled = true;
       this._stopLoop();
+      this._closeRelay();
       roomkit.closeWatch(this);
       this.setData({ stage: 'ended', winText: '对方已离开房间', statusText: '对局结束' });
+      this._notifyPeerLeft();
       return;
     }
 
@@ -733,7 +755,11 @@ Page({
     if (!this._level || !w) return false;
     // epoch：host 每次建房/换关/重开时 +1。只比 w.level 不够 ——
     // 同一关重开时 level 不变，guest 端被消灭的敌人/吃掉的金币会残留
-    const epMismatch = w.ep !== undefined && w.ep !== (this._worldEpoch || 0);
+    const curEp = this._worldEpoch || 0;
+    // 代际只增不减：迟到的旧代际包（慢车道/重连补发）必须丢弃，
+    // 否则会把已经进入新关的 guest 反向重载回上一局
+    if (w.ep !== undefined && w.ep < curEp) return false;
+    const epMismatch = w.ep !== undefined && w.ep !== curEp;
     if (w.ep !== undefined) this._worldEpoch = w.ep;
     const lvChanged = w.level !== undefined && w.level !== this.data.level;
     if (!initial && (lvChanged || epMismatch)) {
@@ -781,6 +807,8 @@ Page({
       me.lives = myW.lv;
       me.coins = myW.cn;
       me.score = myW.sc || 0;
+      // 无限生命跟 host 权威（guest 本地开关否则无效：lives 每帧被覆盖）
+      if (myW.il !== undefined) me.infiniteLives = !!myW.il;
       // 形态必须始终同步（不能只在拉回时同步，否则吃蘑菇对方看不到）。
       // 用 setForm 而不仅是赋值：它同时更新碰撞盒高度 h。
       const myForm = (myW.fm !== undefined) ? myW.fm : 0;
@@ -799,6 +827,8 @@ Page({
       opp.lives = oppW.lv;
       opp.coins = oppW.cn;
       if (oppW.sc !== undefined) opp.score = oppW.sc;
+      // 对端的无限生命标记也照抄（本地预测端不该把对端判成死亡）
+      if (oppW.il !== undefined) opp.infiniteLives = !!oppW.il;
       // 过关用时也要同步：竞速模式 raceWinner 靠它判定
       if (oppW.ft !== undefined) opp.finishT = oppW.ft;
       if (oppW.f !== undefined) opp.face = oppW.f;
@@ -857,7 +887,12 @@ Page({
     const i2 = this._inputs[2];
     if (!i2) return;
     // 双车道去重：同一条输入会从中继（快）和云数据库（慢）各到一次，
-    // 慢车道的旧包也可能晚于快车道的新包到达 —— 只应用更新的快照
+    // 慢车道的旧包也可能晚于快车道的新包到达 —— 只应用更新的快照。
+    // 关卡代际变化时时间戳会归零，必须先重置基线再比较。
+    if (typeof inp.ep === 'number' && inp.ep !== this._lastInputEpoch) {
+      this._lastInputEpoch = inp.ep;
+      this._lastInputT = -1;
+    }
     if (typeof inp.t === 'number') {
       if (inp.t <= (this._lastInputT === undefined ? -1 : this._lastInputT)) return;
       this._lastInputT = inp.t;
@@ -1150,10 +1185,21 @@ Page({
       }
       return;
     }
-    if (EN.isGameOver(this._level, this._players)) {
+    // 合作模式：有人命用完就判负。只靠 isGameOver（要全员阵亡）会死锁：
+    // 过关要全员 done、gameOver 要全员 dead，「一人活着+一人阵亡」两边
+    // 都不成立 —— 对局永久卡住（实测确认）。
+    // 竞速模式不受影响：另一方还能跑到终点。
+    if (EN.isGameOver(this._level, this._players) ||
+        (this.data.coop && EN.anyPlayerDead(this._players))) {
       this._over = true;
       this._stopLoop();
-      this.setData({ stage: 'ended', winText: '💀 游戏结束', statusText: '命用完了' });
+      const coopDeath = this.data.coop && EN.anyPlayerDead(this._players) &&
+        !EN.isGameOver(this._level, this._players);
+      this.setData({
+        stage: 'ended',
+        winText: coopDeath ? '💀 队友倒下了，本关失败' : '💀 游戏结束',
+        statusText: coopDeath ? '有人的命用完了' : '命用完了'
+      });
     }
   },
 
@@ -1201,6 +1247,10 @@ Page({
         if (!this._edgeLatch) this._edgeLatch = { u: false, d: false };
         const input = {
           t: Math.round(this._level.time * 1000),
+          // 关卡代际：换关/重开后本端 level.time 归零，host 侧的
+          // 「只应用更新的输入」判据必须跟着重置，否则会一直丢弃
+          // 新输入直到时间追回旧值（最长几十秒的假死）
+          ep: this._worldEpoch || 0,
           keys: {
             l: i2.left ? 1 : 0, r: i2.right ? 1 : 0,
             u: (i2.up || this._edgeLatch.u) ? 1 : 0,
@@ -1243,10 +1293,11 @@ Page({
       log.e('[mario] db sync fail', err && (err.errCode || err.errMsg), err);
       this._dbFails = (this._dbFails || 0) + 1;
       this._lastDbErr = String(err && (err.errCode || err.errMsg) || '').slice(0, 60);
-      // 兜底车道写失败（多半是限流）：独立加倍退避（400→800→…→3200 封顶）。
+      // 兜底车道写失败（多半是限流）：独立加倍退避
+      // 400 → 800 → 1600（C.MARIO_SYNC_MIN_MS 封顶）
       // 中继在跑时静默处理，不弹 toast（快车道上的对局不受影响）。
       const cur = this._dbInterval || C.MARIO_SYNC_MS;
-      this._dbInterval = Math.min(3200, cur * 2);
+      this._dbInterval = Math.min(C.MARIO_SYNC_MIN_MS, cur * 2);
       if (this._lastSyncOk) {
         this._lastSyncOk = false;
         if (!relayUp) wx.showToast({ title: '网络不稳定，已降低同步频率', icon: 'none' });

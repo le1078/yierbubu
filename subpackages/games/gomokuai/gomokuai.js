@@ -176,6 +176,7 @@ Page({
       this._roomId = res.roomId;
       // 复位上一局残留：对方离开标记、上一局的胜利连线/最后一手
       this._leaverHandled = false;
+      this._prevWinner = 0;   // 终局→进行中的转换基线
       this._winLine = null;
       this._lastMove = null;
       this._board = core.emptyBoard();
@@ -216,6 +217,7 @@ Page({
       this._history = room.history || [];
       this._over = false;
       this._leaverHandled = false;
+      this._prevWinner = 0;   // 终局→进行中的转换基线
       this._winLine = null;
       this._boardKey = room.boardStr || '';
       this._resetCanvas();
@@ -253,6 +255,7 @@ Page({
         this._history = room.history || [];
         this._over = false;
         this._leaverHandled = false;
+        this._prevWinner = 0;   // 终局→进行中的转换基线
         this._winLine = null;
         this._boardKey = room.boardStr || '';
         this._resetCanvas();
@@ -278,6 +281,7 @@ Page({
         showCancel: false,
         confirmText: '回到大厅',
         success: () => {
+          if (this._destroyed) return;
           this._roomId = null;
           this._resetCanvas();
           this.setData({ stage: 'menu', chatList: [] });
@@ -296,6 +300,7 @@ Page({
           confirmText: '同意',
           cancelText: '拒绝',
           success: (res) => {
+            if (this._destroyed) return;
             if (this.data.stage !== 'playing') return;
             this.respondUndo({ currentTarget: { dataset: { agree: res.confirm ? '1' : '0' } } });
           }
@@ -322,6 +327,7 @@ Page({
           confirmText: '同意',
           cancelText: '拒绝',
           success: (res) => {
+            if (this._destroyed) return;
             this.respondRematch({ currentTarget: { dataset: { agree: res.confirm ? '1' : '0' } } });
           }
         });
@@ -364,8 +370,20 @@ Page({
       patch.winText = room.winner === 3 ? '🤝 平局' : (room.winner === me ? '🎉 你赢了！' : '😢 对方获胜');
       patch.statusText = '对局结束';
     } else {
+      // 终局后退回「进行中」：对方同意悔棋/再来一局会把 winner 清 0。
+      // 请求方只靠这里恢复，否则一直卡在结算屏（棋盘已复位却还盖着浮层）
+      if (this.data.stage === 'ended' && (this._prevWinner || 0) !== 0) {
+        this._over = false;
+        this._winLine = null;
+        this._leaverHandled = false;
+        this._prevWinner = 0;   // 终局→进行中的转换基线
+        patch.stage = 'playing';
+        patch.winText = '';
+        patch.lastMove = this._lastMove;
+      }
       patch.statusText = room.turn === me ? '轮到你落子' : '等待对方落子…';
     }
+    this._prevWinner = room.winner || 0;
     this.setData(patch, () => { if (changed) this._drawBoard(); });
     const merged = roomkit.mergeChat(this.data.chatList, room.chat || [], me);
     if (merged.list.length !== this.data.chatList.length || merged.addedNew) {
@@ -727,6 +745,7 @@ Page({
         this._winLine = null;
         this._over = false;
         this._leaverHandled = false;
+        this._prevWinner = 0;   // 终局→进行中的转换基线
         this.setData({
           stage: 'playing',
           turn: 1,

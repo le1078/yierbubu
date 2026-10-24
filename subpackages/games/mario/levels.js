@@ -794,19 +794,19 @@ const LEVEL_SPECS = [
     "items": [],
     "platforms": [],
     "checkpoints": [
-      { "col": 50, "row": 14 }
+      { "col": 44, "row": 14 }
     ],
     "warps": [],
     "blockItems": {},
     "bonusStart": 100,
     "boss": {
-      "col": 74,
-      "row": 11,
+      "col": 84,
+      "row": 12.6,
       "hp": 3
     },
     "boss2": {
-      "col": 108,
-      "row": 11,
+      "col": 50,
+      "row": 12.6,
       "hp": 4
     }
   },

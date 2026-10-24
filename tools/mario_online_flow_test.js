@@ -17,11 +17,12 @@ let updateError = null;
 let inputDocRaw = null;
 global.Page = function (def) { capturedPage = def; };
 global.getApp = function () { return { globalData: {} }; };
+const modalCalls = [];
 global.wx = {
   showToast: function () {},
   showLoading: function () {},
   hideLoading: function () {},
-  showModal: function () {},
+  showModal: function (o) { modalCalls.push(o || {}); if (o && o.success) o.success({ confirm: true }); },
   createSelectorQuery: function () {
     const q = { in: function () { return q; }, select: function () { return q; },
       fields: function () { return q; }, exec: function (cb) { if (cb) cb([]); } };
@@ -334,6 +335,64 @@ function setupWorld(page) {
     host._resetRoomEndFlags();
     check(lastUpdate && lastUpdate.winner === 0 && lastUpdate.pause === 0,
       '重开/下一关清掉 winner/pause 残留');
+  }
+
+  console.log('\n[7] 代际竞态：旧包不能反向重载 / 换关后输入基线重置');
+  {
+    const guest = loadPage();
+    setupWorld(guest);
+    guest.data.mode = 'online';
+    guest.data.mySeat = 2;
+    guest.data.stage = 'playing';
+    guest._worldEpoch = 2;
+    guest._stopLoop = function () {};
+    guest._startLoop = function () {};
+
+    const world = (ep, level, t) => {
+      const o = EN.worldToWire(guest._level, guest._players);
+      o.ep = ep; o.level = level; o.t = t;
+      return o;
+    };
+    // 迟到的旧代际包（慢车道/重连补发）：不能把已进新关的 guest 拖回去
+    const lvBefore = guest.data.level;
+    guest._applyWorld(world(1, 0, 99), false);
+    check(guest.data.level === lvBefore && guest._worldEpoch === 2,
+      '旧代际世界包被丢弃（不会反向重载关卡）');
+    // 新代际正常重载
+    guest._applyWorld(world(3, 1, 0), false);
+    check(guest.data.level === 1 && guest._worldEpoch === 3,
+      '新代际世界包正常重载并推进 epoch');
+
+    // 换关后 level.time 归零：输入去重基线必须重置，否则新输入被全丢
+    guest._lastInputT = 30000;
+    guest._lastInputEpoch = 2;
+    guest._inputs[2].right = false;
+    guest._applyInput2({ t: 100, ep: 3, keys: { l: 0, r: 1, u: 0, d: 0, rn: 0 }, got: [] });
+    check(guest._inputs[2].right === true,
+      '换关后低时间戳输入正常应用（基线随代际重置）');
+    // 同一代际内的旧包仍要去重
+    guest._inputs[2].right = false;
+    guest._applyInput2({ t: 50, ep: 3, keys: { l: 0, r: 1, u: 0, d: 0, rn: 0 }, got: [] });
+    check(guest._inputs[2].right === false, '同代际内更旧的输入仍被去重');
+  }
+
+  console.log('\n[8] 对方离开必须弹窗（不是只改文字）');
+  {
+    const guest = loadPage();
+    setupWorld(guest);
+    guest.data.mode = 'online';
+    guest.data.mySeat = 2;
+    guest.data.stage = 'playing';
+    guest._stopLoop = function () {};
+    guest._closeRelay = function () {};
+    modalCalls.length = 0;
+    guest._onRoomUpdate({ status: 'ended', leaver: 1, world: '', turn: 1, winner: 0, pause: 0 });
+    check(modalCalls.length === 1 && modalCalls[0].title === '对方已离开',
+      '云数据库车道：对方离开弹窗');
+    check(guest.data.stage === 'menu', '确认后回大厅');
+    // 重复事件不再弹
+    guest._onRoomUpdate({ status: 'ended', leaver: 1, world: '', turn: 1, winner: 0, pause: 0 });
+    check(modalCalls.length === 1, '重复的离开事件不再弹');
   }
 
   console.log('\n========================================');

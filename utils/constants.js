@@ -58,11 +58,8 @@ module.exports = {
   // 云数据库单文档持续写入 >5 次/秒容易被限流，所以每人 2.5Hz（合计 5Hz）。
   MARIO_SYNC_MS: 400,                 // 每人 2.5Hz（双人合计 5Hz）
   MARIO_SYNC_SLOW_MS: 800,            // 写失败降频：每人 1.25Hz
-  MARIO_SYNC_MIN_MS: 1600,            // 再失败降频：每人 0.625Hz
-  MARIO_INTERP_MS: 160,               // guest 端对 host 实体的插值窗口
+  MARIO_SYNC_MIN_MS: 1600,            // 再失败降频（也是退避上限）：每人 0.625Hz
   MARIO_LIVES: 3,                     // 每人命数
-  MARIO_LEVEL_COUNT: 5,               // 关卡数
-  MARIO_BOSS_HITS: 3,                 // Boss 需踩头次数
   MARIO_DEATH_RESPAWN_MS: 900,        // 死亡到重生的间隔
 
   // 自建 WebSocket 实时中继（server/mario-relay/，部署在你的云机器上）。

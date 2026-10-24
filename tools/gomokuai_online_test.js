@@ -218,8 +218,28 @@ function loadPage() {
     check(modals.length === 1, '重复离开事件不再弹');
   }
 
-  /* ===== [6] 人机模式悔棋仍是直接悔 ===== */
-  console.log('\n[6] 人机模式行为不变');
+  /* ===== [6] 终局后悔棋/重开：请求方必须回到对局 ===== */
+  console.log('\n[6] 终局后退回对局的恢复');
+  {
+    const g = loadPage();
+    g.data.mode = 'online';
+    g.data.myColor = 1;
+    g.data.stage = 'playing';
+    g._roomId = 'r1';
+    g._board = core.emptyBoard();
+    g._history = [];
+    g._prevWinner = 0;
+    g._onRoomUpdate({ status: 'playing', winner: 2, boardStr: JSON.stringify(g._board), turn: 2, moveCount: 9, chat: [] });
+    check(g.data.stage === 'ended' && g._over === true, '收到 winner 进入结算屏');
+    // 对方同意悔棋/再来一局：winner 清 0
+    g._onRoomUpdate({ status: 'playing', winner: 0, boardStr: JSON.stringify(g._board), turn: 1, moveCount: 6, chat: [] });
+    check(g.data.stage === 'playing' && g._over === false && g.data.winText === '',
+      'winner 归零后请求方自动回到对局');
+    check(g._winLine === null, '胜利连线清除（不会画在新棋盘上）');
+  }
+
+  /* ===== [7] 人机模式悔棋仍是直接悔 ===== */
+  console.log('\n[7] 人机模式行为不变');
   {
     const g = loadPage();
     g.data.mode = 'ai';

@@ -235,6 +235,7 @@ Page({
       this._noCapture = 0;
       this._positions = {};
       this._leaverHandled = false;
+      this._prevWinner = 0;   // 终局→进行中的转换基线
       this.setData({ stage: 'waiting', roomNo: res.roomNo, mySide: X.RED });
       this._startWatch();
     } catch (err) {
@@ -268,6 +269,7 @@ Page({
       this._noCapture = 0;
       this._positions = {};
       this._leaverHandled = false;
+      this._prevWinner = 0;   // 终局→进行中的转换基线
       this._notePosition();
       this._resetCanvas();
       this.setData({
@@ -308,6 +310,7 @@ Page({
         this._noCapture = 0;
         this._positions = {};
         this._leaverHandled = false;
+        this._prevWinner = 0;   // 终局→进行中的转换基线
         this._notePosition();
         this._resetCanvas();
         this.setData({
@@ -365,8 +368,19 @@ Page({
       patch.winText = room.winner === 3 ? '🤝 和棋' : (room.winner === me ? '🎉 你赢了！' : '😢 对方获胜');
       patch.statusText = '对局结束';
     } else {
+      // 终局后退回「进行中」：对方同意悔棋/再来一局会把 winner 清 0。
+      // 请求方自己不发请求也不写盘，只靠这里恢复，否则会一直卡在结算屏
+      // （棋盘已经恢复却还盖着「对局结束」浮层，再点重开就重复请求）
+      if (this.data.stage === 'ended' && (this._prevWinner || 0) !== 0) {
+        this._over = false;
+        this._leaverHandled = false;
+        this._prevWinner = 0;   // 终局→进行中的转换基线
+        patch.stage = 'playing';
+        patch.winText = '';
+      }
       patch.statusText = room.turn === me ? '轮到你走棋' : '等待对方走棋…';
     }
+    this._prevWinner = room.winner || 0;
     patch.selectedText = '';
     this.setData(patch, () => { if (changed) this._drawBoard(); });
 
@@ -382,7 +396,8 @@ Page({
           confirmText: '同意',
           cancelText: '拒绝',
           success: (res) => {
-            // 弹窗期间局面可能已变（对方离开/重开），/respond 前重查状态
+            // 弹窗期间页面可能已卸载 / 局面已变（对方离开、重开）
+            if (this._destroyed) return;
             if (this.data.stage !== 'playing') return;
             this.respondUndo({ currentTarget: { dataset: { agree: res.confirm ? '1' : '0' } } });
           }
@@ -412,6 +427,7 @@ Page({
           confirmText: '同意',
           cancelText: '拒绝',
           success: (res) => {
+            if (this._destroyed) return;
             this.respondRematch({ currentTarget: { dataset: { agree: res.confirm ? '1' : '0' } } });
           }
         });
@@ -774,6 +790,7 @@ Page({
         this._positions = {};
         this._selected = null;
         this._leaverHandled = false;
+        this._prevWinner = 0;   // 终局→进行中的转换基线
         const backTurn = X.RED;
         this.setData({
           stage: 'playing',
