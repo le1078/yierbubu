@@ -368,6 +368,9 @@ function mergeChat(existing, cloud, me) {
     });
     if (!addedNew) addedNew = m;
   }
+  // 本地列表也要封顶：云端会截断到 CHAT_MAX，但 existing 只增不减，
+  // 一局聊上几百条后聊天面板会渲染整段历史（越聊越卡）。
+  if (merged.length > C.CHAT_MAX) merged.splice(0, merged.length - C.CHAT_MAX);
   return { list: merged, addedNew };
 }
 

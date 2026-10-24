@@ -615,6 +615,37 @@ Page({
       this._boardKey = X.boardToStr(this._board);
     } catch (err) {
       log.e('[xiangqi] sync fail', err);
+      // 写失败必须回滚本地这一手：本地棋盘已经落子，云端没有 ——
+      // 之后双方每走一步都在错误局面上继续，再也对不上（云端限流/
+      // 弱网时很容易发生）。只在「最后一手确实是这步」时回滚，
+      // 避免用户已经悔棋/重开后再去动已经变了的棋盘。
+      const last = this._history[this._history.length - 1];
+      const rollback = !!last && last.from === mv.from && last.to === mv.to;
+      if (rollback) {
+        X.undoMove(this._board, mv, last.captured);
+        this._history.pop();
+        const prevLast = this._history.length
+          ? this._history[this._history.length - 1] : null;
+        this._lastMove = prevLast
+          ? { from: prevLast.from, to: prevLast.to }
+          : null;
+        // 和悔棋一致：限着/重复局面统计整体重置（粗粒度但两端一致）
+        this._noCapture = 0;
+        this._positions = {};
+        this._selected = null;
+        this._over = false;
+        if (!this._destroyed) {
+          const prevTurn = (moveCount % 2 === 1) ? X.RED : X.BLACK;
+          this.setData({
+            stage: 'playing',
+            turn: prevTurn,
+            moveCount: this._history.length,
+            winText: '',
+            selectedText: '',
+            statusText: '同步失败，请重新走这一步'
+          }, () => this._drawBoard());
+        }
+      }
       wx.showToast({ title: '同步失败，请重试', icon: 'none' });
     }
   },

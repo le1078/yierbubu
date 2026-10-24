@@ -16,6 +16,7 @@ const modals = [];
 global.Page = function (def) { capturedPage = def; };
 global.getApp = function () { return { globalData: {} }; };
 let dbUpdates = [];
+let failUpdate = false;   // 模拟云端写失败（限流/弱网）
 global.wx = {
   showToast: function (o) { toasts.push(o && o.title); },
   showModal: function (o) { modals.push(o); if (o && o.success) o.success({ confirm: true }); },
@@ -29,7 +30,11 @@ global.wx = {
           return {
             doc() {
               return {
-                update(o) { dbUpdates.push(o && o.data); return Promise.resolve({}); }
+                update(o) {
+                  if (failUpdate) return Promise.reject(new Error('write throttled'));
+                  dbUpdates.push(o && o.data);
+                  return Promise.resolve({});
+                }
               };
             }
           };
@@ -295,6 +300,53 @@ function loadPage() {
     xq.undo();
     check(xq._history.length === 0 && dbUpdates.length === 0,
       '人机模式悔棋直接本地生效（不走云确认）');
+  }
+
+  /* ============ [9] 联机写库失败：本地必须回滚 ============ */
+  console.log('\n[9] 联机写库失败时回滚本地这一手（否则与云端永久分叉）');
+  {
+    failUpdate = true;
+    toasts.length = 0;
+    const p = loadPage();
+    p.data.mode = 'online';
+    p.data.mySide = X.RED;
+    p.data.stage = 'playing';
+    p.data.turn = X.RED;
+    p._roomId = 'r1';
+    p._board = X.startBoard();
+    p._history = [];
+    p._lastMove = null;
+    p._over = false;
+    // 测试里 _notePosition 被打了桩，真实页面由它在开局时初始化
+    p._positions = {};
+    p._noCapture = 0;
+    const before = X.boardToStr(p._board);
+    const mv = { from: X.idx(7, 1), to: X.idx(7, 4) };   // 炮二平五
+    p._doMove(mv);
+    await new Promise(function (r) { setTimeout(r, 0); });
+    check(X.boardToStr(p._board) === before, '写库失败后棋盘回到走子前');
+    check(p._history.length === 0, 'history 已回滚（不会留下幽灵着法）');
+    check(p.data.turn === X.RED, '轮次回到走子方');
+    check(p._over === false && p.data.stage === 'playing', '对局仍在进行，可以重走');
+    check(toasts.indexOf('同步失败，请重试') !== -1, '明确提示同步失败');
+    failUpdate = false;
+
+    // 写成功时不回滚
+    const ok = loadPage();
+    ok.data.mode = 'online';
+    ok.data.mySide = X.RED;
+    ok.data.stage = 'playing';
+    ok.data.turn = X.RED;
+    ok._roomId = 'r1';
+    ok._board = X.startBoard();
+    ok._history = [];
+    ok._over = false;
+    ok._positions = {};
+    ok._noCapture = 0;
+    const before2 = X.boardToStr(ok._board);
+    ok._doMove(mv);
+    await new Promise(function (r) { setTimeout(r, 0); });
+    check(X.boardToStr(ok._board) !== before2 && ok._history.length === 1, '写库成功时正常落子');
   }
 
   console.log('\n========================================');

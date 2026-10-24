@@ -184,6 +184,10 @@ Page({
 
   backToMenu() {
     this._stopAIThink();
+    // 防御：菜单/大厅理论上没有房间，但万一是从联机流程退回来的，
+    // 不关订阅会让旧房间的推送继续改已回到菜单的页面（还会持续读库）
+    roomkit.closeWatch(this);
+    this._roomId = null;
     this._resetCanvas();
     this.setData({ stage: 'menu' });
   },

@@ -205,6 +205,28 @@ function wait(ms) {
     check(delay === true, '观察期后即使 watch 沉默也降为 2s 安全网');
   }
 
+  console.log('\n[7] 聊天合并：去重 / pending 保留 / 本地列表封顶');
+  {
+    const C = require(path.join(__dirname, '..', 'utils/constants.js'));
+    const existing = [];
+    for (let i = 0; i < 150; i++) {
+      existing.push({ from: 1, type: 'text', content: 'm' + i, ts: 1000 + i, key: '1_' + (1000 + i) });
+    }
+    const cloud = existing.slice(0, 100).map(function (m) {
+      return { from: m.from, type: m.type, content: m.content, ts: m.ts };
+    });
+    const r = roomkit.mergeChat(existing, cloud, 2);
+    check(r.list.length === C.CHAT_MAX, '本地聊天列表封顶到 CHAT_MAX（实际 ' + r.list.length + '）');
+    check(r.list[r.list.length - 1].content === 'm149', '封顶后保留最新消息');
+
+    const pending = [{ from: 1, type: 'text', content: 'hi', ts: 9999, pending: true, key: '1_9999_p' }];
+    const r2 = roomkit.mergeChat(pending, [{ from: 1, type: 'text', content: 'old', ts: 1000 }], 1);
+    check(r2.list.length === 2 && r2.list.some(function (m) { return m.pending; }),
+      '云端快照里还没有它时，pending 气泡不被冲掉');
+    const r3 = roomkit.mergeChat(pending, [{ from: 1, type: 'text', content: 'hi', ts: 9999 }], 1);
+    check(r3.list.length === 1 && !r3.list[0].pending, '云端已确认后不重复显示');
+  }
+
   console.log('\n========================================');
   console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
   if (fail > 0) {
