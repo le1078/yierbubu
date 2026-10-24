@@ -728,7 +728,7 @@ const LEVEL_SPECS = [
       { "col": 40, "row": 12 },
       { "col": 42, "row": 12 },
       { "col": 60, "row": 12 },
-      { "col": 62, "row": 12 },
+      { "col": 64, "row": 12 },
       { "col": 80, "row": 12 },
       { "col": 82, "row": 12 }
     ],
@@ -748,7 +748,11 @@ const LEVEL_SPECS = [
       { "col": 50, "row": 14 }
     ],
     "warps": [
-      { "col": 130, "width": 2, "toX": 31.5, "toY": 14, "label": "main" }
+      // 入口：踩在 col 30 的管道口按 ↓ 进地下金币房（与 1-2 一致）
+      { "col": 30, "width": 2, "toX": 103.5, "toY": 14, "label": "bonus" },
+      // 出口：金币房右端管道回主路。落点必须是空地——
+      // 之前写的 31.5 正落在 col 30-31 的管道里，出来会被卡死在墙内
+      { "col": 130, "width": 2, "toX": 33.5, "toY": 14, "label": "main" }
     ],
     "blockItems": {
       "9_121": "star",

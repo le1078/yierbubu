@@ -63,7 +63,7 @@ const ORDER = [
   'xiangqi_logic_test.js', 'xiangqi_ai_test.js', 'xiangqi_online_test.js',
   // 马里奥
   'mario_logic_test.js', 'mario_mechanics_test.js', 'mario_features_test.js',
-  'mario_level_test.js', 'mario_render_test.js', 'mario_sync_test.js',
+  'mario_level_test.js', 'level_data_check.js', 'mario_render_test.js', 'mario_sync_test.js',
   'mario_online_flow_test.js', 'mario_page_check.js', 'mario_relay_test.js',
   // 跨游戏页面流程
   'game_page_flow_test.js',
