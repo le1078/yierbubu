@@ -83,6 +83,46 @@ for (let i = 0; i < LV.LEVELS.length; i++) {
   }
   check(badWarp === 0, tag + ' 管道传送目标不在墙里（异常 ' + badWarp + ' 个）');
 
+  // blockItems：只有问号砖和隐藏砖会去查这张表（engine.hitHeadBlock 的分支）。
+  // 指向空格/普通砖 = 声明的道具永远不出，且没有任何报错。
+  let badBlockItem = 0;
+  const blockKeys = Object.keys(spec.blockItems || {});
+  for (const key of blockKeys) {
+    const pair = key.split('_');
+    const r = Number(pair[0]), c = Number(pair[1]);
+    const t = inGrid(c, r) ? lv.grid[r][c] : null;
+    const usable = (t === T.QUESTION || t === T.HIDDEN);
+    if (!usable) {
+      badBlockItem++;
+      console.log('      ' + tag + ' blockItems ' + key + ' 指向 ' + JSON.stringify(t) + '（道具不会出现）');
+    }
+  }
+  check(badBlockItem === 0, tag + ' blockItems 都指向问号/隐藏砖（共 ' + blockKeys.length + ' 项，异常 ' + badBlockItem + '）');
+
+  // 功能性验证：真的顶一下，看声明的道具是否出现
+  let spawnFail = 0;
+  for (const key of blockKeys) {
+    const pair = key.split('_');
+    const r = Number(pair[0]), c = Number(pair[1]);
+    const want = spec.blockItems[key];
+    if (!inGrid(c, r)) continue;
+    const t = lv.grid[r][c];
+    if (t !== T.QUESTION && t !== T.HIDDEN) continue;
+    const probe = EN.loadLevel(LV.LEVELS[i], LV.LEVEL_SPECS[i]);
+    const p = EN.makePlayer(probe, 1);
+    // 站到砖块正下方，抬头位置正好是砖底
+    p.x = c + 0.5;
+    p.y = r + 1;
+    p.h = 0.9;
+    EN.hitHeadBlock(probe, p);
+    const got = (probe.items || []).filter(function (it) { return it.type === want; });
+    if (!got.length) {
+      spawnFail++;
+      console.log('      ' + tag + ' 顶 ' + key + ' 未产出 ' + want);
+    }
+  }
+  check(spawnFail === 0, tag + ' 声明的道具都能被顶出来（异常 ' + spawnFail + '）');
+
   // Boss：在格内、且在旗杆之前（到不了等于没做）
   let flagCol = -1;
   for (let r = 0; r < lv.rowsH && flagCol < 0; r++) {

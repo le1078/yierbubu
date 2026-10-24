@@ -53,7 +53,7 @@ const ORDER = [
   'js_method_check.js', 'wx_require_check.js', 'wx_compat_check.js', 'wx_canvas_check.js', 'wx_draw_check.js', 'package_size_check.js', 'wxss_class_check.js', 'assets_check.js',
   // 主包
   'life_check.js', 'life_logic_test.js', 'trash_flow_test.js', 'cloudstore_load_test.js',
-  'cloudstore_real_test.js', 'pages_logic_test.js',
+  'cloudstore_real_test.js', 'cloudstore_chaos_test.js', 'pages_logic_test.js',
   'shengxiao_logic_test.js',
   // 联机基础设施
   'join_arg_test.js', 'roomkit_join_test.js', 'roomkit_sync_test.js',

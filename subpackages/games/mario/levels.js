@@ -248,7 +248,7 @@ const LEVEL_SPECS = [
       }
     ],
     "blockItems": {
-      "10_53": "oneup",
+      "10_34": "oneup",
       "9_121": "star",
       "11_112": "oneup"
     },
@@ -363,7 +363,7 @@ const LEVEL_SPECS = [
       }
     ],
     "blockItems": {
-      "10_34": "oneup",
+      "10_53": "oneup",
       "9_121": "star",
       "11_112": "oneup"
     },
