@@ -229,6 +229,17 @@ function wait(ms) {
       '云端快照里还没有它时，pending 气泡不被冲掉');
     const r3 = roomkit.mergeChat(pending, [{ from: 1, type: 'text', content: 'hi', ts: 9999 }], 1);
     check(r3.list.length === 1 && !r3.list[0].pending, '云端已确认后不重复显示');
+
+    // 脏数据：chat/本地列表不是数组时不能抛，也不能生成假消息
+    let crash = false;
+    let bad = null;
+    try {
+      bad = roomkit.mergeChat(null, 'not-an-array', 1);
+      bad = roomkit.mergeChat(null, { a: 1 }, 1);
+      bad = roomkit.mergeChat('oops', [], 1);
+    } catch (e) { crash = true; }
+    check(!crash, 'chat 脏数据不抛异常');
+    check(bad && bad.list.length === 0, 'chat 脏数据不会生成假气泡');
   }
 
   console.log('\n[8] 关闭订阅时正卡在云读上：恢复后不能自己续期');

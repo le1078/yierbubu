@@ -505,8 +505,9 @@ Page({
 
     // 聊天 & 表情
     // 本地可能有 pending 乐观消息，不能简单用长度比较；按 from+ts 去重
-    const chat = room.chat || [];
-    const existing = this.data.chatList || [];
+    // chat 必须是数组：脏数据（字符串/对象）会让 .map 直接抛，整个同步回调中断
+    const chat = Array.isArray(room.chat) ? room.chat : [];
+    const existing = Array.isArray(this.data.chatList) ? this.data.chatList : [];
     const seen = new Set(existing.map(m => m.from + '_' + m.ts));
     const cloudKeys = new Set(chat.map(m => m.from + '_' + m.ts));
     const merged = existing.filter(m => !m.pending || !cloudKeys.has(m.from + '_' + m.ts));

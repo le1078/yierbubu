@@ -346,6 +346,10 @@ async function pushChat(page, collection, msg) {
 // pending 气泡在云端快照尚未包含它时保留（否则发出到回读之间会闪没）；
 // 云端已包含的 pending 丢弃，由下面的循环按云端数据补回。
 function mergeChat(existing, cloud, me) {
+  // 云端 chat 是数组；旧文档/脏数据可能不是（字符串会让下面的循环按字符
+  // 迭代，生成一堆 from=undefined 的假消息）。统一兜底成空数组。
+  if (!Array.isArray(cloud)) cloud = [];
+  if (!Array.isArray(existing)) existing = [];
   const cloudKeys = {};
   for (let i = 0; i < cloud.length; i++) cloudKeys[cloud[i].from + '_' + cloud[i].ts] = true;
   const seen = {};
