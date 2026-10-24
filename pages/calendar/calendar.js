@@ -76,6 +76,8 @@ Page({
   },
 
   onUnload() {
+    // 云端首屏加载可能还没回来：打个标记，回调里不再对已卸载页面 setData
+    this._destroyed = true;
     // 退页时先把挂起的防抖写入落盘（静默、不 setData），再清定时器；
     // 只清定时器会把用户最后几个字的输入丢掉
     this._flushPendingEdits();
@@ -87,10 +89,12 @@ Page({
     this.setData({ cloudReady: false });
     try {
       const { memo, buy } = await cloud.loadCalendar();
+      if (this._destroyed) return;
       this._memoCal = memo;
       this._buyCal = buy;
       this.setData({ cloudReady: true });
     } catch (e) {
+      if (this._destroyed) return;
       console.error('日历云端加载失败', e);
       // 不初始化空对象：保持 cloudReady=false 进入只读态，所有写操作被拦截
       // 本页没有下拉刷新，重试入口是只读态里的「重试」按钮（reloadCloud）

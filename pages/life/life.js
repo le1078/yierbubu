@@ -208,6 +208,7 @@ Page({
       list = Array.isArray(remote) ? remote : local;
     } catch (e) {
       console.error('购物记录加载失败', e);
+      if (this._destroyed) return;
       list = local;
       wx.showToast({ title: '云端同步失败，显示本地数据', icon: 'none' });
     }
@@ -258,6 +259,7 @@ Page({
     if (this._menuMetaAt && Date.now() - this._menuMetaAt < MENU_CACHE_TTL) return;
     try {
       const menu = await cloud.loadMenu();
+      if (this._destroyed) return;
       if (menu && menu.length) {
         let n = 0;
         menu.forEach(c => { n += (c.items || []).length; });
@@ -313,6 +315,10 @@ Page({
   },
 
   _render() {
+    this._items = this._items || [];
+    // 异步加载回来时页面可能已经卸载：对已销毁页面 setData 只会在
+    // 控制台刷「当前页面不存在」，还会白跑一遍统计
+    if (this._destroyed) return;
     const raw = (this._items || []).slice();
     const filter = this.data.filter;
 
@@ -644,6 +650,7 @@ Page({
 
     this._items = (this._items || []).slice();
     await this._persist(this._items);
+    if (this._destroyed) { this._saving = false; return; }
     this._render();
     this.setData({ showEdit: false });
     wx.showToast({ title: '已保存', icon: 'none' });

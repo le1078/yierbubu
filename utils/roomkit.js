@@ -155,11 +155,16 @@ function startWatch(page, collection, docId, onChange, isRetry) {
   const db = wx.cloud.database();
   if (!isRetry) page._watchRetry = 0;   // 重连时保留计数，避免无限重试
   page._pollKey = null;
+  page._watchStartAt = Date.now();
+  page._watchOkAt = 0;
+  page._watchFail = false;
 
   try {
     page._watcher = db.collection(collection).doc(docId).watch({
       onChange: (snapshot) => {
         page._watchRetry = 0;
+        page._watchOkAt = Date.now();     // watch 确认可用 → 轮询降为低速安全网
+        page._watchFail = false;
         const docs = snapshot.docs;
         if (!docs || !docs.length) return;
         const key = JSON.stringify(docs[0]);
@@ -172,6 +177,7 @@ function startWatch(page, collection, docId, onChange, isRetry) {
         log.e('[roomkit] watch error', err);
         page._watcher = null;
         page._usingPoll = true;
+        page._watchFail = true;           // 快速轮询接管
         // 指数退避重连；即使 watch 彻底不可用，下面的轮询也会兜底
         if (page._watchRetry < 3) {
           page._watchRetry += 1;
@@ -189,14 +195,25 @@ function startWatch(page, collection, docId, onChange, isRetry) {
     log.e('[roomkit] watch unsupported', err);
     page._watcher = null;
     page._usingPoll = true;
+    page._watchFail = true;
   }
 
-  // 无条件轮询兜底：
-  // - watch 正常时，轮询拿到的文档和 _pollKey 相同，直接跳过，几乎零开销
-  // - watch 不可用/被限流时，至少能拿到对方状态，不会「完全不动」
+  // 轮询兜底（自适应节奏，见 pollDelay）：
+  // - watch 明确失败/不支持：200ms 快速轮询，保证还能玩
+  // - watch 正在推数据：2s 一次安全网，只为兜住「watch 静默丢更新」
+  // - 刚订阅、还不知道 watch 行不行：前 10s 用 200ms 探一探
   // 注意用「串行自调度」而不是 setInterval：云数据库 get 有时要几百毫秒，
   // setInterval 会重叠请求，旧响应可能后到并覆盖新状态（表现为延迟/回跳）。
   startPollLoop(page, collection, docId, onChange, 0);
+}
+
+// 轮询间隔。每次 get 都是一次真实云读，5Hz 常驻会把免费额度烧穿
+// （两人对局 5Hz × 2 ≈ 3.6 万读/小时）。watch 正常时降到 2s 安全网。
+function pollDelay(page) {
+  if (page._watchFail) return 200;                                   // watch 已废
+  if (page._watchOkAt) return 2000;                                  // watch 健康
+  if (Date.now() - (page._watchStartAt || 0) < 10000) return 200;    // 观察期
+  return 2000;
 }
 
 function startPollLoop(page, collection, docId, onChange, delay) {
@@ -206,7 +223,7 @@ function startPollLoop(page, collection, docId, onChange, delay) {
     if (page._destroyed) return;
     await pollRoom(page, collection, docId, onChange);
     if (page._destroyed) return;
-    startPollLoop(page, collection, docId, onChange, 200);
+    startPollLoop(page, collection, docId, onChange, pollDelay(page));
   }, delay || 0);
 }
 

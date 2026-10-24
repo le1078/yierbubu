@@ -81,6 +81,9 @@ Page({
   },
 
   onLoad(options) {
+    // 静音开关是跨局记忆的（存在本地），页面 data 必须与音频模块同步，
+    // 否则上一局静音后重进：按钮显示「音效」但依然是静音。
+    this.setData({ muted: AU.loadPref() });
     if (options && options.roomNo) {
       this._autoJoin = String(options.roomNo);
       // 马里奥没有独立的 lobby 视图，直接回到菜单（菜单里有房间号输入）
@@ -349,6 +352,15 @@ Page({
     this.setData({ stage: 'playing', winText: '' }, () => {
       this._over = false;
       this._startLoop();
+      // 终局时输入轮询被停掉了（省云读），重开要重新挂上，
+      // 否则 host 收不到 guest 之后的所有操作（表现为对方站桩）
+      if (this.data.mode === 'online' && this.data.mySeat === 1 && this._roomId) {
+        this._startInputPoll();
+      }
+      // 结算期间中继若放弃过，重开立刻重连（否则要等 10 秒的复活周期）
+      if (this.data.mode === 'online' && this._roomId && !this._relay) {
+        this._startRelay();
+      }
     });
   },
 
@@ -363,6 +375,15 @@ Page({
     this.setData({ stage: 'playing', winText: '' }, () => {
       this._over = false;
       this._startLoop();
+      // 终局时输入轮询被停掉了（省云读），重开要重新挂上，
+      // 否则 host 收不到 guest 之后的所有操作（表现为对方站桩）
+      if (this.data.mode === 'online' && this.data.mySeat === 1 && this._roomId) {
+        this._startInputPoll();
+      }
+      // 结算期间中继若放弃过，重开立刻重连（否则要等 10 秒的复活周期）
+      if (this.data.mode === 'online' && this._roomId && !this._relay) {
+        this._startRelay();
+      }
     });
   },
 
@@ -497,7 +518,11 @@ Page({
         // 输入文档还没创建（guest 首次写入前）——下一轮再试
       }
       if (this._destroyed || gen !== this._pollGen) return;
-      this._inputPollTimer = setTimeout(tick, 250);
+      // 中继快车道正常时，guest 的输入文档只按 2s 心跳写（见 _doSync），
+      // 250ms 去读一份 2 秒才变一次的数据纯属烧额度：降到 800ms 仍能在
+      // 中继失效后 1 秒内切回兜底数据。中继不在时保持 250ms。
+      const relayFast = !!(this._relay && this._relay.isReady() && this._peerOnRelay);
+      this._inputPollTimer = setTimeout(tick, relayFast ? 800 : 250);
     };
     tick();
   },
@@ -546,6 +571,7 @@ Page({
             self._leaverHandled = true;
             self._over = true;
             self._stopLoop();
+            self._stopInputPoll();   // 同上：终局后不再需要 guest 输入
             self._closeRelay();
             self.setData({ stage: 'ended', winText: '对方已离开房间', statusText: '对局结束' });
             self._notifyPeerLeft();
@@ -696,6 +722,8 @@ Page({
     if (winner === this.data.mySeat) return;             // 自己赢，本地已结算
     this._over = true;
     this._stopLoop();
+    // 对局已经结束：停掉 4Hz 的 guest 输入轮询，否则结算画面挂多久就白读多久
+    this._stopInputPoll();
     this.setData({ stage: 'ended', winText: '😢 对方先到终点', statusText: '本关完成' });
   },
 
@@ -727,6 +755,7 @@ Page({
     if (room.status === 'ended' && room.leaver && room.leaver !== me && !this._leaverHandled) {
       this._leaverHandled = true;
       this._stopLoop();
+      this._stopInputPoll();   // 对方都走了，没必要继续轮询他的输入文档
       this._closeRelay();
       roomkit.closeWatch(this);
       this.setData({ stage: 'ended', winText: '对方已离开房间', statusText: '对局结束' });
@@ -1179,6 +1208,7 @@ Page({
     if (cleared) {
       this._over = true;
       this._stopLoop();
+      this._stopInputPoll();   // 结算后不再需要 4Hz 读 guest 输入（省云读额度）
       const w = this.data.coop ? null : EN.raceWinner(this._level, this._players);
       const text = this.data.mode === 'solo'
         ? (this.data.coop ? '🎉 通关！'
@@ -1210,6 +1240,7 @@ Page({
         (this.data.coop && EN.anyPlayerDead(this._players))) {
       this._over = true;
       this._stopLoop();
+      this._stopInputPoll();
       const coopDeath = this.data.coop && EN.anyPlayerDead(this._players) &&
         !EN.isGameOver(this._level, this._players);
       this.setData({

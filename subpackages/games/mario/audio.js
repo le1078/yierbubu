@@ -9,6 +9,8 @@
 let ctx = null;
 let ctxTried = false;
 let muted = false;
+let prefLoaded = false;
+const MUTE_KEY = 'mario_sfx_muted';
 
 function ensureCtx() {
   if (ctxTried) return ctx;
@@ -23,12 +25,39 @@ function ensureCtx() {
   return ctx;
 }
 
+// 静音开关必须落盘：本模块是分包级单例，页面退出后 muted 仍然留在内存里。
+// 如果只把开关放在页面 data（默认 false），「上一局静音 → 退出 → 再进」
+// 就会出现 UI 显示「🔊 音效」但实际没声音，必须点两下才能恢复。
+function loadPref() {
+  if (prefLoaded) return muted;
+  prefLoaded = true;
+  try {
+    muted = !!wx.getStorageSync(MUTE_KEY);
+  } catch (e) {
+    muted = false;
+  }
+  return muted;
+}
+
 function setMuted(m) {
   muted = !!m;
+  prefLoaded = true;
+  try { wx.setStorageSync(MUTE_KEY, muted); } catch (e) { /* 存储不可用就只在内存生效 */ }
 }
 
 function isMuted() {
   return muted;
+}
+
+// 定时节点用完即断开：一次过关音列会新建 7 个 oscillator+gain，
+// 不断开的话（部分基础库实现）节点会挂在 destination 上直到页面销毁。
+function release(osc, gain) {
+  try {
+    osc.onended = function () {
+      try { osc.disconnect(); } catch (e) {}
+      try { gain.disconnect(); } catch (e) {}
+    };
+  } catch (e) { /* 不支持 onended 的环境：交给 GC */ }
 }
 
 // 单个音符：type='square'|'triangle'，freq(Hz)，时长(秒)，音量 0~1
@@ -50,6 +79,7 @@ function tone(type, freq, dur, vol, when) {
     gain.connect(ac.destination);
     osc.start(t0);
     osc.stop(t0 + dur + 0.02);
+    release(osc, gain);
   } catch (e) { /* 音频失败静默 */ }
 }
 
@@ -72,6 +102,7 @@ function sweep(type, f0, f1, dur, vol) {
     gain.connect(ac.destination);
     osc.start(t0);
     osc.stop(t0 + dur + 0.02);
+    release(osc, gain);
   } catch (e) { /* 静默 */ }
 }
 
@@ -124,4 +155,4 @@ function play(name) {
   }
 }
 
-module.exports = { play, setMuted, isMuted };
+module.exports = { play, setMuted, isMuted, loadPref };

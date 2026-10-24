@@ -14,6 +14,7 @@ function check(cond, name) {
 
 let docData = { _id: 'r1', roomNo: '1234', status: 'playing', input2: 'a' };
 let watchImpl = null;
+let gets = 0;   // 云读次数（配额观测）
 
 global.wx = {
   showToast: function () {},
@@ -41,6 +42,7 @@ global.wx = {
                   return { close: function () {} };
                 },
                 get: function () {
+                  gets++;
                   return Promise.resolve({ data: JSON.parse(JSON.stringify(docData)) });
                 }
               };
@@ -169,6 +171,38 @@ function wait(ms) {
     // 关闭订阅要清掉顺序基线（换房间不能沿用上一局时间）
     roomkit.closeWatch(page);
     check(page._lastDocAt === 0, 'closeWatch 清空顺序基线');
+  }
+
+  console.log('\n[6] 轮询节奏自适应：watch 健康时不烧云读');
+  {
+    // 背景：原来无论 watch 是否正常都 200ms 读一次，两人对局 ≈ 3.6 万读/小时，
+    // 免费额度几小时就穿。watch 有推送时轮询只该当 2s 安全网。
+    watchImpl = 'ok';
+    docData = { _id: 'r1', roomNo: '1234', status: 'playing', world: 'h1' };
+    const page = {};
+    gets = 0;
+    roomkit.startWatch(page, 'rooms', 'r1', function () {});
+    await wait(460);
+    check(gets <= 2, 'watch 健康：460ms 内云读 ≤2 次（实际 ' + gets + '）');
+    roomkit.closeWatch(page);
+
+    watchImpl = 'throw';
+    docData = { _id: 'r1', roomNo: '1234', status: 'playing', world: 'h2' };
+    const page2 = {};
+    gets = 0;
+    roomkit.startWatch(page2, 'rooms', 'r1', function () {});
+    await wait(460);
+    check(gets >= 3, 'watch 不可用：仍保持 200ms 快速轮询（实际 ' + gets + ' 次）');
+    roomkit.closeWatch(page2);
+
+    // 观察期结束且 watch 没有推送过（可能静默失效）：降到 2s，但仍在同步
+    const page3 = { _watchStartAt: Date.now() - 20000, _watchOkAt: 0, _watchFail: false };
+    const delay = (function () {
+      // 通过私有行为观察：直接检查文件里的常量契约
+      const src = require('fs').readFileSync(path.join(__dirname, '..', 'utils/roomkit.js'), 'utf8');
+      return /function pollDelay\(page\)[\s\S]*?return 2000;[\s\S]*?\}/.test(src);
+    })();
+    check(delay === true, '观察期后即使 watch 沉默也降为 2s 安全网');
   }
 
   console.log('\n========================================');

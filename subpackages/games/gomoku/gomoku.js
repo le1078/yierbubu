@@ -299,10 +299,15 @@ Page({
     const db = wx.cloud.database();
     if (!isRetry) this._watchRetry = 0;   // 重连保留计数，避免无限重试
     this._pollKey = null;
+    this._watchStartAt = Date.now();
+    this._watchOkAt = 0;
+    this._watchFail = false;
     try {
       this._watcher = db.collection(COLLECTION).doc(this._roomId).watch({
         onChange: (snapshot) => {
           this._watchRetry = 0;
+          this._watchOkAt = Date.now();   // watch 确认可用 → 轮询降为低速安全网
+          this._watchFail = false;
           const docs = snapshot.docs;
           if (!docs || !docs.length) return;
           const key = JSON.stringify(docs[0]);
@@ -314,6 +319,7 @@ Page({
           log.e('watch error', err);
           this._watcher = null;
           this._usingPoll = true;
+          this._watchFail = true;         // 快速轮询接管
           // 指数退避重连；轮询一直在跑，watch 不可用也不会卡住
           if (this._watchRetry < 3) {
             this._watchRetry += 1;
@@ -331,13 +337,23 @@ Page({
       log.e('watch unsupported', err);
       this._watcher = null;
       this._usingPoll = true;
+      this._watchFail = true;
     }
 
-    // 无条件轮询兜底：watch 正常时按 _pollKey 去重，几乎零开销。
+    // 轮询兜底（自适应节奏，见 _pollDelay）：
     // watch 在开发者工具里可能返回 reportRealtimeAction:fail not support，
-    // 没有这条轮询就会「双方都看不到对方动」。
+    // 没有这条轮询就会「双方都看不到对方动」；但 watch 正常时它是纯安全网，
+    // 没必要 5Hz 读库（两人对局≈3.6 万读/小时，免费额度撑不住）。
     // 用串行自调度，避免 get 慢时多个请求重叠、旧响应覆盖新状态。
     this._startPolling();
+  },
+
+  // 轮询间隔：watch 坏了才快，watch 正常只做 2s 安全网
+  _pollDelay() {
+    if (this._watchFail) return 200;
+    if (this._watchOkAt) return 2000;
+    if (Date.now() - (this._watchStartAt || 0) < 10000) return 200;   // 观察期
+    return 2000;
   },
 
   _startPolling(delay) {
@@ -347,7 +363,7 @@ Page({
       if (this._destroyed) return;
       await this._pollRoomStatus();
       if (this._destroyed) return;
-      this._startPolling(200);
+      this._startPolling(this._pollDelay());
     }, delay || 0);
   },
 

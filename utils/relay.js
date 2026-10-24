@@ -23,6 +23,7 @@ function create(opts) {
     closed: false,        // 页面主动关闭，不再重连
     fails: 0,
     dropped: false,       // 单次连接的 onError/onClose 去重
+    gen: 0,               // 连接代际：旧 socket 的迟到回调必须失效
     retryTimer: null,
     pingTimer: null,
     connectTimer: null,
@@ -49,6 +50,7 @@ function create(opts) {
     clearTimers();
     st.closed = true;
     st.ready = false;
+    st.gen += 1;      // 迟到回调一律作废
     // 关键：放弃时必须关掉底层 socket，否则它变成「服务器侧在线、
     // 页面侧已死」的僵尸连接，对端一直看着你在线却收不到任何数据
     killTask();
@@ -61,7 +63,11 @@ function create(opts) {
     st.dropped = true;
     const wasReady = st.ready;
     st.ready = false;
+    const old = st.task;
     st.task = null;
+    // 自己关一次：onError 之后不一定会跟 onClose，不关就会留一条
+    // 半开连接（服务器 30 秒静默踢之前，对端一直以为你在线）
+    if (old) { try { old.close({}); } catch (e) {} }
     if (st.pingTimer) { clearInterval(st.pingTimer); st.pingTimer = null; }
     if (st.connectTimer) { clearTimeout(st.connectTimer); st.connectTimer = null; }
     if (st.closed) return;
@@ -75,6 +81,12 @@ function create(opts) {
   function dial() {
     if (st.closed) return;
     st.dropped = false;
+    // 每条 socket 一个代际号。旧 socket 的 onOpen/onError/onClose
+    // 可能在重连之后才姗姗来迟（移动网络很常见），必须忽略，
+    // 否则它会把刚建好的新连接当成自己的：置 ready=false、
+    // 清掉 st.task，新连接随后 onOpen 时 hello 发不出去 → 永久「假在线」。
+    const gen = st.gen + 1;
+    st.gen = gen;
     let task = null;
     try {
       task = wx.connectSocket({ url: st.url });
@@ -92,13 +104,13 @@ function create(opts) {
     // 真机上存在「服务器侧 101 成功、客户端 onOpen 永不触发」的挂死，
     // 没有看门狗这个 relay 实例就永远卡死（页面也不再走中继）
     st.connectTimer = setTimeout(function () {
-      if (st.ready || st.closed) return;
+      if (gen !== st.gen || st.ready || st.closed) return;
       try { task.close({}); } catch (e) {}
       drop();
     }, CONNECT_TIMEOUT);
 
     task.onOpen(function () {
-      if (st.closed) return;
+      if (gen !== st.gen || st.closed) return;
       if (st.connectTimer) { clearTimeout(st.connectTimer); st.connectTimer = null; }
       st.ready = true;
       st.everReady = true;
@@ -112,6 +124,7 @@ function create(opts) {
     });
 
     task.onMessage(function (res) {
+      if (gen !== st.gen) return;   // 旧连接的残留消息
       let m = null;
       try { m = JSON.parse(res.data); } catch (e) { return; }
       if (!m) return;
@@ -129,8 +142,14 @@ function create(opts) {
       }
     });
 
-    task.onError(function () { drop(); });
-    task.onClose(function () { drop(); });
+    task.onError(function () {
+      if (gen !== st.gen) return;
+      drop();
+    });
+    task.onClose(function () {
+      if (gen !== st.gen) return;
+      drop();
+    });
   }
 
   function connect(url, room, seat, handlers) {
@@ -169,6 +188,7 @@ function create(opts) {
   // 页面主动关闭（离开对局/切后台）：不再重连
   function close() {
     st.closed = true;
+    st.gen += 1;      // 关掉后所有在途回调作废
     clearTimers();
     st.ready = false;
     killTask();

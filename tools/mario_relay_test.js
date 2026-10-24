@@ -443,7 +443,18 @@ async function pageIntegration() {
     src.indexOf('  _onRelayData(v) {'));
   check(/onGiveUp[\s\S]*?self\._relay = null;/.test(relaySect),
     'onGiveUp 只清中继句柄');
-  check(relaySect.indexOf('closeWatch') === -1 && relaySect.indexOf('_stopInputPoll') === -1,
+  // 契约只约束「中继就绪/断线/放弃」这三个回调：它们不许顺手关掉云数据库
+  // 车道。onPeer 的 bye 分支（对方明确离开房间）本来就该收摊，不在契约内。
+  function handlerBody(name) {
+    const i = relaySect.indexOf(name + '(');
+    if (i < 0) return '';
+    const j = relaySect.indexOf('\n      }', i);
+    return j < 0 ? relaySect.slice(i) : relaySect.slice(i, j);
+  }
+  const laneHandlers = handlerBody('onReady') + handlerBody('onDown') + handlerBody('onGiveUp');
+  check(laneHandlers.indexOf('closeWatch') === -1 &&
+        laneHandlers.indexOf('_stopInputPoll') === -1 &&
+        laneHandlers.indexOf('_closeRelay') === -1,
     '中继就绪/放弃都不关云数据库车道（双车道并存契约）');
 
   // 真实 _tick 链回归：同步调度器必须持续触发（初版炸弹：

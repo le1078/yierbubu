@@ -56,7 +56,7 @@ const ORDER = [
   'cloudstore_real_test.js', 'cloudstore_chaos_test.js', 'pages_logic_test.js',
   'shengxiao_logic_test.js',
   // 联机基础设施
-  'join_arg_test.js', 'roomkit_join_test.js', 'roomkit_sync_test.js',
+  'join_arg_test.js', 'roomkit_join_test.js', 'roomkit_sync_test.js', 'relay_client_test.js',
   // 五子棋
   'gomoku_logic_test.js', 'gomoku_ai_test.js', 'gomokuai_online_test.js',
   // 象棋
@@ -65,6 +65,7 @@ const ORDER = [
   'mario_logic_test.js', 'mario_mechanics_test.js', 'mario_features_test.js',
   'mario_level_test.js', 'level_data_check.js', 'mario_render_test.js', 'mario_sync_test.js',
   'mario_online_flow_test.js', 'mario_page_check.js', 'mario_relay_test.js',
+  'mario_lifecycle_test.js',
   // 跨游戏页面流程
   'game_page_flow_test.js',
   // 模糊 / 收敛（较慢）

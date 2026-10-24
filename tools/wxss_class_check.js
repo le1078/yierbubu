@@ -3,8 +3,12 @@
 //
 // 规则（按小程序作用域）：
 //   页面 wxml  → 同名 wxss + app.wxss
-//   组件 wxml  → 同名 wxss + app.wxss
+//   组件 wxml  → 只算组件自己的 wxss（组件默认样式隔离，app.wxss 进不去！）
+//                除非组件显式开启 addGlobalClass / styleIsolation: apply-shared
 // 含 {{ }} 的动态类名跳过（无法静态确定）。
+//
+// 为什么单独处理组件：以前一律并入 app.wxss，会让「组件里写了只有全局
+// 定义的 class」这种真实 bug 静默通过——运行时该元素完全没有样式。
 //
 // 用法：node tools/wxss_class_check.js
 
@@ -44,6 +48,35 @@ const appCss = classesOf(path.join(ROOT, 'app.wxss'));
 // （加了反而会改变各页已调好的间距）。审计时放行。
 const STRUCTURAL = { menu: 1, lobby: 1, waiting: 1, game: 1 };
 
+// 该 wxml 是不是自定义组件（样式默认隔离）
+function isComponentWxml(wxml) {
+  if (path.relative(ROOT, wxml).split(path.sep)[0] === 'components') return true;
+  const jsonFile = wxml.replace(/\.wxml$/, '.json');
+  if (!fs.existsSync(jsonFile)) return false;
+  try {
+    return JSON.parse(fs.readFileSync(jsonFile, 'utf8')).component === true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// 组件是否显式允许全局样式穿透（addGlobalClass / apply-shared）
+function allowsGlobalCss(wxml) {
+  const jsFile = wxml.replace(/\.wxml$/, '.js');
+  const js = fs.existsSync(jsFile) ? fs.readFileSync(jsFile, 'utf8') : '';
+  if (/addGlobalClass\s*:\s*true/.test(js)) return true;
+  if (/styleIsolation\s*:\s*['"](apply-shared|shared)['"]/.test(js)) return true;
+  const jsonFile = wxml.replace(/\.wxml$/, '.json');
+  if (fs.existsSync(jsonFile)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+      if (cfg.styleIsolation === 'apply-shared' || cfg.styleIsolation === 'shared') return true;
+      if (cfg.options && cfg.options.addGlobalClass) return true;
+    } catch (e) { /* 配置损坏由其它检查兜底 */ }
+  }
+  return false;
+}
+
 const wxmls = [];
 walk(path.join(ROOT, 'pages'), ['.wxml'], wxmls);
 walk(path.join(ROOT, 'components'), ['.wxml'], wxmls);
@@ -55,7 +88,11 @@ for (const f of wxmls) {
   const src = fs.readFileSync(f, 'utf8');
   const rel = path.relative(ROOT, f);
   const cssFile = f.replace(/\.wxml$/, '.wxss');
-  const defined = Object.assign({}, appCss, classesOf(cssFile));
+  // 组件默认样式隔离：app.wxss 不生效，只能用它自己的 wxss
+  const isolated = isComponentWxml(f) && !allowsGlobalCss(f);
+  const defined = isolated
+    ? classesOf(cssFile)
+    : Object.assign({}, appCss, classesOf(cssFile));
   // 分包/组件可能复用同目录其它 wxss？不做跨文件查找，保持严格
 
   const missing = {};
