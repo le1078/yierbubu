@@ -62,7 +62,7 @@ const ORDER = [
   // 五子棋
   'gomoku_logic_test.js', 'gomoku_ai_test.js', 'gomokuai_online_test.js',
   // 象棋
-  'xiangqi_logic_test.js', 'xiangqi_ai_test.js', 'xiangqi_online_test.js',
+  'xiangqi_logic_test.js', 'xiangqi_ai_test.js', 'xiangqi_online_test.js', 'game_timing_test.js',
   // 马里奥
   'mario_logic_test.js', 'mario_mechanics_test.js', 'mario_features_test.js',
   'mario_level_test.js', 'level_data_check.js', 'mario_render_test.js', 'mario_sync_test.js',

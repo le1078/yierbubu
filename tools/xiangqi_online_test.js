@@ -26,6 +26,7 @@ global.wx = {
     database() {
       return {
         serverDate() { return new Date(); },
+        command: { push: function (x) { return x; } },
         collection() {
           return {
             doc() {
@@ -347,6 +348,77 @@ function loadPage() {
     ok._doMove(mv);
     await new Promise(function (r) { setTimeout(r, 0); });
     check(X.boardToStr(ok._board) !== before2 && ok._history.length === 1, '写库成功时正常落子');
+  }
+
+  /* ============ [10] 同意悔棋/重开时写库失败：本地不能先变 ============ */
+  console.log('\n[10] 同意悔棋/重开时写库失败，本地保持原局面（否则与云端永久分叉）');
+  {
+    failUpdate = true;
+    toasts.length = 0;
+
+    const p = loadPage();
+    p.data.mode = 'online';
+    p.data.mySide = X.BLACK;
+    p.data.stage = 'playing';
+    p.data.undoState = 'oppRequested';
+    p.data.undoReqSide = X.RED;
+    p._roomId = 'r1';
+    p._board = X.startBoard();
+    p._history = [];
+    p._positions = {};
+    p._noCapture = 0;
+    const m1 = { from: X.idx(7, 1), to: X.idx(7, 4) };
+    const r1 = X.applyMove(p._board, m1);
+    p._history.push({ from: m1.from, to: m1.to, captured: r1.captured });
+    const m2 = { from: X.idx(0, 7), to: X.idx(2, 6) };
+    const r2 = X.applyMove(p._board, m2);
+    p._history.push({ from: m2.from, to: m2.to, captured: r2.captured });
+    const before = X.boardToStr(p._board);
+    await p.respondUndo({ currentTarget: { dataset: { agree: '1' } } });
+    await new Promise(function (r) { setTimeout(r, 0); });
+    check(X.boardToStr(p._board) === before, '悔棋写库失败：棋盘保持原样');
+    check(p._history.length === 2, '悔棋写库失败：history 保持原样');
+    check(p.data.stage === 'playing' && !p._over, '悔棋写库失败：仍在对局中（可重试）');
+    check(toasts.indexOf('操作失败') !== -1, '悔棋写库失败：有明确提示');
+
+    const p2 = loadPage();
+    p2.data.mode = 'online';
+    p2.data.mySide = X.BLACK;
+    p2.data.stage = 'ended';
+    p2.data.rematchState = 'oppRequested';
+    p2._roomId = 'r1';
+    p2._board = X.startBoard();
+    p2._history = [{ from: X.idx(7, 1), to: X.idx(7, 4), captured: 0 }];
+    p2._positions = {};
+    X.applyMove(p2._board, { from: X.idx(7, 1), to: X.idx(7, 4) });
+    const before2 = X.boardToStr(p2._board);
+    const beforeLen = p2._history.length;
+    await p2.respondRematch({ currentTarget: { dataset: { agree: '1' } } });
+    await new Promise(function (r) { setTimeout(r, 0); });
+    check(X.boardToStr(p2._board) === before2, '重开写库失败：棋盘保持原样');
+    check(p2._history.length === beforeLen, '重开写库失败：history 保持原样');
+    check(p2.data.stage === 'ended', '重开写库失败：仍停在结算屏（不会假装已重开）');
+    failUpdate = false;
+  }
+
+  /* ============ [11] 连点扔水果：冷却内只发一次 ============ */
+  console.log('\n[11] 连点水果：冷却内只写一次（否则高频写触发限流，连走棋都卡）');
+  {
+    dbUpdates = [];
+    const p = loadPage();
+    p.data.mode = 'online';
+    p.data.mySide = X.BLACK;
+    p.data.stage = 'playing';
+    p._roomId = 'r1';
+    p._playEmojiFly = function () {};
+    p.data.chatList = [];
+    await p.throwFruit({ currentTarget: { dataset: { icon: '🥭' } } });
+    await p.throwFruit({ currentTarget: { dataset: { icon: '🍉' } } });
+    await p.throwFruit({ currentTarget: { dataset: { icon: '🍈' } } });
+    check(dbUpdates.length === 1, '冷却内只发 1 次（实际 ' + dbUpdates.length + '）');
+    p._lastFruitSent = 0;
+    await p.throwFruit({ currentTarget: { dataset: { icon: '🥭' } } });
+    check(dbUpdates.length === 2, '冷却过后可以继续扔（实际 ' + dbUpdates.length + '）');
   }
 
   console.log('\n========================================');

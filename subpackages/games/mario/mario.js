@@ -1310,10 +1310,12 @@ Page({
       ? C.MARIO_RELAY_DB_HEARTBEAT_MS
       : (this._dbInterval || C.MARIO_SYNC_MS);
     const dbDue = now - (this._lastDbAttemptAt || 0) >= dbInterval;
-    const db = wx.cloud.database();
     const me = this.data.mySeat;
     let dbWritten = false;   // 本次是否真的写成功过库（恢复节奏只看库本身）
     try {
+      // 放进 try：云开发未初始化/环境失效时 wx.cloud.database() 会同步抛，
+      // 放在外面就是一个每个同步周期都会冒出来的未捕获 rejection
+      const db = wx.cloud.database();
       if (me === 1) {
         const w = EN.worldToWire(this._level, this._players);
         w.level = this.data.level;

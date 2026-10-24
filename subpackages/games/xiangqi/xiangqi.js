@@ -319,7 +319,9 @@ Page({
         // 注意：这里不能 closeWatch。房主需要继续接收 guest 的走棋，
         // 关掉 watcher 会导致开局后只有 guest 能看到 host 的棋。
         this._board = X.strToBoard(room.boardStr);
-        this._history = room.history || [];
+        // history 来自云端，格式损坏/旧版本时不能是 undefined 或字符串：
+        // 后续 _history.push 会直接 TypeError（悔棋/同步全挂）
+        this._history = Array.isArray(room.history) ? room.history : [];
         this._over = false;
         this._noCapture = 0;
         this._positions = {};
@@ -365,7 +367,7 @@ Page({
     if (changed) {
       this._board = X.strToBoard(newKey);
       this._boardKey = newKey;
-      this._history = room.history || [];
+      this._history = Array.isArray(room.history) ? room.history : [];
       this._notePosition();
     }
     this._lastMove = room.lastMove && room.lastMove.from !== undefined ? room.lastMove : null;
@@ -599,8 +601,10 @@ Page({
 
   // 联机模式：把着法写到云房间
   async _syncMove(mv, winner, moveCount, isCheck) {
-    const db = wx.cloud.database();
     try {
+      // 放进 try：云环境失效时 database() 会同步抛，而这个方法是
+      // fire-and-forget 调用（不 await），抛在外面就是未捕获 rejection
+      const db = wx.cloud.database();
       await db.collection(COLLECTION).doc(this._roomId).update({
         data: {
           boardStr: X.boardToStr(this._board),
@@ -720,15 +724,18 @@ Page({
       wx.showToast({ title: '还没走棋，无棋可悔', icon: 'none' });
       return;
     }
+    // 先置等待态再写库：连点两下时第二下会被上面的 undoState 拦住，
+    // 不会对同一个房间文档并发写两次（云库限流下很容易撞上）
+    this.setData({ undoState: 'iRequested' });
     const db = wx.cloud.database();
     try {
       await db.collection(COLLECTION).doc(this._roomId).update({
         data: { undoRequest: this.data.mySide, updatedAt: db.serverDate() }
       });
-      this.setData({ undoState: 'iRequested' });
       this._armRequestTimeout('undoState');
     } catch (e) {
       log.e('[xiangqi] requestUndo fail', e);
+      this.setData({ undoState: null });
       wx.showToast({ title: '请求失败', icon: 'none' });
     }
   },
@@ -741,21 +748,40 @@ Page({
         // 撤销到「请求方上一步之前」：从 history 尾部弹着法，
         // 直到弹掉了请求方的那一手（history[0] 是红方第一手，
         // history.length 奇数 = 最后一手是红方走的）。
+        //
+        // 先在副本上算好新局再写库，写成功后才落到本地：写失败（限流/弱网）时
+        // 本地绝不能先变——否则响应方棋盘已经退了，云端/请求方还是旧局面，
+        // 只能靠请求方的下一手覆盖回来，等于这局白下。
         const reqSide = this.data.undoReqSide;
         const history = this._history.slice();
+        const simBoard = this._board.slice();
         let popped = 0;
         while (history.length) {
           const moverOf = (history.length % 2 === 1) ? X.RED : X.BLACK;
           const last = history[history.length - 1];
           const mv = { from: last.from, to: last.to };
-          X.undoMove(this._board, mv, last.captured);
+          X.undoMove(simBoard, mv, last.captured);
           history.pop();
           popped += 1;
           if (moverOf === reqSide) break;   // 弹掉了请求方的那一手，停
         }
         const prevLast = history.length ? history[history.length - 1] : null;
-        // 本地 history 必须同步为弹后的版本：不然响应方自己的棋盘/轮次
-        // 与刚写进文档的不一致（对端靠 boardStr 重建，自己却留着旧的）
+        // 悔棋发生在已分出胜负之后：双方都要回到对局中
+        const backTurn = reqSide;
+        await db.collection(COLLECTION).doc(this._roomId).update({
+          data: {
+            boardStr: X.boardToStr(simBoard),
+            history,
+            turn: backTurn,
+            moveCount: history.length,
+            lastMove: prevLast ? { from: prevLast.from, to: prevLast.to } : {},
+            undoRequest: 0,
+            winner: 0,
+            updatedAt: db.serverDate()
+          }
+        });
+        // 写库成功 → 本地同步为弹后的版本
+        this._board = simBoard;
         this._history = history;
         this._over = false;
         this._noCapture = 0;
@@ -764,8 +790,6 @@ Page({
         this._lastMove = prevLast
           ? { from: prevLast.from, to: prevLast.to }
           : null;
-        // 悔棋发生在已分出胜负之后：双方都要回到对局中
-        const backTurn = reqSide;
         this.setData({
           stage: 'playing',
           turn: backTurn,
@@ -775,18 +799,6 @@ Page({
         }, () => {
           this._notePosition();
           this._drawBoard();
-        });
-        await db.collection(COLLECTION).doc(this._roomId).update({
-          data: {
-            boardStr: X.boardToStr(this._board),
-            history,
-            turn: backTurn,
-            moveCount: history.length,
-            lastMove: prevLast ? { from: prevLast.from, to: prevLast.to } : {},
-            undoRequest: 0,
-            winner: 0,
-            updatedAt: db.serverDate()
-          }
         });
         this._boardKey = X.boardToStr(this._board);
         this._seenUndoSide = 0;
@@ -808,15 +820,17 @@ Page({
   async requestRematch() {
     if (this.data.mode !== 'online') { this.restart(); return; }
     if (this.data.rematchState) return;
+    // 同上：先置等待态，连点不会重复写库
+    this.setData({ rematchState: 'iRequested' });
     const db = wx.cloud.database();
     try {
       await db.collection(COLLECTION).doc(this._roomId).update({
         data: { rematchRequest: this.data.mySide, updatedAt: db.serverDate() }
       });
-      this.setData({ rematchState: 'iRequested' });
       this._armRequestTimeout('rematchState');
     } catch (e) {
       log.e('[xiangqi] requestRematch fail', e);
+      this.setData({ rematchState: null });
       wx.showToast({ title: '请求失败', icon: 'none' });
     }
   },
@@ -826,7 +840,23 @@ Page({
     const db = wx.cloud.database();
     try {
       if (agree) {
-        // 重开 = 回初始局面（悔棋里已封装好全套本地复位，借它一步到位）
+        // 重开 = 回初始局面。同样先写库再改本地：写失败时不能只有自己
+        // 回到空棋盘（对方还看着终局画面，两边就再也对不上）
+        const backTurn = X.RED;
+        await db.collection(COLLECTION).doc(this._roomId).update({
+          data: {
+            boardStr: X.boardToStr(X.startBoard()),
+            history: [],
+            turn: X.RED,
+            moveCount: 0,
+            lastMove: {},
+            winner: 0,
+            undoRequest: 0,
+            rematchRequest: 0,
+            updatedAt: db.serverDate()
+          }
+        });
+        // 写库成功 → 本地复位
         this._board = X.startBoard();
         this._history = [];
         this._lastMove = null;
@@ -836,7 +866,6 @@ Page({
         this._selected = null;
         this._leaverHandled = false;
         this._prevWinner = 0;   // 终局→进行中的转换基线
-        const backTurn = X.RED;
         this.setData({
           stage: 'playing',
           turn: backTurn,
@@ -847,19 +876,6 @@ Page({
         }, () => {
           this._notePosition();
           this._drawBoard();
-        });
-        await db.collection(COLLECTION).doc(this._roomId).update({
-          data: {
-            boardStr: X.boardToStr(this._board),
-            history: [],
-            turn: X.RED,
-            moveCount: 0,
-            lastMove: {},
-            winner: 0,
-            undoRequest: 0,
-            rematchRequest: 0,
-            updatedAt: db.serverDate()
-          }
         });
         this._boardKey = X.boardToStr(this._board);
         this._seenUndoSide = 0;
@@ -912,6 +928,11 @@ Page({
     if (this.data.mode !== 'online' || this.data.stage !== 'playing') return;
     const icon = e.currentTarget.dataset.icon;
     if (!icon) return;
+    // 连点水果 = 连发云写（每次 pushChat 都要整写一次房间文档）。
+    // 高频写会触发云数据库限流，连走棋同步都会跟着卡；和戳一戳共用冷却。
+    const now = Date.now();
+    if (this._lastFruitSent && now - this._lastFruitSent < C.POKE_COOLDOWN) return;
+    this._lastFruitSent = now;
     // 走聊天通道（roomkit.pushChat 自带乐观更新与去重）
     await roomkit.pushChat(this, COLLECTION, {
       from: this.data.mySide, type: 'emoji', content: icon, ts: Date.now()

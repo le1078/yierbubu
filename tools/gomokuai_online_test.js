@@ -13,6 +13,7 @@ let capturedPage = null;
 const toasts = [];
 const modals = [];
 let dbUpdates = [];
+let failUpdate = false;   // 模拟云端写失败（限流/弱网）
 global.Page = function (def) { capturedPage = def; };
 global.getApp = function () { return { globalData: {} }; };
 global.wx = {
@@ -24,13 +25,21 @@ global.wx = {
     database() {
       return {
         serverDate() { return new Date(); },
-        command() {},
+        command: { push: function (x) { return x; } },
         collection() {
           return {
             doc() {
               return {
-                update(o) { dbUpdates.push(o && o.data); return Promise.resolve({}); },
-                set(o) { dbUpdates.push(o && o.data); return Promise.resolve({}); },
+                update(o) {
+                  if (failUpdate) return Promise.reject(new Error('write throttled'));
+                  dbUpdates.push(o && o.data);
+                  return Promise.resolve({});
+                },
+                set(o) {
+                  if (failUpdate) return Promise.reject(new Error('write throttled'));
+                  dbUpdates.push(o && o.data);
+                  return Promise.resolve({});
+                },
                 get() { return Promise.resolve({ data: {} }); }
               };
             },
@@ -252,6 +261,69 @@ function loadPage() {
     g.undo();
     check(g._history.length === 0 && dbUpdates.length === 0,
       '人机悔棋直接本地生效（不走云确认）');
+  }
+
+  /* ===== [10] 同意悔棋/再来一局时写库失败：本地不能先变 ===== */
+  console.log('\n[10] 同意悔棋/重开时写库失败，本地必须保持原局面（否则与云端分叉）');
+  {
+    failUpdate = true;
+    toasts.length = 0;
+
+    // 悔棋：响应方同意，但写库失败
+    const g = loadPage();
+    g.data.mode = 'online';
+    g.data.myColor = 2;
+    g.data.stage = 'playing';
+    g.data.undoState = 'oppRequested';
+    g.data.undoReqSide = 1;
+    g._roomId = 'r1';
+    g._board = core.emptyBoard();
+    g._board[7][7] = 1;
+    g._board[7][8] = 2;
+    g._history = [{ r: 7, c: 7, color: 1 }, { r: 7, c: 8, color: 2 }];
+    const before = JSON.stringify(g._board);
+    await g.respondUndo({ currentTarget: { dataset: { agree: '1' } } });
+    check(JSON.stringify(g._board) === before, '悔棋写库失败：棋盘保持原样');
+    check(g._history.length === 2, '悔棋写库失败：history 保持原样');
+    check(g.data.stage === 'playing', '悔棋写库失败：仍在对局中（可重试）');
+    check(toasts.indexOf('操作失败') !== -1, '悔棋写库失败：有明确提示');
+
+    // 重开：响应方同意，但写库失败
+    const g2 = loadPage();
+    g2.data.mode = 'online';
+    g2.data.myColor = 2;
+    g2.data.stage = 'ended';
+    g2.data.rematchState = 'oppRequested';
+    g2._roomId = 'r1';
+    g2._board = core.emptyBoard();
+    g2._board[3][3] = 1;
+    g2._history = [{ r: 3, c: 3, color: 1 }];
+    const before2 = JSON.stringify(g2._board);
+    await g2.respondRematch({ currentTarget: { dataset: { agree: '1' } } });
+    check(JSON.stringify(g2._board) === before2, '重开写库失败：棋盘保持原样');
+    check(g2._history.length === 1, '重开写库失败：history 保持原样');
+    check(g2.data.stage === 'ended', '重开写库失败：仍停在结算屏（不会假装已重开）');
+    failUpdate = false;
+  }
+
+  /* ===== [11] 连点扔水果：冷却内只发一次 ===== */
+  console.log('\n[11] 连点水果：冷却内只写一次');
+  {
+    dbUpdates = [];
+    const g = loadPage();
+    g.data.mode = 'online';
+    g.data.myColor = 1;
+    g.data.stage = 'playing';
+    g._roomId = 'r1';
+    g._playEmojiFly = function () {};
+    g.data.chatList = [];
+    await g.throwFruit({ currentTarget: { dataset: { icon: '🥭' } } });
+    await g.throwFruit({ currentTarget: { dataset: { icon: '🍉' } } });
+    await g.throwFruit({ currentTarget: { dataset: { icon: '🍈' } } });
+    check(dbUpdates.length === 1, '冷却内只发 1 次（实际 ' + dbUpdates.length + '）');
+    g._lastFruitSent = 0;
+    await g.throwFruit({ currentTarget: { dataset: { icon: '🥭' } } });
+    check(dbUpdates.length === 2, '冷却过后可以继续扔（实际 ' + dbUpdates.length + '）');
   }
 
   console.log('\n========================================');
