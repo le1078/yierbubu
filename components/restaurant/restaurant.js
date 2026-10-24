@@ -94,6 +94,8 @@ Component({
       }, 60000);
     },
     detached() {
+      // 异步回调（加载/保存/下单）可能在组件销毁后才返回，标记后不再 setData
+      this._detached = true;
       if (this._todayTimer) clearInterval(this._todayTimer);
       this._todayTimer = null;
       if (this._catNameTimer) clearTimeout(this._catNameTimer);
@@ -118,6 +120,7 @@ Component({
       this._menuLoading = true;
       try {
         const menu = await cloud.loadMenu();
+        if (this._detached) return;
         if (menu && menu.length) {
           this._menuCacheAt = Date.now();
           this._menuSnapshot = clone(menu);
@@ -139,6 +142,7 @@ Component({
         this._menuSnapshot = clone(menu);
         return true;
       } catch (e) {
+        if (this._detached) return false;
         this.setData({ menu: snapshot });
         this._menuSnapshot = snapshot;
         wx.showToast({ title: '保存失败，已还原', icon: 'none' });
@@ -242,6 +246,7 @@ Component({
       try {
         // 原子追加：避免 load→unshift→save 的竞态覆盖他人订单
         await cloud.pushOrder(order);
+        if (this._detached) return;
 
         wx.showToast({ title: '下单成功！', icon: 'success' });
         this.setData({

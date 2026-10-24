@@ -148,6 +148,30 @@ function loadPage(rel, stubs) {
   await new Promise((r) => setTimeout(r, 10));
   ok(p2.data.shopCount === 1 && p2.data.groups[0].items[0].title === '本地记录', '云端失败回落本地缓存');
 
+
+  // 10) 平台识别必须按主机名匹配，不能整串包含（防误判）
+  const plat = require('../utils/platforms.js');
+  const platCases = [
+    ['https://item.taobao.com/item.htm?id=1', '淘宝'],
+    ['https://m.tb.cn/h.abc', '淘宝'],
+    ['https://item.jd.com/1.html', '京东'],
+    ['m.tb.cn/h.xyz', '淘宝'],
+    ['https://user:pw@item.jd.com:443/x', '京东'],
+    ['https://evil.com/?ref=taobao.com', ''],
+    ['https://taobao.com.evil.com/', ''],
+    ['https://notjd.com.evil.com/x', ''],
+    ['', '']
+  ];
+  let platBad = 0;
+  for (const c of platCases) {
+    const got = plat.platOf(c[0]);
+    if (got !== c[1]) {
+      platBad++;
+      console.log('  平台误判:', JSON.stringify(c[0]), '期望', JSON.stringify(c[1]), '实际', JSON.stringify(got));
+    }
+  }
+  ok(platBad === 0, '平台识别按主机名后缀匹配（' + platCases.length + ' 个用例，含钓鱼式 URL）');
+
   console.log(failures ? `\n共 ${failures} 项失败` : '\n全部通过 ✓');
   process.exit(failures ? 1 : 0);
 })();

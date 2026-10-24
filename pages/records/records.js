@@ -67,6 +67,11 @@ Page({
     this.render();
   },
 
+  onUnload() {
+    // render() 里有 await：页面在等待期间被销毁时不能再 setData
+    this._destroyed = true;
+  },
+
   switchTab(e) {
     this.setData({ activeTab: e.currentTarget.dataset.tab });
   },
@@ -90,6 +95,7 @@ Page({
       ]);
       const recs = res[0], orders = res[1], shopping = res[2], trash = res[3];
       this._lastLoadAt = Date.now();
+      if (this._destroyed) return;   // 等待期间页面已卸载，不能再 setData
       this.setData({
         records: this._mapRecords(recs),
         orders: this._mapOrders(orders),
@@ -100,6 +106,7 @@ Page({
       });
     } catch (e) {
       console.error('记录加载失败', e);
+      if (this._destroyed) return;
       this.setData({ loading: false, loadError: true });
       wx.showToast({ title: '加载失败，请下拉重试', icon: 'none' });
     }
@@ -139,7 +146,8 @@ Page({
         desc,
         amount: items.length
           ? String(items.length) + meta.unit
-          : ((d.number < 10 ? '0' : '') + d.number)
+          // 旧版单条记录可能连 number 都没有，直接拼会显示「0undefined」
+          : (d.number == null ? '' : ((d.number < 10 ? '0' : '') + d.number))
       });
     });
   },

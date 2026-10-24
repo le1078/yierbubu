@@ -22,7 +22,7 @@ const GAMES = [
     id: 'mario',
     icon: '🍄',
     name: '小笨马里奥',
-    desc: '五关闯关 · 管道金币房 · 星星无敌 + Boss战',
+    desc: '七关闯关 · 管道金币房 · 星星无敌 · 双 Boss 战',
     tags: ['联机', '闯关', 'Boss'],
     path: '/subpackages/games/mario/mario',
     online: true

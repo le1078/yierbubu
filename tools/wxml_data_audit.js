@@ -94,6 +94,9 @@ const KEYWORDS = {
 const files = [];
 walk(path.join(ROOT, 'pages'), files);
 walk(path.join(ROOT, 'subpackages'), files);
+// 自定义组件也必须审计：之前漏扫 components/，餐厅/生肖组件的
+// WXML 绑定与数据字段从没被检查过
+walk(path.join(ROOT, 'components'), files);
 
 let allOk = true;
 for (const wxml of files) {

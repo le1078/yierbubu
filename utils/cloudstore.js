@@ -61,6 +61,15 @@ function strip(doc) {
 
 // 原子更新：先拉最新 → mergeFn 修改 → 带版本号写回，冲突自动重试
 // mergeFn(doc) 就地修改 doc；返回最终 doc
+//
+// 关于并发（重要，别误解）：
+//   · 同进程内：enqueue 把写操作串成一条链，读-改-写不会交错 —— 这部分是
+//     真实生效的，页面里连点/并发调用都安全。
+//   · 跨设备：下面的 condition 字段依赖云 SDK 支持条件更新。微信小程序
+//     客户端 SDK 的 doc().update() 并不保证支持 condition；若运行时不支持，
+//     该参数被忽略，退化为「后写覆盖先写」（last-write-wins）。
+//     对这个双人私用的小程序可以接受（两人极少同时编辑同一份数据），
+//     但不能宣称具备强并发保护。真要严格一致需改用云函数/数据库事务。
 async function mutateDoc(docId, mergeFn) {
   return enqueue(async () => {
     for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
@@ -148,23 +157,44 @@ async function removeTrashItem(trashId) {
   });
 }
 
-// 从回收站取回一条：回填到原始列表头部，并从回收站移除
+// 从回收站取回一条：回填到原始列表头部，并从回收站移除。
+//
+// 顺序很关键：先「原子地」从回收站移除（同一个 mutateDoc 里查找+删除），
+// 成功后再插回目标列表。原来先插列表再删回收站，连点两下「恢复」会让
+// 两次调用都读到同一条 → 目标列表里出现两条重复记录。
+// 插回失败则把条目塞回回收站，避免「从回收站删掉了却没回到列表」的丢数据。
 async function restoreTrashItem(trashId) {
-  const trash = await loadTrash();
-  const item = trash.find(it => String(it.id) === String(trashId));
-  if (!item) return null;
-  const data = Object.assign({}, item.data);
-  delete data._restoredAt;
-  const docId = item.type === 'order' ? DOC_ORDERS
-    : item.type === 'shopping' ? DOC_SHOPPING
-    : DOC_RECORDS;
-  await mutateDoc(docId, (doc) => {
-    const list = (doc.list || []).slice();
-    list.unshift(data);
-    doc.list = list;
+  let removed = null;
+  await mutateDoc(DOC_TRASH, (doc) => {
+    const list = doc.list || [];
+    const idx = list.findIndex(it => String(it.id) === String(trashId));
+    if (idx === -1) return;
+    removed = list[idx];
+    doc.list = list.filter((_, i) => i !== idx);
   });
-  await removeTrashItem(trashId);
-  return item;
+  if (!removed) return null;   // 已被别的调用取走（连点/多端）——直接忽略
+
+  const data = Object.assign({}, removed.data);
+  delete data._restoredAt;
+  const docId = removed.type === 'order' ? DOC_ORDERS
+    : removed.type === 'shopping' ? DOC_SHOPPING
+    : DOC_RECORDS;
+  try {
+    await mutateDoc(docId, (doc) => {
+      const list = (doc.list || []).slice();
+      list.unshift(data);
+      doc.list = list;
+    });
+  } catch (e) {
+    // 插回失败：把条目放回回收站，保证「要么恢复成功、要么还在回收站」
+    try {
+      await mutateDoc(DOC_TRASH, (doc) => {
+        doc.list = [removed].concat(doc.list || []).slice(0, 100);
+      });
+    } catch (e2) { /* 兜底也失败：只能上抛原始错误 */ }
+    throw e;
+  }
+  return removed;
 }
 
 /* ===== 记录 ===== */

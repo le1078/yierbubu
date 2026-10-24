@@ -131,6 +131,46 @@ function wait(ms) {
     check(/_pollKey/.test(src), 'gomoku 轮询按 _pollKey 去重');
   }
 
+  console.log('\n[5] 乱序保护：迟到的旧快照不能把棋局回滚');
+  {
+    // watch 与轮询是两条独立通道，可能交错投递；页面收到旧快照会按
+    // boardStr 重建棋盘 —— 等于回滚。用服务端 updatedAt 单调过滤。
+    const page = {};
+    const seen = [];
+    const onChange = function (d) { seen.push(d.boardStr || 'none'); };
+    const makeDoc = function (t, board) {
+      return { _id: 'r1', roomNo: '1234', status: 'playing', boardStr: board, updatedAt: new Date(t) };
+    };
+    const t0 = 1761300000000;
+
+    docData = makeDoc(t0 + 5000, 'move5');
+    await roomkit.pollRoom(page, 'rooms', 'r1', onChange);
+    check(seen.length === 1 && seen[0] === 'move5', '最新快照正常送达');
+
+    // 迟到的旧快照（第 3 手）必须丢弃
+    docData = makeDoc(t0 + 3000, 'move3');
+    await roomkit.pollRoom(page, 'rooms', 'r1', onChange);
+    check(seen.length === 1, '更旧的快照被丢弃（棋盘不回滚）');
+
+    // 更新的快照继续放行
+    docData = makeDoc(t0 + 9000, 'move9');
+    await roomkit.pollRoom(page, 'rooms', 'r1', onChange);
+    check(seen.length === 2 && seen[1] === 'move9', '更新的快照继续送达');
+
+    // 没有 updatedAt 的文档（如马里奥只写 world 字段）必须一律放行
+    page._pollKey = null;
+    docData = { _id: 'r1', status: 'playing', world: 'w1' };
+    await roomkit.pollRoom(page, 'rooms', 'r1', onChange);
+    check(seen.length === 3, '无 updatedAt 的文档不被顺序过滤挡掉');
+    docData = { _id: 'r1', status: 'playing', world: 'w2' };
+    await roomkit.pollRoom(page, 'rooms', 'r1', onChange);
+    check(seen.length === 4, '无时间戳的连续更新都能送达');
+
+    // 关闭订阅要清掉顺序基线（换房间不能沿用上一局时间）
+    roomkit.closeWatch(page);
+    check(page._lastDocAt === 0, 'closeWatch 清空顺序基线');
+  }
+
   console.log('\n========================================');
   console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
   if (fail > 0) {

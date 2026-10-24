@@ -128,6 +128,28 @@ async function findJoinableRoom(collection, roomNo) {
 // 订阅房间文档。onChange 收到房间文档。
 // 内部维护退避状态，调用方把返回对象挂在 this._watcher 上，
 // 用 closeWatch(page) 统一关闭。
+// 文档顺序保护：watch 推送与 200ms 轮询是两条独立通道，可能交错——
+// 一条刚推来「第 5 手」，另一条又送来此前发出的「第 4 手」旧快照。
+// 页面拿到旧快照会直接按 boardStr 重建棋盘，等于把棋局回滚。
+// 用服务端 updatedAt 做单调判据：只拒绝「明确更旧」的文档，
+// 时间戳相等或缺失（如马里奥只写 world 字段、不动 updatedAt）一律放行。
+function docOrder(doc) {
+  if (!doc || !doc.updatedAt) return 0;
+  const t = (doc.updatedAt instanceof Date)
+    ? doc.updatedAt.getTime()
+    : new Date(doc.updatedAt).getTime();
+  return isFinite(t) ? t : 0;
+}
+
+function acceptDocOrder(page, doc) {
+  const t = docOrder(doc);
+  if (t > 0) {
+    if (page._lastDocAt > 0 && t < page._lastDocAt) return false;
+    page._lastDocAt = t;
+  }
+  return true;
+}
+
 function startWatch(page, collection, docId, onChange, isRetry) {
   closeWatch(page);
   const db = wx.cloud.database();
@@ -143,6 +165,7 @@ function startWatch(page, collection, docId, onChange, isRetry) {
         const key = JSON.stringify(docs[0]);
         if (key === page._pollKey) return;
         page._pollKey = key;
+        if (!acceptDocOrder(page, docs[0])) return;   // 迟到的旧快照，丢弃
         onChange(docs[0]);
       },
       onError: (err) => {
@@ -200,6 +223,7 @@ async function pollRoom(page, collection, docId, onChange) {
     const key = JSON.stringify(res.data);
     if (key === page._pollKey) return;
     page._pollKey = key;
+    if (!acceptDocOrder(page, res.data)) return;   // 轮询返回的旧快照，丢弃
     onChange(res.data);
   } catch (e) {
     log.e('[roomkit] poll fail', e);
@@ -230,6 +254,8 @@ function closeWatch(page) {
   }
   page._usingPoll = false;
   page._pollKey = null;
+  // 顺序基线随订阅一起清空：换房间/重连后不能沿用上一局的最后时间戳
+  page._lastDocAt = 0;
 }
 
 /* ========== 定时器统一清理 ========== */
