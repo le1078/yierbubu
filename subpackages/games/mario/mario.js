@@ -136,6 +136,9 @@ Page({
     this._paused = true;
     this._stopLoop();
     this._stopInputPoll();
+    // 按着方向键时切走，touchend 永远不会来：不清空的话回来角色会一直
+    // 自己跑（联机时 guest 还会把这个"一直按住"持续上报给 host）
+    this._resetInputs();
     if (this._roomId && this.data.mode === 'online') {
       // 给对方留个标记：区分「人切后台了」和「同步坏了」，
       // 否则对方只会看到吓人的「⚠️ 同步中断」。
@@ -184,6 +187,22 @@ Page({
         data: { pause: seat }
       }).catch(() => {});
     } catch (e) { /* 云未初始化等极端情况直接忽略 */ }
+  },
+
+  // 清空所有按键（切后台/离开用）：只改内存里的输入，不 setData
+  _resetInputs() {
+    if (this._inputs) {
+      for (const k of [1, 2]) {
+        const i = this._inputs[k];
+        if (!i) continue;
+        i.left = false; i.right = false; i.up = false;
+        i.down = false; i.run = false;
+      }
+    }
+    if (this._edgeLatch) {
+      this._edgeLatch.u = false;
+      this._edgeLatch.d = false;
+    }
   },
 
   /* ========== 布局 ========== */
@@ -621,6 +640,9 @@ Page({
     if (!v || this._destroyed) return;
     this._lastRemoteAt = Date.now();
     if (v.k === 'world') {
+      // 只有 guest 收世界、host 收输入；方向反了说明两端协议不一致，
+      // 直接丢弃比把对端数据当权威套到自己身上安全
+      if (this.data.mySeat !== 2) return;
       let reloaded = false;
       try {
         reloaded = this._applyWorld(v.w, false);
@@ -630,6 +652,7 @@ Page({
       }
       this._handleRoomWinner(v.winner, reloaded);
     } else if (v.k === 'input') {
+      if (this.data.mySeat !== 1) return;   // 同上：只有 host 消费 guest 输入
       this._applyInput2(v.i);
       this._rxInput = (this._rxInput || 0) + 1;
     } else if (v.k === 'end') {

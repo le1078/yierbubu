@@ -234,6 +234,25 @@ function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     p.onUnload();
   }
 
+  console.log('\n[7] 按着键切后台：回来后不能一直自己跑');
+  {
+    const p = loadPage();
+    p.data.mode = 'online';
+    p.data.mySeat = 2;
+    p.data.stage = 'playing';
+    p._inputs = {
+      1: { left: false, right: true, up: true, down: false, run: true },
+      2: { left: false, right: true, up: true, down: false, run: true }
+    };
+    p._edgeLatch = { u: true, d: true };
+    p.onHide();   // 无 _roomId：只做本地的暂停/清键
+    const i1 = p._inputs[1], i2 = p._inputs[2];
+    check(!i1.right && !i1.up && !i1.run && !i1.left && !i1.down, 'P1 按键全部松开');
+    check(!i2.right && !i2.up && !i2.run, 'P2 按键也清掉（guest 不能持续上报「按住」）');
+    check(p._edgeLatch.u === false && p._edgeLatch.d === false, '跳跃/下蹲边沿锁存清空');
+    p.onUnload();
+  }
+
   console.log('\n========================================');
   console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
   if (fail) { console.log('❌ 生命周期回归未通过'); process.exit(1); }
