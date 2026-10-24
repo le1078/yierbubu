@@ -188,6 +188,55 @@ console.log('\n[5] 满盘平局：225 手无连五时必须能判满');
   check(count === core.SIZE * core.SIZE, '满盘 225 子');
 }
 
+console.log('\n[6] 老联机页的 _checkWin 与渲染层实现交叉验证');
+{
+  // gomoku.js（老联机页，分享卡片仍会进来）自己有一份 _checkWin，
+  // 与 board_render.findWinLine 是第三份实现。这里随机棋盘做交叉验证，
+  // 防止三者悄悄分叉（分叉会导致「一方看到赢了、另一方没赢」）。
+  let captured = null;
+  global.Page = function (def) { captured = def; };
+  global.getApp = function () { return { globalData: {} }; };
+  global.wx = {
+    showToast: function () {}, showModal: function () {}, hideLoading: function () {},
+    showLoading: function () {}, getWindowInfo: function () { return { windowWidth: 375, pixelRatio: 2 }; },
+    getSystemInfoSync: function () { return { windowWidth: 375, pixelRatio: 2 }; },
+    createSelectorQuery: function () { return null; },
+    cloud: { database: function () { return { serverDate: function () { return new Date(); }, command: { push: function (v) { return v; } }, collection: function () { return { doc: function () { return { update: function () { return Promise.resolve(); }, get: function () { return Promise.resolve({ data: {} }); }, watch: function () { return { close: function () {} }; } }; }, where: function () { return { limit: function () { return this; }, get: function () { return Promise.resolve({ data: [] }); } }; }, add: function () { return Promise.resolve({ _id: 'r' }); } }; } }; } }
+  };
+  delete require.cache[require.resolve(path.join(__dirname, '..', 'subpackages/games/gomoku/gomoku.js'))];
+  require(path.join(__dirname, '..', 'subpackages/games/gomoku/gomoku.js'));
+
+  function makeRng2(seed) {
+    let s = seed >>> 0;
+    return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+  }
+
+  let cases2 = 0, mismatch2 = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const rng = makeRng2(seed * 7717);
+    const b = core.emptyBoard();
+    for (let i = 0; i < 60; i++) {
+      const r = Math.floor(rng() * core.SIZE), c = Math.floor(rng() * core.SIZE);
+      if (!b[r][c]) b[r][c] = rng() < 0.5 ? 1 : 2;
+    }
+    // 随机挑一个已有棋子做「最后一手」，两种实现必须给出一致结论
+    const pts = [];
+    for (let r = 0; r < core.SIZE; r++) for (let c = 0; c < core.SIZE; c++) if (b[r][c]) pts.push([r, c]);
+    for (let k = 0; k < 25; k++) {
+      const p = pts[Math.floor(rng() * pts.length)];
+      if (!p) continue;
+      const page = Object.create(captured);
+      page._board = b;
+      const a = !!page._checkWin(p[0], p[1], b[p[0]][p[1]]);
+      const c2 = !!R.findWinLine(b, p[0], p[1], b[p[0]][p[1]]);
+      cases2++;
+      if (a !== c2) mismatch2++;
+    }
+  }
+  check(cases2 > 500, '交叉验证样本足够（' + cases2 + ' 个判定）');
+  check(mismatch2 === 0, '两份胜负实现完全一致（分歧 ' + mismatch2 + ' 处）');
+}
+
 console.log('\n========================================');
 console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
 if (fail > 0) {

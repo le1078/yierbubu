@@ -33,6 +33,20 @@ const LV = require('./levels.js');
 const R = require('./render.js');
 const AU = require('./audio.js');
 
+// 联机 world / input 的安全解析：房间文档里可能残留旧版本或损坏的 JSON。
+// 直接 JSON.parse 会抛在 watch/轮询回调里（同步从此中断），或在加入房间时
+// 让整个加入流程失败。统一在这里兜底，解析失败返回 null 由调用方跳过。
+function parseJsonSafe(str, tag) {
+  if (!str) return null;
+  try {
+    const v = JSON.parse(str);
+    return (v && typeof v === 'object') ? v : null;
+  } catch (e) {
+    log.e('[mario] ' + tag + ' 解析失败，已跳过', e);
+    return null;
+  }
+}
+
 // 联机模式：'online' | 'solo'（solo = 单机试玩/开发用）
 Page({
   data: {
@@ -423,7 +437,8 @@ Page({
       this._setupLevel(lvIdx);
       this._resetCanvas();
       // guest 是座位 2，先按 host 的世界快照对齐一帧
-      if (room.world) this._applyWorld(JSON.parse(room.world), true);
+      const initWorld = parseJsonSafe(room.world, 'world');
+      if (initWorld) this._applyWorld(initWorld, true);
       this.setData({
         stage: 'playing',
         mode: 'online',
@@ -473,7 +488,8 @@ Page({
         if (gen !== this._pollGen) return;   // await 期间被新链取代
         if (res && res.data && res.data.input2 && res.data.input2 !== this._lastInputRaw) {
           this._lastInputRaw = res.data.input2;
-          this._applyInput2(JSON.parse(res.data.input2));
+          const inputPayload = parseJsonSafe(res.data.input2, 'input2');
+          if (inputPayload) this._applyInput2(inputPayload);
           this._lastRemoteAt = Date.now();
           this._rxInput = (this._rxInput || 0) + 1;
         }
@@ -722,7 +738,8 @@ Page({
       // guest：应用 host 的权威世界（reloaded = 本帧刚好换了关卡/重开）
       let reloaded = false;
       try {
-        reloaded = this._applyWorld(JSON.parse(room.world), false);
+        const w = parseJsonSafe(room.world, 'world');
+        if (w) reloaded = this._applyWorld(w, false);
         this._lastRemoteAt = Date.now();
         this._rxWorld = (this._rxWorld || 0) + 1;
       } catch (e) {

@@ -134,6 +134,29 @@ async function saveCalendarMemo(memoObj) {
   return mutateDoc(DOC_CALENDAR, (doc) => { doc.memo = memoObj; });
 }
 
+// 按天写备忘：只改 doc.memo[ds]，不整份覆盖。
+// 两个人同一天用两台设备记不同的日子时，整份覆盖会互相抹掉对方的那天。
+async function saveCalendarMemoDay(ds, rec) {
+  if (!ds) return null;
+  return mutateDoc(DOC_CALENDAR, (doc) => {
+    const memo = Object.assign({}, doc.memo || {});
+    if (rec) memo[ds] = rec;
+    else delete memo[ds];
+    doc.memo = memo;
+  });
+}
+
+// 按天写买码记录（同上，只动自己那一天）
+async function saveCalendarBuyDay(ds, rec) {
+  if (!ds) return null;
+  return mutateDoc(DOC_CALENDAR, (doc) => {
+    const buy = Object.assign({}, doc.buy || {});
+    if (rec) buy[ds] = rec;
+    else delete buy[ds];
+    doc.buy = buy;
+  });
+}
+
 async function saveCalendarBuy(buyObj) {
   return mutateDoc(DOC_CALENDAR, (doc) => { doc.buy = buyObj; });
 }
@@ -207,6 +230,23 @@ async function loadRecords() {
 
 async function saveRecords(list) {
   return mutateDoc(DOC_RECORDS, (doc) => { doc.list = list; });
+}
+
+// 原子追加一条抽取记录。
+// 不要在页面里「读全表 → unshift → 整表写回」：另一个设备同时抽奖时，
+// 双方读到同一份旧表，后写的会把对方那条记录覆盖掉（丢记录）。
+async function pushRecordSafe(item, cap) {
+  const limit = cap || 200;
+  return mutateDoc(DOC_RECORDS, (doc) => {
+    doc.list = [item].concat(doc.list || []).slice(0, limit);
+  });
+}
+
+// 原子删除一条抽取记录（按 id 过滤，同样避免整表覆盖竞态）
+async function removeRecordById(id) {
+  return mutateDoc(DOC_RECORDS, (doc) => {
+    doc.list = (doc.list || []).filter(r => String(r.id) !== String(id));
+  });
 }
 
 // 软删除单条抽取记录 → 进回收站
@@ -336,8 +376,12 @@ module.exports = {
   loadCalendar,
   saveCalendarMemo,
   saveCalendarBuy,
+  saveCalendarMemoDay,
+  saveCalendarBuyDay,
   loadRecords,
   saveRecords,
+  pushRecordSafe,
+  removeRecordById,
   trashRecordById,
   loadOrders,
   saveOrders,

@@ -164,6 +164,42 @@ console.log('\n[10] 自我对局（AI vs AI 各 5 局，验证不卡死/不落�
   check(blackWins + whiteWins + draws === 10, '胜负平计数自洽');
 }
 
+/* ========== 极端棋盘：AI 不能落在已占点（候选点回退逻辑） ========== */
+console.log('\n[极端棋盘] 候选点回退不会给出已占格');
+{
+  const N = core.SIZE;
+  // 几乎满盘，只留一个 7x7 空区：中心 3x3 与任何棋子距离都 > 2，
+  // 若候选点只看半径 2，这些格子不在候选里 —— 回退逻辑必须仍选到空点
+  const b = core.emptyBoard();
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) b[r][c] = ((r + c) % 2) + 1;
+  for (let r = 4; r <= 10; r++) for (let c = 4; c <= 10; c++) b[r][c] = 0;
+  let illegal = 0, nulls = 0;
+  for (const diff of ['easy', 'normal', 'hard']) {
+    for (let k = 0; k < 10; k++) {
+      const mv = ai.think(b, 1, diff, { budgetMs: 120 });
+      if (!mv) { nulls++; continue; }
+      if (b[mv.r][mv.c] !== 0) illegal++;
+    }
+  }
+  check(illegal === 0, '近满盘（7x7 空区）AI 不落在已占格（违例 ' + illegal + '）');
+  check(nulls === 0, '近满盘仍能给出着法（空着法 ' + nulls + '）');
+
+  // 只剩一个空点
+  const b2 = core.emptyBoard();
+  for (let r = 0; r < N; r++) for (let c = 0; c < N; c++) b2[r][c] = ((r + c) % 2) + 1;
+  b2[0][0] = 0;
+  let onlyOk = true;
+  for (const diff of ['easy', 'normal', 'hard']) {
+    const mv = ai.think(b2, 1, diff, { budgetMs: 100 });
+    if (!mv || mv.r !== 0 || mv.c !== 0) onlyOk = false;
+  }
+  check(onlyOk, '只剩一个空点时三个难度都选中该点');
+
+  // 空盘：落在天元
+  const mv3 = ai.think(core.emptyBoard(), 1, 'hard', { budgetMs: 100 });
+  check(!!mv3 && mv3.r === 7 && mv3.c === 7, '空盘落子在天元（' + JSON.stringify(mv3) + '）');
+}
+
 /* ========== 汇总 ========== */
 console.log('\n========================================');
 console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');

@@ -264,16 +264,24 @@ Page({
     this.renderCalendar();
   },
 
-  // 统一保存入口：失败时明确提示，不再静默吞掉
+  // 统一保存入口：失败时明确提示，不再静默吞掉。
+  // 只写「当前选中这一天」而不是整份 memo 对象：两个人用两台设备分别记
+  // 不同日期时，整份覆盖会把对方那天抹掉（共享日历里这很容易发生）。
   _saveMemo(memoCal) {
-    cloud.saveCalendarMemo(memoCal).catch((e) => {
+    const ds = this.data.sheetDate;
+    if (!ds) return;
+    const rec = memoCal && memoCal[ds] ? memoCal[ds] : null;
+    cloud.saveCalendarMemoDay(ds, rec).catch((e) => {
       console.error('备忘保存失败', e);
       wx.showToast({ title: '保存失败，请重试', icon: 'none' });
     });
   },
 
   _saveBuy(buyCal) {
-    cloud.saveCalendarBuy(buyCal).catch((e) => {
+    const ds = this.data.sheetDate;
+    if (!ds) return;
+    const rec = buyCal && buyCal[ds] ? buyCal[ds] : null;
+    cloud.saveCalendarBuyDay(ds, rec).catch((e) => {
       console.error('买码保存失败', e);
       wx.showToast({ title: '保存失败，请重试', icon: 'none' });
     });
@@ -345,7 +353,12 @@ Page({
   },
 
   updateKaiValues() {
-    const kaiValues = [this.computeKaiValue(0), this.computeKaiValue(1), this.computeKaiValue(2)];
+    // 「未选」统一用空对象：wxml 直接读 kaiValues[ri].name，data 里不要放 null
+    const kaiValues = [
+      this.computeKaiValue(0) || {},
+      this.computeKaiValue(1) || {},
+      this.computeKaiValue(2) || {}
+    ];
     this.setData({ kaiValues });
   },
 
@@ -411,6 +424,8 @@ Page({
     const kNums = this.data.kNums.slice();
     const kNIdx = this.data.kNIdx.slice();
     const kaiValues = clone(this.data.kaiValues);
+    // 清空用空对象而不是 null：wxml 里直接写 kaiValues[ri].name，
+    // data 里放 null 会让模板做 null.name 的属性访问（不崩但语义含糊）
     kZIdx[i] = 0; kNums[i] = ['--']; kNIdx[i] = 0; kaiValues[i] = {};
     this.setData({ kZIdx, kNums, kNIdx, kaiValues }, () => this.updateTotals());
     this.persistBuy();

@@ -395,6 +395,51 @@ function setupWorld(page) {
     check(modalCalls.length === 1, '重复的离开事件不再弹');
   }
 
+  console.log('\n[9] 合作模式：队友阵亡必须能结束（不死锁）');
+  {
+    // 用真实 _checkEnd（loadPage 默认把它打桩了）
+    const realCheckEnd = capturedPage._checkEnd;
+
+    // 合作模式、P2 阵亡、P1 还活着 → 直接判负，不能卡住
+    const coop = loadPage();
+    setupWorld(coop);
+    coop.data.mode = 'solo';
+    coop.data.coop = true;
+    coop.data.stage = 'playing';
+    coop._over = false;
+    coop._stopLoop = function () {};
+    coop._players[1].state = 'dead';
+    realCheckEnd.call(coop);
+    check(coop.data.stage === 'ended' && /队友倒下/.test(coop.data.winText),
+      '合作模式一人阵亡 → 判负并结束（' + coop.data.winText + '）');
+
+    // 竞速模式同样情形不应结束（另一方还能跑到终点）
+    const race = loadPage();
+    setupWorld(race);
+    race.data.mode = 'solo';
+    race.data.coop = false;
+    race.data.stage = 'playing';
+    race._over = false;
+    race._stopLoop = function () {};
+    race._players[1].state = 'dead';
+    realCheckEnd.call(race);
+    check(race.data.stage === 'playing', '竞速模式一人阵亡不结束对局');
+
+    // 合作模式两人都到终点 → 正常通关
+    const win = loadPage();
+    setupWorld(win);
+    win.data.mode = 'solo';
+    win.data.coop = true;
+    win.data.stage = 'playing';
+    win._over = false;
+    win._stopLoop = function () {};
+    win._players[0].state = 'done';
+    win._players[1].state = 'done';
+    realCheckEnd.call(win);
+    check(win.data.stage === 'ended' && /通关/.test(win.data.winText),
+      '合作模式两人都到终点 → 通关');
+  }
+
   console.log('\n========================================');
   console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
   if (fail > 0) {

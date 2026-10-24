@@ -299,6 +299,120 @@ const cloud = require(path.join(__dirname, '..', 'utils/cloudstore.js'));
     check((DOCS.shared_menu._rev || 0) >= 2, '_rev 正常推进（' + DOCS.shared_menu._rev + '）');
   }
 
+  console.log('\n[9] 抽取记录：并发追加不丢记录');
+  {
+    DOCS.shared_records = undefined;
+    await Promise.all([
+      cloud.pushRecordSafe({ id: 'n1', kind: 'shake' }),
+      cloud.pushRecordSafe({ id: 'n2', kind: 'scratch' }),
+      cloud.pushRecordSafe({ id: 'n3', kind: 'shake' })
+    ]);
+    const list = await cloud.loadRecords();
+    check(list.length === 3, '三条并发追加都在（实际 ' + list.length + '）');
+    const ids = list.map((r) => r.id).sort().join(',');
+    check(ids === 'n1,n2,n3', '记录 id 完整（' + ids + '）');
+
+    // 上限截断
+    for (let i = 0; i < 10; i++) await cloud.pushRecordSafe({ id: 'c' + i }, 5);
+    const capped = await cloud.loadRecords();
+    check(capped.length === 5, '按上限截断到 5 条（实际 ' + capped.length + '）');
+  }
+
+  console.log('\n[10] 抽取记录：删除与追加并发不互相覆盖');
+  {
+    DOCS.shared_records = { _rev: 1, list: [{ id: 'x1' }, { id: 'x2' }] };
+    // 同时：删 x1、加 x3
+    await Promise.all([
+      cloud.removeRecordById('x1'),
+      cloud.pushRecordSafe({ id: 'x3' })
+    ]);
+    const list = await cloud.loadRecords();
+    const ids = list.map((r) => r.id).sort().join(',');
+    check(ids === 'x2,x3', '删除生效且新记录保留（' + ids + '）');
+    check(list.filter((r) => r.id === 'x1').length === 0, '已删记录不会被并发追加“复活”');
+  }
+
+  console.log('\n[11] 日历：按天写入，不同日期互不覆盖');
+  {
+    DOCS.shared_calendar = undefined;
+    // 两台设备同时记不同的日子
+    await Promise.all([
+      cloud.saveCalendarMemoDay('2026-10-01', { memo: 'A 的备忘' }),
+      cloud.saveCalendarMemoDay('2026-10-02', { memo: 'B 的备忘' }),
+      cloud.saveCalendarBuyDay('2026-10-01', { kai: {}, mai: {}, extra: 10 })
+    ]);
+    const cal = await cloud.loadCalendar();
+    check(cal.memo['2026-10-01'] && cal.memo['2026-10-01'].memo === 'A 的备忘', '第一天的备忘保留');
+    check(cal.memo['2026-10-02'] && cal.memo['2026-10-02'].memo === 'B 的备忘', '第二天的备忘没被覆盖');
+    check(cal.buy['2026-10-01'] && cal.buy['2026-10-01'].extra === 10, '买码记录写入成功');
+
+    // 清空某一天只影响那一天
+    await cloud.saveCalendarMemoDay('2026-10-01', null);
+    const cal2 = await cloud.loadCalendar();
+    check(!cal2.memo['2026-10-01'], '清空第一天生效');
+    check(!!cal2.memo['2026-10-02'], '清空第一天不影响第二天');
+    check(!!cal2.buy['2026-10-01'], '清空备忘不影响同一天买码');
+  }
+
+  console.log('\n[12] 记录页：删除 → 回收站 → 恢复 全链路（真实页面 + 真实 cloudstore）');
+  {
+    // 用真实页面方法驱动，验证 UI 层与数据层的契约（字段名、id 传递）
+    let captured = null;
+    global.Page = function (def) { captured = def; };
+    global.getApp = function () { return { globalData: {} }; };
+    const realShowModal = global.wx.showModal;
+    global.wx.showModal = function (o) { if (o && o.success) o.success({ confirm: true }); };
+    global.wx.showLoading = function () {};
+    global.wx.hideLoading = function () {};
+    global.wx.stopPullDownRefresh = function () {};
+
+    DOCS.shared_shopping = { _rev: 1, list: [{ id: 'p1', title: '拖鞋', price: 39.9, date: '2026-10-01', bought: false, ts: 1 }] };
+    DOCS.shared_trash = { _rev: 1, list: [] };
+
+    delete require.cache[require.resolve(path.join(__dirname, '..', 'pages/records/records.js'))];
+    require(path.join(__dirname, '..', 'pages/records/records.js'));
+    const page = {};
+    for (const k of Object.keys(captured)) {
+      if (typeof captured[k] === 'function') page[k] = captured[k];
+    }
+    page.data = JSON.parse(JSON.stringify(captured.data));
+    page.setData = function (patch, cb) {
+      if (patch) for (const k of Object.keys(patch)) this.data[k] = patch[k];
+      if (typeof cb === 'function') cb();
+    };
+    page.data.activeTab = 'shop';       // 购物 tab
+    page.data.showTrash = true;         // 让 _loadTrash 生效
+
+    await page.deleteOne({ currentTarget: { dataset: { id: 'p1' } } });
+    await new Promise((r) => setTimeout(r, 30));
+    const shopDoc = DOCS.shared_shopping || { list: [] };
+    const trashDoc = DOCS.shared_trash || { list: [] };
+    check((shopDoc.list || []).length === 0, '页面删除后购物列表清空');
+    check((trashDoc.list || []).length === 1, '记录进入回收站（1 条）');
+    const tid = (trashDoc.list || [])[0] && (trashDoc.list || [])[0].id;
+    check(!!tid, '回收站条目带 id（恢复入口需要）');
+    check(page.data.trashCount === 1, '页面回收站角标同步（' + page.data.trashCount + '）');
+
+    await page.restoreOne({ currentTarget: { dataset: { tid: tid } } });
+    await new Promise((r) => setTimeout(r, 30));
+    const shopDoc2 = DOCS.shared_shopping || { list: [] };
+    const trashDoc2 = DOCS.shared_trash || { list: [] };
+    check((shopDoc2.list || []).length === 1 && (shopDoc2.list || [])[0].id === 'p1',
+      '恢复后记录回到购物列表');
+    check((trashDoc2.list || []).length === 0, '恢复后回收站清空');
+
+    // 彻底删除
+    await page.deleteOne({ currentTarget: { dataset: { id: 'p1' } } });
+    await new Promise((r) => setTimeout(r, 30));
+    const tid2 = ((DOCS.shared_trash || {}).list || [])[0].id;
+    await page.purgeOne({ currentTarget: { dataset: { tid: tid2 } } });
+    await new Promise((r) => setTimeout(r, 30));
+    check((((DOCS.shared_trash || {}).list) || []).length === 0, '彻底删除后回收站为空');
+    check((((DOCS.shared_shopping || {}).list) || []).length === 0, '彻底删除不影响源列表（仍为空）');
+
+    global.wx.showModal = realShowModal;
+  }
+
   console.log('\n========================================');
   console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
   console.error = origConsoleError;

@@ -9,14 +9,14 @@ const C = require('../../utils/constants.js');
 const COVER_TEXTS = ['刮开有惊喜', '财运亨通', '手气不错', '好运连连', '福气满满', '刮出大运'];
 const DEFAULT_COVER = COVER_TEXTS[0];
 
-// 写云端记录：读最新 → unshift → 截断上限 → 写回（cloudstore 内部已串行化）
+// 写云端记录：用 cloudstore 的原子追加/删除。
+// 不能「读全表 → 改 → 整表写回」：两台设备同时抽奖时双方读到同一份旧表，
+// 后写的会把对方那条覆盖掉（丢记录），删除也会被并发追加「复活」。
 const RECORD_CAP = 200;
 
 async function pushRecord(item) {
   try {
-    const records = await cloud.loadRecords();
-    records.unshift(item);
-    await cloud.saveRecords(records.slice(0, RECORD_CAP));
+    await cloud.pushRecordSafe(item, RECORD_CAP);
   } catch (e) {
     console.error('记录云端写入失败', e);
   }
@@ -24,9 +24,7 @@ async function pushRecord(item) {
 
 async function removeRecordById(id) {
   try {
-    const records = await cloud.loadRecords();
-    const next = records.filter(r => r.id !== id);
-    if (next.length !== records.length) await cloud.saveRecords(next);
+    await cloud.removeRecordById(id);
   } catch (e) {
     console.error('记录删除失败', e);
   }

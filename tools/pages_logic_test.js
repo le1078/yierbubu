@@ -288,6 +288,88 @@ console.log('\n[4] 餐厅组件：购物车与菜单编辑');
       global.wx.getWindowInfo = realInfo;
     }
 
+    /* ===== [6] 日历买码面板：录入 → 结算 → 落盘 → 重开还原 ===== */
+    console.log('\n[6] 日历买码面板端到端');
+    {
+      const { buildMapping } = require('../utils/zodiac.js');
+      const def2 = loadDef('pages/calendar/calendar.js');
+      const cal2 = instantiate(def2, false);
+      const DS = '2026-10-05';
+      cal2.data.calY = 2026;
+      cal2.data.mapping = buildMapping(2026);
+      cal2._memoCal = {};
+      cal2._buyCal = {};
+      cal2.data.sheetDate = DS;
+      cal2.data.cloudReady = true;   // 云端未就绪时页面是只读态，不会落盘（设计如此）
+      cal2.initBuyPanel(DS);
+
+      // 选第 1 个区域的生肖：picker 索引 6 → 马（索引从 0 开始，代码里 +1）
+      cal2.onKaiZodiac({ currentTarget: { dataset: { ri: '0' } }, detail: { value: '6' } });
+      check(cal2.data.kZIdx[0] === 7, '选中生肖后 kZIdx 正确（' + cal2.data.kZIdx[0] + '）');
+      check(Array.isArray(cal2.data.kNums[0]) && cal2.data.kNums[0].length > 1,
+        '号码下拉被填充（' + cal2.data.kNums[0].length + ' 项）');
+      // 选号码
+      cal2.onKaiNum({ currentTarget: { dataset: { ri: '0' } }, detail: { value: '1' } });
+      const kai0 = cal2.data.kaiValues[0];
+      check(!!kai0 && !!kai0.name && kai0.number !== undefined,
+        '开奖号码算出（' + (kai0 && kai0.name) + ' ' + (kai0 && kai0.number) + '）');
+
+      // 下注：选同一生肖同号码，金额 20
+      cal2.onPickZodiac({ currentTarget: { dataset: { ri: '0' } }, detail: { value: '6' } });
+      cal2.onPickNum({ currentTarget: { dataset: { ri: '0' } }, detail: { value: '1' } });
+      cal2.onPickAmount({ currentTarget: { dataset: { ri: '0' } }, detail: { value: '20' } });
+      cal2.addBuy({ currentTarget: { dataset: { ri: '0' } } });
+      check(cal2.data.buyItems[0].length === 1, '加注成功（1 条）');
+      check(cal2.data.buyItems[0][0].amount === '20', '金额被带入（' + cal2.data.buyItems[0][0].amount + '）');
+      check(cal2.data.pick[0].z === 0, '加注后输入区被重置');
+      // 命中 → 中奖 20×47
+      check(cal2.data.total === '20.00' && cal2.data.winStr === '940.00',
+        '结算：投入 20 / 中奖 940（实际 ' + cal2.data.total + ' / ' + cal2.data.winStr + '）');
+
+      // 重复加同一注不会产生第二条
+      cal2.addBuy({ currentTarget: { dataset: { ri: '0' } } });
+      check(cal2.data.buyItems[0].length === 1, '同号码重复加注被去重');
+
+      // 改金额
+      cal2.onBuyAmount({ currentTarget: { dataset: { ri: '0', idx: '0' } }, detail: { value: 'abc35.5x' } });
+      check(cal2.data.buyItems[0][0].amount === '35.5', '金额清洗只留数字和小数点（' + cal2.data.buyItems[0][0].amount + '）');
+      check(cal2.data.total === '35.50', '改金额后总额更新（' + cal2.data.total + '）');
+
+      // 额外金额
+      cal2.onExtraAmount({ detail: { value: '10' } });
+      check(cal2.data.extraAmount === '10' && cal2.data.middle === (940 * 35.5 / 20 + 10).toFixed(2),
+        '额外金额计入合计');
+
+      // 落盘 + 重开面板还原
+      cal2._persistBuyNow();
+      const saved = cal2._buyCal[DS];
+      check(!!saved && !!saved.mai && !!saved.mai.laoAo && saved.mai.laoAo.length === 1,
+        '买码记录写入内存（含 mai.laoAo）');
+      check(saved.extra === 10, '额外金额一并保存（' + saved.extra + '）');
+
+      cal2.data.buyItems = [[], [], []];
+      cal2.data.buySelected = [{}, {}, {}];
+      cal2.initBuyPanel(DS);
+      check(cal2.data.buyItems[0].length === 1 && cal2.data.buyItems[0][0].amount === '35.5',
+        '重新打开面板后注单被还原（金额 ' + (cal2.data.buyItems[0][0] || {}).amount + '）');
+      check(!!(cal2.data.kaiValues[0] || {}).name, '开奖号码一并还原');
+      check(cal2.data.extraAmount === '10', '额外金额一并还原');
+
+      // 删除注单
+      cal2.deleteBuyItem({ currentTarget: { dataset: { ri: '0', idx: '0' } } });
+      check(cal2.data.buyItems[0].length === 0, '删除注单生效');
+      check(cal2.data.total === '0.00', '删除后投入归零（' + cal2.data.total + '）');
+      check(Object.keys(cal2.data.buySelected[0]).length === 0, '删除后选中态同步清理');
+
+      // 清空某区域
+      cal2.clearMai({ currentTarget: { dataset: { ri: '1' } } });
+      check(cal2.data.buyItems[1].length === 0, '清空区域不报错');
+      // 清空开奖
+      cal2.clearKai({ currentTarget: { dataset: { ri: '0' } } });
+      check(cal2.data.kZIdx[0] === 0 && !(cal2.data.kaiValues[0] || {}).name, '清空开奖号码生效');
+      if (cal2._buySaveTimer) { clearTimeout(cal2._buySaveTimer); cal2._buySaveTimer = null; }
+    }
+
     console.log('\n========================================');
     console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
     if (fail > 0) {
