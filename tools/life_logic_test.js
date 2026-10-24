@@ -186,6 +186,17 @@ function loadPage(rel, stubs) {
   ok(p3.data.shopCount === beforeCount + 1, '保存后列表只 +1 条（没有重复记录）：' + beforeCount + '→' + p3.data.shopCount);
   if (p3._parseTimer) clearTimeout(p3._parseTimer);
 
+  // 12) 千分位价格不能被截断（¥1,299.00 曾会被识别成 1 元）
+  const p4 = loadPage('pages/life/life', cloudStub);
+  p4.onLoad();
+  await new Promise((r) => setTimeout(r, 10));
+  calls.clipboard = '【京东】蓝牙耳机 到手价：¥1,299.00 点击购买';
+  p4.pasteFromClipboard();
+  ok(p4.data.form.price === '1299.00', '千分位价格识别完整：' + JSON.stringify(p4.data.form.price));
+  calls.clipboard = '炒锅 1,299.50元';
+  p4.pasteFromClipboard();
+  ok(p4.data.form.price === '1299.50', '「元」写法同样支持千分位：' + JSON.stringify(p4.data.form.price));
+
   console.log(failures ? `\n共 ${failures} 项失败` : '\n全部通过 ✓');
   process.exit(failures ? 1 : 0);
 })();

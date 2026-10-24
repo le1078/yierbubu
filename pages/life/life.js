@@ -79,16 +79,19 @@ function parsePaste(text) {
   links.forEach((u) => { rest = rest.split(u).join(' '); });
 
   // 2) 价格：优先带货币符号 / 「元」/ 关键词
+  // 支持千分位（¥1,299.00 是京东等平台的常见写法）。只写 \d+ 的话会在
+  // 逗号处截断，把 1299 元识别成 1 元 —— 静默存错金额比不识别更糟。
+  const NUM = '(\\d{1,3}(?:,\\d{3})+(?:\\.\\d{1,2})?|\\d+(?:\\.\\d{1,2})?)';
   let price = '';
   const pricePatterns = [
-    /[¥￥]\s*(\d+(?:\.\d{1,2})?)/,
-    /(?:到手价|券后价|券后|价格|现价|售价|单价)\s*[:：]?\s*[¥￥]?\s*(\d+(?:\.\d{1,2})?)/,
-    /(\d+(?:\.\d{1,2})?)\s*元/
+    new RegExp('[¥￥]\\s*' + NUM),
+    new RegExp('(?:到手价|券后价|券后|价格|现价|售价|单价)\\s*[:：]?\\s*[¥￥]?\\s*' + NUM),
+    new RegExp(NUM + '\\s*元')
   ];
   for (const re of pricePatterns) {
     const m = rest.match(re);
     if (m) {
-      price = m[1];
+      price = m[1].replace(/,/g, '');
       rest = rest.replace(m[0], ' ');
       break;
     }
@@ -538,27 +541,32 @@ Page({
     };
 
     this._items = [item].concat(this._items || []);
-    await this._persist(this._items);
-    this._render();
+    try {
+      await this._persist(this._items);
+      if (this._destroyed) return;
+      this._render();
 
-    const d = new Date();
-    this.setData({
-      draft: '',
-      form: {
-        title: '',
-        price: '',
-        link: '',
-        date: todayStr(d),
-        dateShort: this._shortDate(todayStr(d)),
-        platName: '',
-        platEmoji: '',
-        linkShort: '',
-        note: '',
-        tag: f.tag || '生活'
-      }
-    });
-    wx.showToast({ title: '记好啦', icon: 'none' });
-    this._saving = false;
+      const d = new Date();
+      this.setData({
+        draft: '',
+        form: {
+          title: '',
+          price: '',
+          link: '',
+          date: todayStr(d),
+          dateShort: this._shortDate(todayStr(d)),
+          platName: '',
+          platEmoji: '',
+          linkShort: '',
+          note: '',
+          tag: f.tag || '生活'
+        }
+      });
+      wx.showToast({ title: '记好啦', icon: 'none' });
+    } finally {
+      // 任何异常都不能把 _saving 永久卡住（否则「记一笔」再也点不动）
+      this._saving = false;
+    }
   },
 
   /* ================= 列表操作 ================= */
@@ -649,12 +657,16 @@ Page({
     raw.bought = !!f.bought;
 
     this._items = (this._items || []).slice();
-    await this._persist(this._items);
-    if (this._destroyed) { this._saving = false; return; }
-    this._render();
-    this.setData({ showEdit: false });
-    wx.showToast({ title: '已保存', icon: 'none' });
-    this._saving = false;
+    try {
+      await this._persist(this._items);
+      if (this._destroyed) return;
+      this._render();
+      this.setData({ showEdit: false });
+      wx.showToast({ title: '已保存', icon: 'none' });
+    } finally {
+      // 异常时也要解锁，否则编辑弹层里的「保存」永久失效
+      this._saving = false;
+    }
   },
 
   onUnload() {

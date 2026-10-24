@@ -255,6 +255,15 @@ console.log('\n[4] 餐厅组件：购物车与菜单编辑');
     check(r.data.activeCat === 0, 'activeCat 被夹紧到 0（实际 ' + r.data.activeCat + '）');
     check(!!r.data.menu[r.data.activeCat], 'activeCat 指向的分类存在（不会渲染空白）');
 
+    // editCat 越界（新增分类保存失败回滚后会出现）不能让保存菜品抛异常
+    r.data.menu = [{ cat: 'A', items: [] }];
+    r.data.editCat = 5;
+    r.data.form = { name: '越界菜', price: '9', taste: '', desc: '', emoji: '', img: '' };
+    let crash2 = false;
+    try { await r.saveDish(); } catch (e) { crash2 = true; }
+    check(!crash2, 'editCat 越界时保存菜品不崩');
+    check(r.data.editCat === 0, '越界后 editCat 夹回有效范围（实际 ' + r.data.editCat + '）');
+
     /* ===== [5] 屏幕尺寸变化：三款游戏都要重算并重建画布 ===== */
     console.log('\n[5] 横竖屏切换：画布重算与重建');
     {

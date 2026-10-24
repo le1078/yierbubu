@@ -321,7 +321,12 @@ Component({
       const newMenu = clone(this.data.menu);
       newMenu.push({ cat: '新分类', items: [] });
       this.setData({ menu: newMenu, editCat: newMenu.length - 1 });
-      this._saveMenu(newMenu);
+      // 保存失败会回滚 menu（少一个分类），此时 editCat 指向不存在的分类：
+      // 后续「添加菜品」读 newMenu[editCat].items 会直接 TypeError
+      this._saveMenu(newMenu).then((ok) => {
+        if (ok || this._detached) return;
+        this.setData({ editCat: Math.max(0, (this.data.menu || []).length - 1) });
+      });
     },
 
     deleteCat(e) {
@@ -335,13 +340,18 @@ Component({
           const newMenu = JSON.parse(JSON.stringify(this.data.menu));
           newMenu.splice(idx, 1);
           // activeCat 也要夹紧：删掉最后一个分类后它仍指向旧下标，
-          // menu[activeCat] 为 undefined，菜品列表渲染成空白
+          // menu[activeCat] 为 undefined，菜品列表渲染成空白。
+          // 删到只剩 0 个分类时夹到 0（不是 -1），否则之后新增分类
+          // 页面仍是空列表，要手点分类才恢复。
           this.setData({
             menu: newMenu,
             editCat: Math.max(0, idx - 1),
-            activeCat: Math.min(this.data.activeCat, newMenu.length - 1)
+            activeCat: Math.max(0, Math.min(this.data.activeCat, newMenu.length - 1))
           });
-          await this._saveMenu(newMenu);
+          const ok = await this._saveMenu(newMenu);
+          if (this._detached) return;
+          // 保存失败时 _saveMenu 已经回滚并提示，不能再报「已删除」
+          if (!ok) return;
           wx.showToast({ title: '已删除分类', icon: 'success' });
         }
       });
@@ -419,7 +429,15 @@ Component({
       }
 
       const newMenu = clone(menu);
-      const catItems = newMenu[editCat].items;
+      const cat = newMenu[editCat];
+      // 防御：editCat 可能因「新增分类保存失败回滚」而越界，
+      // 直接读 .items 会让整个保存流程抛异常、面板卡死
+      if (!cat || !Array.isArray(cat.items)) {
+        wx.showToast({ title: '分类不存在，请重新选择', icon: 'none' });
+        this.setData({ editCat: Math.max(0, newMenu.length - 1) });
+        return;
+      }
+      const catItems = cat.items;
 
       if (editingDish) {
         const idx = catItems.findIndex(it => it.id === editingDish.id);
@@ -479,7 +497,10 @@ Component({
           }
           catItems.splice(idx, 1);
           this.setData({ menu: newMenu, showMenuEditor: false, editingDish: null });
-          await this._saveMenu(newMenu);
+          const ok = await this._saveMenu(newMenu);
+          if (this._detached) return;
+          // 保存失败时 _saveMenu 已回滚并提示，不能再报「已删除」
+          if (!ok) return;
           wx.showToast({ title: '已删除', icon: 'success' });
         }
       });
