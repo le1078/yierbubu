@@ -163,7 +163,7 @@
     <view class="actions">
       <view class="act-btn" bindtap="restart">🔄 重开</view>
       <view class="act-btn" bindtap="undo">↩️ 悔棋</view>
-      <view wx:if="{{mode === 'online'}}" class="act-btn poke-btn" bindtap="poke">👉 戳一戳</view>
+      <view wx:if="{{mode === 'online'}}" class="act-btn" bindtap="poke">👉 戳一戳</view>
       <view wx:if="{{mode === 'online'}}" class="fruit-btns">
         <text class="fruit" data-icon="🥭" bindtap="throwFruit">🥭</text>
         <text class="fruit" data-icon="🍉" bindtap="throwFruit">🍉</text>

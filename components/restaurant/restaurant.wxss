@@ -508,6 +508,18 @@
   margin-right: 16rpx;
 }
 
+/* 菜品缩略图：与 emoji 占同样的视觉尺寸。
+   之前 wxml 用了这个 class 但没定义 —— 上传的图片会按原始像素渲染，
+   把编辑弹层的列表撑变形 */
+.ep-dish-img {
+  width: 52rpx;
+  height: 52rpx;
+  border-radius: 12rpx;
+  margin-right: 16rpx;
+  flex-shrink: 0;
+  background: #F6E8E0;
+}
+
 .ep-dish-info {
   flex: 1;
   display: flex;

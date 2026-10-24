@@ -486,3 +486,26 @@
   from { transform: translateX(0) rotate(0deg); }
   to { transform: translateX(900rpx) rotate(360deg); }
 }
+
+/* ===== 人机设置页布局（与马里奥/五子棋同一套视觉） =====
+   这几个 class 之前在 wxml 里用了但 wxss 里没有定义：难度/执子选项
+   会一条条竖着堆、标题没有层级，跟另外两个游戏长得不一样。 */
+.lobby-hero {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 40rpx;
+}
+
+.sec-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #6B4A52;
+  margin-bottom: 20rpx;
+}
+
+.opt-row {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 24rpx;
+}

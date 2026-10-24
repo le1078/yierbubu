@@ -62,7 +62,7 @@
   </view>
 
   <!-- 刮一刮 -->
-  <view wx:if="{{tab === 'scratch'}}" class="g-card scratch-card">
+  <view wx:if="{{tab === 'scratch'}}" class="g-card">
     <view class="g-mascot">
       <image class="masc big" src="/assets/bottom_left.gif" mode="aspectFit"/>
       <image class="masc big" src="/assets/bottom_right.gif" mode="aspectFit"/>

@@ -3,13 +3,13 @@
   <!-- ===== 餐厅牌子 ===== -->
   <view class="signboard">
     <view class="sign-frame">
-      <image class="chef chef-left" src="{{chefLeft}}" mode="aspectFit"/>
+      <image class="chef" src="{{chefLeft}}" mode="aspectFit"/>
       <view class="sign-content">
         <view class="sign-title">小笨餐厅</view>
         <view class="sign-sub">🍜 今天也要好好吃饭 🍜</view>
         <view class="sign-date">{{today}}</view>
       </view>
-      <image class="chef chef-right" src="{{chefRight}}" mode="aspectFit"/>
+      <image class="chef" src="{{chefRight}}" mode="aspectFit"/>
     </view>
   </view>
 
@@ -183,7 +183,7 @@
                   <text class="ep-img-upload-icon">📷</text>
                   <text class="ep-img-upload-text">上传图片</text>
                 </view>
-                <view class="ep-img-emoji-wrap" wx:if="{{!form.img}}">
+                <view  wx:if="{{!form.img}}">
                   <input class="ep-input ep-emoji-input" placeholder="或用 Emoji" value="{{form.emoji}}" data-field="emoji" bindinput="onFormInput" maxlength="2"/>
                 </view>
               </view>

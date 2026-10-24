@@ -37,7 +37,7 @@
 
     <view class="result {{hasResult ? 'show' : ''}}" wx:if="{{hasResult}}">
       <image class="sticker" src="{{sticker}}" mode="aspectFit"/>
-      <view class="result-body">
+      <view>
         <view class="r-h3">{{pickedEmoji}} {{pickedName}} 的相冲相配</view>
 
         <view class="rel-row" wx:for="{{rows}}" wx:key="label">
