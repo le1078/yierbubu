@@ -530,6 +530,10 @@ Page({
   },
 
   _stopInputPoll() {
+    // 代际必须一起推进：停下时可能正有一条链卡在 await get 上
+    // （此时 _inputPollTimer 已经是 null，clearTimeout 清不到它）。
+    // 它恢复后会继续自调度 —— 结算画面/切后台后 4Hz 读库的元凶。
+    this._pollGen = (this._pollGen || 0) + 1;
     if (this._inputPollTimer) {
       clearTimeout(this._inputPollTimer);
       this._inputPollTimer = null;

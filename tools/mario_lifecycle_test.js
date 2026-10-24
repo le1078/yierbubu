@@ -17,6 +17,7 @@ function check(cond, name) {
 
 const store = {};
 let inputGets = 0;
+let getDelay = 0;   // 模拟云读耗时（测试「停轮询时正卡在 await」的竞态）
 
 global.wx = {
   getStorageSync: function (k) { return Object.prototype.hasOwnProperty.call(store, k) ? store[k] : ''; },
@@ -41,8 +42,13 @@ global.wx = {
                 update: function () { return Promise.resolve({}); },
                 set: function () { return Promise.resolve({}); },
                 get: function () {
-                  if (String(id).slice(-6) === '_input') inputGets++;
-                  return Promise.resolve({ data: {} });
+                  const isInput = String(id).slice(-6) === '_input';
+                  return new Promise(function (resolve) {
+                    setTimeout(function () {
+                      if (isInput) inputGets++;
+                      resolve({ data: {} });
+                    }, getDelay);
+                  });
                 },
                 watch: function () { return { close: function () {} }; }
               };
@@ -208,6 +214,24 @@ function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     check(created === 2, '关闭后再播放会重建上下文，不会永久哑掉');
     AU.dispose();
     check(closed === 2, '再次 dispose 正常');
+  }
+
+  console.log('\n[6] 停轮询时正卡在云读上：恢复后不能自己续期');
+  {
+    const p = loadPage();
+    p._roomId = 'r4';
+    p.data.mode = 'online';
+    p.data.mySeat = 1;
+    p.data.stage = 'playing';
+    getDelay = 300;
+    inputGets = 0;
+    p._startInputPoll();          // 第一次 get 立刻发出，300ms 后才返回
+    await sleep(100);
+    p._stopInputPoll();           // 此时定时器句柄是 null，只能靠代际令牌作废
+    await sleep(800);
+    check(inputGets === 1, '在途读返回后不再续期（期望 1 次，实际 ' + inputGets + '）');
+    getDelay = 0;
+    p.onUnload();
   }
 
   console.log('\n========================================');

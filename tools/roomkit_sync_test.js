@@ -15,6 +15,7 @@ function check(cond, name) {
 let docData = { _id: 'r1', roomNo: '1234', status: 'playing', input2: 'a' };
 let watchImpl = null;
 let gets = 0;   // 云读次数（配额观测）
+let getDelay = 0;   // 模拟云读耗时（测试关订阅时正卡在 await 的竞态）
 
 global.wx = {
   showToast: function () {},
@@ -43,7 +44,10 @@ global.wx = {
                 },
                 get: function () {
                   gets++;
-                  return Promise.resolve({ data: JSON.parse(JSON.stringify(docData)) });
+                  const snapshot = JSON.parse(JSON.stringify(docData));
+                  return new Promise(function (resolve) {
+                    setTimeout(function () { resolve({ data: snapshot }); }, getDelay);
+                  });
                 }
               };
             }
@@ -225,6 +229,54 @@ function wait(ms) {
       '云端快照里还没有它时，pending 气泡不被冲掉');
     const r3 = roomkit.mergeChat(pending, [{ from: 1, type: 'text', content: 'hi', ts: 9999 }], 1);
     check(r3.list.length === 1 && !r3.list[0].pending, '云端已确认后不重复显示');
+  }
+
+  console.log('\n[8] 关闭订阅时正卡在云读上：恢复后不能自己续期');
+  {
+    // 背景：轮询链是「await get 之后再排下一次」。closeWatch 只能清掉
+    // 定时器句柄；若此刻正卡在 await 里（句柄为 null），恢复后它会照样
+    // 自调度 —— 等于关掉订阅后仍在后台 5Hz 读库。
+    watchImpl = 'throw';   // 保持 200ms 快速轮询，放大会漏读的差异
+    docData = { _id: 'r1', roomNo: '1234', status: 'playing', world: 'z' };
+    getDelay = 200;
+    const page = {};
+    gets = 0;
+    roomkit.startWatch(page, 'rooms', 'r1', function () {});
+    await wait(60);        // 第一轮 get 已发出（200ms 后才回来）
+    roomkit.closeWatch(page);
+    await wait(800);
+    check(gets === 1, 'closeWatch 后在途的一轮结束即停（期望 1 次，实际 ' + gets + '）');
+    getDelay = 0;
+  }
+
+  console.log('\n[9] 五子棋页自己的轮询：关订阅时在途的一轮也不能续期');
+  {
+    let def = null;
+    global.Page = function (d) { def = d; };
+    const gmPath = path.join(__dirname, '..', 'subpackages/games/gomoku/gomoku.js');
+    delete require.cache[require.resolve(gmPath)];
+    require(gmPath);
+    const p = {};
+    for (const k of Object.keys(def)) if (typeof def[k] === 'function') p[k] = def[k];
+    p.data = JSON.parse(JSON.stringify(def.data || {}));
+    p.setData = function (patch, cb) {
+      if (patch) for (const k of Object.keys(patch)) this.data[k] = patch[k];
+      if (cb) cb();
+    };
+    p._ensureCanvas = function () {};
+    p._roomId = 'r1';
+    let polls = 0;
+    p._pollRoomStatus = function () {
+      return new Promise(function (r) {
+        setTimeout(function () { polls++; r(); }, 200);
+      });
+    };
+    watchImpl = 'throw';   // watch 不可用 → 200ms 快速轮询
+    p._startWatch();
+    await wait(60);
+    p._closeWatcher();
+    await wait(800);
+    check(polls === 1, '五子棋关订阅后在途轮询不再续期（期望 1 次，实际 ' + polls + '）');
   }
 
   console.log('\n========================================');

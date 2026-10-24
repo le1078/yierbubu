@@ -152,6 +152,11 @@ function acceptDocOrder(page, doc) {
 
 function startWatch(page, collection, docId, onChange, isRetry) {
   closeWatch(page);
+  // 轮询链代际：closeWatch 之后，上一轮可能还卡在 await get 上
+  // （那时 _pollTimer 已经是 null，clearTimeout 拦不住它）。
+  // 它恢复后会继续自调度，等于「关了订阅还在后台读库」。代际不一致直接退出。
+  page._pollGen = (page._pollGen || 0) + 1;
+  const pollGen = page._pollGen;
   const db = wx.cloud.database();
   if (!isRetry) page._watchRetry = 0;   // 重连时保留计数，避免无限重试
   page._pollKey = null;
@@ -204,7 +209,7 @@ function startWatch(page, collection, docId, onChange, isRetry) {
   // - 刚订阅、还不知道 watch 行不行：前 10s 用 200ms 探一探
   // 注意用「串行自调度」而不是 setInterval：云数据库 get 有时要几百毫秒，
   // setInterval 会重叠请求，旧响应可能后到并覆盖新状态（表现为延迟/回跳）。
-  startPollLoop(page, collection, docId, onChange, 0);
+  startPollLoop(page, collection, docId, onChange, 0, pollGen);
 }
 
 // 轮询间隔。每次 get 都是一次真实云读，5Hz 常驻会把免费额度烧穿
@@ -216,14 +221,14 @@ function pollDelay(page) {
   return 2000;
 }
 
-function startPollLoop(page, collection, docId, onChange, delay) {
+function startPollLoop(page, collection, docId, onChange, delay, pollGen) {
   if (page._pollTimer) clearTimeout(page._pollTimer);
   page._pollTimer = setTimeout(async function () {
     page._pollTimer = null;
-    if (page._destroyed) return;
+    if (page._destroyed || pollGen !== page._pollGen) return;
     await pollRoom(page, collection, docId, onChange);
-    if (page._destroyed) return;
-    startPollLoop(page, collection, docId, onChange, pollDelay(page));
+    if (page._destroyed || pollGen !== page._pollGen) return;
+    startPollLoop(page, collection, docId, onChange, pollDelay(page), pollGen);
   }, delay || 0);
 }
 
@@ -253,6 +258,8 @@ async function pollRoom(page, collection, docId, onChange) {
 }
 
 function closeWatch(page) {
+  // 在途的那一轮轮询恢复后必须作废（见 startWatch 里的代际说明）
+  page._pollGen = (page._pollGen || 0) + 1;
   if (page._watchRetryTimer) {
     clearTimeout(page._watchRetryTimer);
     page._watchRetryTimer = null;

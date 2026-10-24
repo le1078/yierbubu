@@ -296,6 +296,10 @@ Page({
 
   _startWatch(isRetry) {
     this._closeWatcher();
+    // 轮询链代际：closeWatch 后上一轮可能还卡在 await get 上，恢复后会
+    // 继续自调度（关了订阅还在后台读库）。代际不一致直接退出。
+    this._pollGen = (this._pollGen || 0) + 1;
+    const pollGen = this._pollGen;
     const db = wx.cloud.database();
     if (!isRetry) this._watchRetry = 0;   // 重连保留计数，避免无限重试
     this._pollKey = null;
@@ -345,7 +349,7 @@ Page({
     // 没有这条轮询就会「双方都看不到对方动」；但 watch 正常时它是纯安全网，
     // 没必要 5Hz 读库（两人对局≈3.6 万读/小时，免费额度撑不住）。
     // 用串行自调度，避免 get 慢时多个请求重叠、旧响应覆盖新状态。
-    this._startPolling();
+    this._startPolling(0, pollGen);
   },
 
   // 轮询间隔：watch 坏了才快，watch 正常只做 2s 安全网
@@ -356,18 +360,20 @@ Page({
     return 2000;
   },
 
-  _startPolling(delay) {
+  _startPolling(delay, pollGen) {
     if (this._pollTimer) clearTimeout(this._pollTimer);
     this._pollTimer = setTimeout(async () => {
       this._pollTimer = null;
-      if (this._destroyed) return;
+      if (this._destroyed || pollGen !== (this._pollGen || 0)) return;
       await this._pollRoomStatus();
-      if (this._destroyed) return;
-      this._startPolling(this._pollDelay());
+      if (this._destroyed || pollGen !== (this._pollGen || 0)) return;
+      this._startPolling(this._pollDelay(), pollGen);
     }, delay || 0);
   },
 
   _closeWatcher() {
+    // 在途的那一轮轮询恢复后必须作废（见 _startWatch 里的代际说明）
+    this._pollGen = (this._pollGen || 0) + 1;
     if (this._watchRetryTimer) {
       clearTimeout(this._watchRetryTimer);
       this._watchRetryTimer = null;
