@@ -37,7 +37,7 @@
         <text>🎲 点下方按钮</text>
         <text>摇出今日好运～</text>
       </view>
-      <view wx:for="{{results}}" class="r-card">
+      <view wx:for="{{results}}" wx:key="key" class="r-card">
         <view class="re">{{item.emoji}}</view>
         <view class="rn">{{item.name}}</view>
         <view class="rb" style="background:{{item.color}};">{{item.number < 10 ? '0' : ''}}{{item.number}}</view>

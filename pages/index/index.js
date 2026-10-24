@@ -88,7 +88,14 @@ Page({
     this._timer = setInterval(() => {
       out = [];
       for (let i = 0; i < total; i++) out.push(randomDraw(this.data.year));
-      this.setData({ results: out });
+      // 展示用副本带稳定 key（按卡片位次）：wxml 的 wx:for 需要 key 才能
+      // 正确复用节点，否则开发者工具会报 duplicate key 警告且动画闪动。
+      // 记录里仍然用不带 key 的 out，避免把 UI 字段写进云端数据。
+      const view = [];
+      for (let i = 0; i < out.length; i++) {
+        view.push(Object.assign({ key: 'r' + i }, out[i]));
+      }
+      this.setData({ results: view });
       ticks += 1;
       if (ticks >= C.SHAKE_TICKS) {
         clearInterval(this._timer);

@@ -49,6 +49,27 @@ function safeBackToLobby() {
   }
 }
 
+// 联机棋盘解析：损坏/旧版本的 boardStr 不能把同步回调炸掉（同 gomokuai）
+function parseBoardStr(s) {
+  if (!s) return emptyBoard();
+  try {
+    const b = JSON.parse(s);
+    if (Array.isArray(b) && b.length === SIZE) {
+      for (let r = 0; r < SIZE; r++) {
+        if (!Array.isArray(b[r]) || b[r].length !== SIZE) return emptyBoard();
+      }
+      return b;
+    }
+  } catch (e) {
+    log.e('[gomoku] boardStr 解析失败，已回退空盘', e);
+  }
+  return emptyBoard();
+}
+
+function asHistory(v) {
+  return Array.isArray(v) ? v : [];
+}
+
 Page({
   data: {
     stage: 'lobby',          // lobby | waiting | playing | ended
@@ -237,8 +258,8 @@ Page({
         round: room.round || 1,
         lastMove: room.lastMove || {}
       }, () => {
-        this._board = room.boardStr ? JSON.parse(room.boardStr) : emptyBoard();
-        this._history = room.history || [];
+        this._board = parseBoardStr(room.boardStr);
+        this._history = asHistory(room.history);
         this._ensureCanvas();
       });
       this._startWatch();
@@ -381,8 +402,8 @@ Page({
         const turnNow = room.turn || 1;
         // 棋盘先就位再切 stage：setData 的数据立即生效而回调晚一帧，
         // 期间若用户点了棋盘，_board 还没建好会直接抛错
-        this._board = room.boardStr ? JSON.parse(room.boardStr) : emptyBoard();
-        this._history = room.history || [];
+        this._board = parseBoardStr(room.boardStr);
+        this._history = asHistory(room.history);
         // 开局了就停掉等待页的 2 秒轮询，200ms 串行轮询已在跑
         if (this._waitPollInterval) {
           clearInterval(this._waitPollInterval);
@@ -417,9 +438,9 @@ Page({
     const newBoardKey = boardKeyOf(room);
     const boardChanged = newBoardKey !== (this._boardKey || '');
     if (boardChanged) {
-      this._board = room.boardStr ? JSON.parse(room.boardStr) : (room.board ? room.board : emptyBoard());
+      this._board = parseBoardStr(room.boardStr);
       this._boardKey = newBoardKey;
-      this._history = room.history || [];
+      this._history = asHistory(room.history);
       // 最后一手跟着房间走：否则对方的落子/悔棋/新一局都不会更新红点标记
       this._lastMove = room.lastMove && room.lastMove.r !== undefined ? room.lastMove : null;
     }

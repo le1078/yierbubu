@@ -11,6 +11,30 @@ const core = require('../../../utils/gomoku_core.js');
 const ai = require('../../../utils/gomoku_ai.js');
 const R = require('../gomoku/board_render.js');
 
+// 联机棋盘解析：云端 boardStr 可能损坏/来自旧版本（长度不对、非法 JSON）。
+// 直接 JSON.parse 会在 _onRoomUpdate 里抛异常 —— 而那是 watch/轮询的回调，
+// 一抛就等于「同步从此永久中断」。这里统一做形状校验 + 兜底。
+function parseBoard(s) {
+  if (!s) return core.emptyBoard();
+  try {
+    const b = JSON.parse(s);
+    if (Array.isArray(b) && b.length === core.SIZE) {
+      for (let r = 0; r < core.SIZE; r++) {
+        if (!Array.isArray(b[r]) || b[r].length !== core.SIZE) return core.emptyBoard();
+      }
+      return b;
+    }
+  } catch (e) {
+    log.e('[gomokuai] boardStr 解析失败，已回退空盘', e);
+  }
+  return core.emptyBoard();
+}
+
+// 历史数组同样要校验：非数组会让后续 push/pop 直接崩
+function asHistory(v) {
+  return Array.isArray(v) ? v : [];
+}
+
 Page({
   data: {
     stage: 'menu',         // menu | aisetup | lobby | waiting | playing | ended
@@ -213,8 +237,8 @@ Page({
       await db.collection(COLLECTION).doc(this._roomId).update({
         data: { status: 'playing', turn: 1, updatedAt: db.serverDate() }
       });
-      this._board = room.boardStr ? JSON.parse(room.boardStr) : core.emptyBoard();
-      this._history = room.history || [];
+      this._board = parseBoard(room.boardStr);
+      this._history = asHistory(room.history);
       this._over = false;
       this._leaverHandled = false;
       this._prevWinner = 0;   // 终局→进行中的转换基线
@@ -251,8 +275,8 @@ Page({
     const me = this.data.myColor;
     if (this.data.stage === 'waiting') {
       if (room.status === 'playing') {
-        this._board = room.boardStr ? JSON.parse(room.boardStr) : core.emptyBoard();
-        this._history = room.history || [];
+        this._board = parseBoard(room.boardStr);
+        this._history = asHistory(room.history);
         this._over = false;
         this._leaverHandled = false;
         this._prevWinner = 0;   // 终局→进行中的转换基线
@@ -354,9 +378,9 @@ Page({
     const newKey = room.boardStr || '';
     const changed = newKey !== (this._boardKey || '');
     if (changed) {
-      this._board = newKey ? JSON.parse(newKey) : core.emptyBoard();
+      this._board = parseBoard(newKey);
       this._boardKey = newKey;
-      this._history = room.history || [];
+      this._history = asHistory(room.history);
     }
     this._lastMove = room.lastMove && room.lastMove.r !== undefined ? room.lastMove : null;
     const patch = {

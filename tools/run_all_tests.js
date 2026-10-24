@@ -49,7 +49,7 @@ console.log(syntaxBad === 0 ? '  ✓ 全部通过' : '  ❌ ' + syntaxBad + ' �
 // 顺序：先静态契约（快），再引擎，再模糊/仿真（慢）
 const ORDER = [
   // 静态契约：页面/wxml/require/兼容性
-  'wxml_structure_check.js', 'wxml_event_audit.js', 'wxml_data_audit.js', 'wx_page_check.js',
+  'wxml_structure_check.js', 'wxml_key_check.js', 'wxml_event_audit.js', 'wxml_data_audit.js', 'wx_page_check.js',
   'wx_require_check.js', 'wx_compat_check.js', 'wx_canvas_check.js', 'wx_draw_check.js',
   // 主包
   'life_check.js', 'life_logic_test.js', 'trash_flow_test.js', 'cloudstore_load_test.js',
