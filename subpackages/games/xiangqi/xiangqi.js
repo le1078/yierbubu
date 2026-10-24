@@ -158,9 +158,12 @@ Page({
     roomkit.closeWatch(this);
     this._roomId = null;
     this._resetCanvas();
-    // 联机时 mySide 被设为 2（加入方执黑），回菜单要复位，
-    // 否则下次人机设置的「我执」会残留黑方
-    this.setData({ stage: 'menu', mySide: X.RED });
+    // 只在「离开联机」时复位 mySide：联机加入方会被设成 2（执黑），
+    // 不复位会让下次人机设置残留黑方。但人机设置页点返回不该丢掉
+    // 用户刚选的执子（之前无条件复位，选黑→返回→重进又变红）。
+    const patch = { stage: 'menu' };
+    if (this.data.mode === 'online') patch.mySide = X.RED;
+    this.setData(patch);
   },
 
   onRoomNoInput(e) {

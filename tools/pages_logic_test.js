@@ -370,6 +370,54 @@ console.log('\n[4] 餐厅组件：购物车与菜单编辑');
       if (cal2._buySaveTimer) { clearTimeout(cal2._buySaveTimer); cal2._buySaveTimer = null; }
     }
 
+    /* ===== [7] 餐厅：编辑/删除菜品 ===== */
+    console.log('\n[7] 餐厅：编辑与删除菜品');
+    {
+      const def3 = loadDef('components/restaurant/restaurant.js');
+      const rc = instantiate(def3, true);
+      rc.data.menu = [{ cat: '招牌', items: [{ id: 'd1', name: '炒饭', price: 18, emoji: '🍚' }] }];
+      rc.data.editCat = 0;
+      rc.data.activeCat = 0;
+      rc.data.showMenuEditor = true;
+
+      // 编辑现有菜品：改名改价，不能新增一条
+      rc.editDish({ currentTarget: { dataset: { item: rc.data.menu[0].items[0] } } });
+      check(rc.data.editingDish && rc.data.editingDish.id === 'd1', '点菜品进入编辑态');
+      check(rc.data.form.name === '炒饭' && rc.data.form.price === '18', '表单回填原值');
+      rc.data.form = Object.assign({}, rc.data.form, { name: '蛋炒饭', price: '22' });
+      await rc.saveDish();
+      const items = rc.data.menu[0].items;
+      check(items.length === 1, '编辑后没有新增重复菜品（' + items.length + ' 条）');
+      check(items[0].name === '蛋炒饭' && items[0].price === 22,
+        '改名改价生效（' + items[0].name + ' / ' + items[0].price + '）');
+      check(items[0].id === 'd1', '保持原 id（不会被当成新菜）');
+      check(rc.data.showMenuEditor === false, '保存后关闭编辑面板');
+
+      // 空名字拒绝
+      rc.data.showMenuEditor = true;
+      rc.data.editingDish = null;
+      rc.data.form = { name: '   ', price: '10', taste: '', desc: '', emoji: '', img: '' };
+      const before = rc.data.menu[0].items.length;
+      await rc.saveDish();
+      check(rc.data.menu[0].items.length === before, '空名字不会新增菜品');
+
+      // 删除菜品（modal 回调异步，等一拍）
+      rc.data.showMenuEditor = true;
+      rc.data.editingDish = rc.data.menu[0].items[0];
+      await rc.deleteDish();
+      await new Promise((r) => setTimeout(r, 20));
+      check(rc.data.menu[0].items.length === 0, '删除后菜品移除（' + rc.data.menu[0].items.length + '）');
+      check(rc.data.editingDish === null, '删除后清空编辑态');
+
+      // 编辑中切了分类导致目标不存在 → 明确取消而不是静默丢输入
+      rc.data.menu = [{ cat: 'A', items: [{ id: 'a1', name: '菜A', price: 5 }] }, { cat: 'B', items: [] }];
+      rc.data.editCat = 1;                 // 面板停在 B
+      rc.data.editingDish = { id: 'a1', name: '菜A', price: 5 };
+      rc.data.form = { name: '菜A改', price: '6', taste: '', desc: '', emoji: '', img: '' };
+      await rc.saveDish();
+      check(rc.data.menu[0].items[0].name === '菜A', '错分类保存被拒绝（原菜不变）');
+    }
+
     console.log('\n========================================');
     console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
     if (fail > 0) {

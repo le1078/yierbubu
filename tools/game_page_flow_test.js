@@ -116,6 +116,12 @@ console.log('\n[1] 象棋人机：模式 → 难度页 → 开局');
 
   page.backToMenu();
   check(page.data.stage === 'menu', '返回主菜单（不是联机大厅）');
+  // 人机设置里选的执黑不该因为返回而丢失
+  check(page.data.mySide === 2, '人机模式返回后保留所选执子（mySide=' + page.data.mySide + '）');
+  // 只有离开联机时才复位，避免下次人机设置残留黑方
+  page.data.mode = 'online';
+  page.backToMenu();
+  check(page.data.mySide === 1, '离开联机时执子复位为红方');
 }
 
 /* ============================================================
