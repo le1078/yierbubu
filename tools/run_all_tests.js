@@ -54,9 +54,11 @@ const ORDER = [
   // 主包
   'life_check.js', 'life_logic_test.js', 'trash_flow_test.js', 'cloudstore_load_test.js',
   'cloudstore_real_test.js', 'cloudstore_chaos_test.js', 'pages_logic_test.js',
+  'page_smoke_test.js',
   'shengxiao_logic_test.js',
   // 联机基础设施
   'join_arg_test.js', 'roomkit_join_test.js', 'roomkit_sync_test.js', 'relay_client_test.js',
+  'relay_server_soak_test.js',
   // 五子棋
   'gomoku_logic_test.js', 'gomoku_ai_test.js', 'gomokuai_online_test.js',
   // 象棋
