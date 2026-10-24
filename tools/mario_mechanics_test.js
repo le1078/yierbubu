@@ -260,6 +260,31 @@ console.log('\n[6] 死亡与重生');
   p3.x = 8.5; p3.y = 14;
   EN.stepPlayer(lv3, p3, input(), DT);
   check(Math.abs(p3.respawnX - 8.5) < 0.1, '经过检查点记录复活位置');
+
+  // 时间耗尽：全员死亡；重生后倒计时复位（否则 HUD 永远停在 ⏱0，关卡再无限时）
+  const lv4 = flat();
+  lv4.timeLeft = 1;
+  lv4.timeAcc = 0;
+  const p4 = mk(lv4);
+  p4.infiniteLives = true;
+  let timeUpDied = false;
+  for (let i = 0; i < 300; i++) {
+    EN.stepWorld(lv4, [p4], { 1: input() }, DT);
+    if (p4.state === 'dying') timeUpDied = true;
+    if (timeUpDied && p4.state === 'alive') break;
+  }
+  check(timeUpDied, '倒计时归零 → 玩家死亡');
+  check(p4.state === 'alive', '时间到死亡后正常重生');
+  check(lv4.timeLeft === (lv4.timeLimit || 400), '重生后倒计时复位（' + lv4.timeLeft + '）');
+  check(lv4.timeAcc === 0, '重生后计时累加器归零');
+
+  // 正常掉坑死亡（时间还很多）不能刷时间
+  const lv5 = pitLevel();
+  const p5 = mk(lv5);
+  p5.x = 9.5; p5.y = 14;
+  lv5.timeLeft = 300;
+  for (let i = 0; i < 200; i++) EN.stepWorld(lv5, [p5], { 1: input() }, DT);
+  check(p5.state === 'alive' && lv5.timeLeft <= 300, '掉坑重生不重置倒计时（不能送死刷时间）');
 }
 
 /* ========== 7. 计分 ========== */

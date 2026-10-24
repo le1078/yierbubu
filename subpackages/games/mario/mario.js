@@ -119,6 +119,8 @@ Page({
     this._stopInputPoll();
     this._closeRelay();
     roomkit.sweepTimers(this);
+    // 清掉已排程的音符：过关/死亡音效还在播时退页，声音会跟到大厅里
+    AU.dispose();
     // 通知对方离开
     if (this._roomId && this.data.mode === 'online') {
       const db = wx.cloud.database();
@@ -979,7 +981,9 @@ Page({
     // acc += (now - (this._lastSyncAt || now)) 在未初始化时增量恒为 0，
     // 累加器永远不涨 → _doSync 永远不会被调度（只靠开局/修复的零星调用
     // 续命，表现为「动一下就同步中断」——从初版就存在的隐藏炸弹）
+    // 归零基线：下面按「帧间隔」累加，基线必须和主循环同时起步
     this._lastSyncAt = Date.now();
+    this._lastTickAt = this._lastSyncAt;
     this._syncAcc = 0;
     this._rafTimer = setTimeout(() => this._tick(), C.MARIO_TICK_MS);
   },
@@ -1028,7 +1032,12 @@ Page({
     const interval = relayUp
       ? (this.data.mySeat === 1 ? C.MARIO_RELAY_WORLD_MS : C.MARIO_RELAY_INPUT_MS)
       : (this._dbInterval || C.MARIO_SYNC_MS);
-    this._syncAcc += (now - (this._lastSyncAt || now));
+    // 累加「本帧经过的时间」。必须用上一帧做基线：写成
+    // acc += now - _lastSyncAt 会把同一段时间在每一帧重复累加，
+    // 累加器平方增长 → 实际 ~15Hz（host）/ 22Hz（guest），是设定值的
+    // 2.2 倍，白白多耗中继带宽和手机电量（长跑测试才暴露出来）。
+    this._syncAcc += now - (this._lastTickAt || now);
+    this._lastTickAt = now;
     if (this._syncAcc >= interval) {
       this._syncAcc = 0;
       this._lastSyncAt = now;

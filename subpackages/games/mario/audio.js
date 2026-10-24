@@ -49,6 +49,16 @@ function isMuted() {
   return muted;
 }
 
+// 页面退场：关掉音频上下文。过关音列最长 ~1.5 秒，不关的话人已经回到
+// 游戏大厅，耳朵里还在放凯旋曲；顺手把音频会话还给系统。
+// 下次进入页面第一次播放时按需重建（新上下文从静音态开始，安全）。
+function dispose() {
+  if (!ctx) return;
+  try { ctx.close(); } catch (e) {}
+  ctx = null;
+  ctxTried = false;
+}
+
 // 定时节点用完即断开：一次过关音列会新建 7 个 oscillator+gain，
 // 不断开的话（部分基础库实现）节点会挂在 destination 上直到页面销毁。
 function release(osc, gain) {
@@ -155,4 +165,4 @@ function play(name) {
   }
 }
 
-module.exports = { play, setMuted, isMuted, loadPref };
+module.exports = { play, setMuted, isMuted, loadPref, dispose };

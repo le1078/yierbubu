@@ -174,6 +174,42 @@ function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     p.onUnload();
   }
 
+  console.log('\n[5] 退页关闭音频上下文（音效不会跟到大厅），再进按需重建');
+  {
+    let created = 0, closed = 0;
+    global.wx.createWebAudioContext = function () {
+      created++;
+      const node = function () {
+        return {
+          frequency: { setValueAtTime: function () {}, exponentialRampToValueAtTime: function () {} },
+          gain: { setValueAtTime: function () {}, exponentialRampToValueAtTime: function () {} },
+          connect: function () {},
+          disconnect: function () {},
+          start: function () {},
+          stop: function () {},
+          type: 'square',
+          onended: null
+        };
+      };
+      return {
+        currentTime: 0,
+        destination: {},
+        createOscillator: node,
+        createGain: node,
+        close: function () { closed++; }
+      };
+    };
+    AU.setMuted(false);
+    AU.play('coin');
+    check(created === 1, '首次播放按需创建上下文');
+    AU.dispose();
+    check(closed === 1, 'dispose 关闭上下文（停掉已排程的音符）');
+    AU.play('coin');
+    check(created === 2, '关闭后再播放会重建上下文，不会永久哑掉');
+    AU.dispose();
+    check(closed === 2, '再次 dispose 正常');
+  }
+
   console.log('\n========================================');
   console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
   if (fail) { console.log('❌ 生命周期回归未通过'); process.exit(1); }

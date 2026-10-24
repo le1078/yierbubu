@@ -368,6 +368,7 @@ function loadLevel(rows, spec) {
     name: spec.name || '',
     theme: spec.theme || 'overworld',   // overworld | underground | castle
     time: 0,
+    timeLimit: spec.timeLimit || 400,   // 关卡限时（重生复位用）
     timeLeft: spec.timeLimit || 400,    // 关卡倒计时（秒）
     timeAcc: 0,
     flagY: -1,                          // 旗杆顶端行（用于下滑动画）
@@ -460,6 +461,13 @@ function stepPlayer(level, p, input, dt) {
         p.fellInPit = false;
         p.onGround = false;
         p.combo = 0;
+        // 时间耗尽导致团灭后重生：倒计时必须复位。否则 timeLeft 永远停在 0，
+        // HUD 一直显示 ⏱0（红色紧急态），而关卡实际上再也没有时限。
+        // 正常死亡（掉坑/被撞）不动倒计时，避免用送死刷时间。
+        if (level.timeLeft <= 0) {
+          level.timeLeft = level.timeLimit || 400;
+          level.timeAcc = 0;
+        }
       } else {
         p.state = 'dead';
       }

@@ -280,6 +280,7 @@ Component({
         this.triggerEvent('ordered', { order });
       } catch (err) {
         console.error('下单失败', err);
+        if (this._detached) return;
         wx.showToast({ title: '下单失败，请重试', icon: 'none' });
         this.setData({ orderSubmitting: false });
       }
@@ -452,6 +453,7 @@ Component({
 
       this.setData({ menu: newMenu, showMenuEditor: false, editingDish: null });
       const ok = await this._saveMenu(newMenu);
+      if (this._detached) return;
       if (ok) {
         wx.showToast({ title: editingDish ? '已保存修改' : '已添加菜品', icon: 'success' });
       } else {
