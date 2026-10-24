@@ -492,8 +492,7 @@ console.log('\n[4] 餐厅组件：购物车与菜单编辑');
     /* ===== [9] 刮刮卡：刮开比例判定 ===== */
     console.log('\n[9] 刮刮卡：刮开比例与翻开判定');
     {
-      const C = require('../utils/constants.js');
-      const def5 = loadDef('pages/index/index.js');
+      const C = require('../utils/constants.js');      const def5 = loadDef('pages/index/index.js');
       const idx = instantiate(def5, false);
       idx.data.scratchCards = [
         { id: 'c0', revealed: false, coated: true, result: { number: 1 } },
@@ -545,6 +544,37 @@ console.log('\n[4] 餐厅组件：购物车与菜单编辑');
       idx._lastScratchRecordId = 'rec1';
       idx.flushScratchRecord();
       check(idx._lastScratchRecordId === 'rec1', '已有记录时 flush 不重复写入');
+    }
+
+    /* ===== [10] 餐厅：云端菜单结构异常时不能崩 ===== */
+    console.log('\n[10] 餐厅：云端菜单缺 items 时仍可保存菜品');
+    {
+      const cs = require('../utils/cloudstore.js');
+      const originLoad = cs.loadMenu;
+      const originSave = cs.saveMenu;
+      // 旧版本/手工改过的菜单：分类存在但 items 缺失或不是数组
+      cs.loadMenu = async function () {
+        return [{ cat: '招牌' }, { cat: '主食', items: null }, { cat: '混合', items: [{}, { name: '有名字', price: 5 }] }];
+      };
+      cs.saveMenu = async function () {};
+      const def6 = loadDef('components/restaurant/restaurant.js');
+      const rc2 = instantiate(def6, true);
+      rc2.data.editCat = 0;
+      rc2.data.activeCat = 0;
+      rc2.data.showMenuEditor = true;
+      await rc2._loadMenu();
+      check(rc2.data.menu.length === 3, '异常菜单仍能加载出 3 个分类');
+      check(Array.isArray(rc2.data.menu[0].items), '缺 items 的分类被补成空数组');
+      check(rc2.data.menu[2].items.length === 1, '无效条目被过滤（只留有名字的）');
+
+      rc2.data.form = { name: '新菜', price: '12', taste: '', desc: '', emoji: '', img: '' };
+      let threw = false;
+      try { await rc2.saveDish(); } catch (e) { threw = true; }
+      check(!threw, '在缺 items 的分类下保存菜品不抛错');
+      check(rc2.data.menu[0].items.length === 1, '菜品被正常加入');
+
+      cs.loadMenu = originLoad;
+      cs.saveMenu = originSave;
     }
 
     console.log('\n========================================');

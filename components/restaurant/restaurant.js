@@ -10,6 +10,23 @@ const nowStr = dt.nowStr;
 // 深拷贝：集中一处，避免各方法内联 JSON.parse(JSON.stringify())
 function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
+// 菜单结构归一化：云端是两端共享的，可能被旧版本写过、或手工改过。
+// 分类没有 items 时，saveDish 里的 newMenu[editCat].items 会是 undefined，
+// 一次 .findIndex/.push 就抛 TypeError —— 用户点「保存」毫无反应。
+function normalizeMenu(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (!c || typeof c !== 'object') continue;
+    const items = Array.isArray(c.items) ? c.items.filter(function (it) {
+      return it && typeof it === 'object' && it.name;
+    }) : [];
+    out.push({ cat: String(c.cat || ('分类' + (i + 1))), items: items });
+  }
+  return out;
+}
+
 // 默认菜单（首次使用或云端无数据时用）
 const DEFAULT_MENU = [
   {
@@ -122,9 +139,11 @@ Component({
         const menu = await cloud.loadMenu();
         if (this._detached) return;
         if (menu && menu.length) {
+          // 归一化后再进 UI：缺 items 的分类会让保存菜品直接抛错
+          const safe = normalizeMenu(menu);
           this._menuCacheAt = Date.now();
-          this._menuSnapshot = clone(menu);
-          this.setData({ menu });
+          this._menuSnapshot = clone(safe);
+          this.setData({ menu: safe });
         }
       } catch (e) {
         // 加载失败保留当前菜单（可能是本地默认菜单），不清空用户已有数据
