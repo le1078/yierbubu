@@ -162,7 +162,7 @@ console.log('\n[8] 单机竞速的电脑对手能通关');
       '，剩余 ' + p.lives + ' 条命');
     if (done < 0) allOk = false;
   }
-  check(allOk, '5 关电脑对手都能到达终点（可作单人竞速对手）');
+  check(allOk, '全部 ' + LV.LEVELS.length + ' 关的电脑对手都能到达终点（可作单人竞速对手）');
 }
 
 console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
