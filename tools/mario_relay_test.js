@@ -33,6 +33,8 @@ async function serverE2E() {
     srv.listen(0, '127.0.0.1', () => { const p = srv.address().port; srv.close(() => resolve(p)); });
   });
   process.env.PORT = String(port);
+  // 缩短 handshake 超时，测试里不用真等 10 秒（必须在 require 之前设）
+  process.env.HELLO_TIMEOUT_MS = '300';
   require(path.join(__dirname, '..', 'server/mario-relay/server.js'));
   await sleep(200);
   const url = 'ws://127.0.0.1:' + port;
@@ -105,6 +107,15 @@ async function serverE2E() {
   host3.ws.terminate();
   const dropMsg = await waitMsg(guest.inbox, (m) => m.t === 'peer' && !m.online && m.bye === false);
   check(!!dropMsg && dropMsg.bye === false, '掉线时 peer offline（bye=false）');
+
+  // 连上但一直不发 hello：必须被服务端回收。这类连接不属于任何房间，
+  // 若不主动清理就永远不会被限流/回收，可被用来长期占资源。
+  const idle = await open(1);
+  const idleClosed = await new Promise(function (resolve) {
+    idle.ws.on('close', function (code) { resolve(code === undefined ? -1 : code); });
+    setTimeout(function () { resolve(null); }, 3000);
+  });
+  check(idleClosed !== null, '未 hello 的连接会被服务端断开（code=' + idleClosed + '）');
 
   guest.ws.close();
 }

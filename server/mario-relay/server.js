@@ -29,6 +29,12 @@ const MAX_MSG_BYTES = 32 * 1024;   // 单条消息上限（世界快照 ~3KB，�
 const RATE_LIMIT_PER_SEC = 120;    // 每连接每秒消息上限（游戏实际用量 < 15）
 const SILENCE_KICK_MS = 30 * 1000; // 持续无消息（连 ping 都没有）视为僵尸，踢掉
 const MAX_ROOMS = 5000;            // 防滥用：同时存在的房间数上限
+// 连上后必须在这么长时间内完成 hello（入座），否则断开。
+// 不设这个限制的话，只连不进房的连接不属于任何房间，永远不会被清理。
+const HELLO_TIMEOUT_MS = Number(process.env.HELLO_TIMEOUT_MS) || 10 * 1000;
+
+// 所有连接（含还没入座的）：限流/僵尸/handshake 超时都要覆盖到
+const conns = new Set();
 
 /* ========== 房间表 ========== */
 // roomNo -> { seats: { 1: conn|null, 2: conn|null } }
@@ -74,6 +80,7 @@ wss.on('connection', (ws) => {
   const conn = {
     ws,
     room: null,       // 房间号
+    connectedAt: Date.now(),   // 「连上但一直不 hello」的超时回收基准
     seat: 0,
     alive: true,
     saidBye: false,   // 主动离开（区别于掉线）：close 广播时要带上
@@ -81,6 +88,7 @@ wss.on('connection', (ws) => {
     totalMsgs: 0,     // 连接生命周期累计消息数（排障用：连着但没数据的僵尸一眼可见）
     lastSeen: Date.now()
   };
+  conns.add(conn);
 
   ws.on('message', (data, isBinary) => {
     if (isBinary) return;
@@ -154,6 +162,7 @@ wss.on('connection', (ws) => {
 
   ws.on('close', () => {
     conn.alive = false;
+    conns.delete(conn);
     if (conn.room && conn.seat) {
       const room = rooms.get(conn.room);
       if (room && room.seats[conn.seat] === conn) {
@@ -185,30 +194,34 @@ setInterval(() => {
   }
 }, 30000).unref();
 
-/* ========== 限流 + 僵尸回收（每秒一轮） ========== */
+/* ========== 限流 + 僵尸回收 + handshake 超时（每秒一轮） ========== */
+// 遍历「所有连接」而不是只遍历房间里的座位：只连接不 hello 的连接
+// 不在任何房间，之前永远不会被限流/回收（可被用来长期占资源）。
 setInterval(() => {
   const now = Date.now();
-  for (const [no, room] of rooms) {
-    for (const seat of [1, 2]) {
-      const c = room.seats[seat];
-      if (!c) continue;
-      if (c.msgCount > RATE_LIMIT_PER_SEC) {
-        c.alive = false;
-        room.seats[seat] = null;
-        broadcastPeer(room, no, seat, false, false);
-        try { c.ws.close(1008); } catch (e) {}
-        continue;
-      }
-      c.msgCount = 0;
-      if (now - c.lastSeen > SILENCE_KICK_MS) {
-        c.alive = false;
-        room.seats[seat] = null;
-        broadcastPeer(room, no, seat, false, false);
-        try { c.ws.close(1000); } catch (e) {}
-      }
+  for (const c of conns) {
+    if (!c.alive) continue;
+    // 每秒消息数超限
+    if (c.msgCount > RATE_LIMIT_PER_SEC) {
+      c.alive = false;
+      try { c.ws.close(1008); } catch (e) {}
+      continue;
     }
-    sweepRoom(no);
+    c.msgCount = 0;
+    // 连上却一直不入座
+    if (!c.room && now - c.connectedAt > HELLO_TIMEOUT_MS) {
+      c.alive = false;
+      try { c.ws.close(1008); } catch (e) {}
+      continue;
+    }
+    // 长期无消息（含 ping）
+    if (now - c.lastSeen > SILENCE_KICK_MS) {
+      c.alive = false;
+      try { c.ws.close(1000); } catch (e) {}
+    }
   }
+  // 空房间回收
+  for (const no of Array.from(rooms.keys())) sweepRoom(no);
 }, 1000).unref();
 
 /* ========== 启动 ========== */
