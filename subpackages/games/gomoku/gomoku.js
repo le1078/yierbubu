@@ -152,6 +152,25 @@ Page({
     if (this._waitPollInterval) { clearInterval(this._waitPollInterval); this._waitPollInterval = null; }
   },
 
+  // 横竖屏切换：重算棋盘宽度并重建 canvas（背景缓存与棋子渐变同时作废）
+  onResize() {
+    if (this._destroyed) return;
+    let sys = null;
+    try { sys = wx.getWindowInfo ? wx.getWindowInfo() : wx.getSystemInfoSync(); } catch (e) { sys = null; }
+    const w = (sys && typeof sys.windowWidth === 'number' && sys.windowWidth > 0) ? sys.windowWidth : 375;
+    const rpx2px = w / 750;
+    const boardW = Math.floor(w - 88 * rpx2px);
+    this._boardW = boardW;
+    this.setData({ boardW });
+    this._bgCanvas = null;
+    this._bgW = 0;
+    this._pieceGrads = null;
+    this._resetCanvas();
+    if (this.data.stage === 'playing' || this.data.stage === 'ended') {
+      this._ensureCanvas();
+    }
+  },
+
   /* ========== 大厅操作 ========== */
 
   onRoomNoInput(e) {

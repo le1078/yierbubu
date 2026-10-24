@@ -75,6 +75,17 @@ Page({
     if (this._thinkTimer) { clearTimeout(this._thinkTimer); this._thinkTimer = null; }
   },
 
+  // 手机横竖屏切换 / 分屏：重算棋盘尺寸并重建 canvas。
+  // 不处理的话 CSS 尺寸变了但 canvas 缓冲还是旧值，棋盘会被拉伸或切边。
+  onResize() {
+    if (this._destroyed) return;
+    this._measureBoard();
+    this._resetCanvas();
+    if (this.data.stage === 'playing' || this.data.stage === 'ended') {
+      this._ensureCanvas();
+    }
+  },
+
   onHide() {
     // 切后台时停掉 AI 计时器；回来后在 onShow 里继续
     this._paused = true;

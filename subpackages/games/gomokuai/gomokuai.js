@@ -97,6 +97,20 @@ Page({
     });
   },
 
+  // 横竖屏切换：重新计算棋盘宽度并重建 canvas（否则画面被拉伸/切边）
+  onResize() {
+    if (this._destroyed) return;
+    const w = roomkit.getWindowSize().windowWidth;
+    const rpx2px = w / 750;
+    const boardW = Math.floor(w - 48 * rpx2px);
+    this._boardW = boardW;
+    this.setData({ boardW });
+    this._resetCanvas();
+    if (this.data.stage === 'playing' || this.data.stage === 'ended') {
+      this._ensureCanvas();
+    }
+  },
+
   onHide() {
     // 后台停掉 AI 计时器，回来再继续，避免回来时 AI 已经连下好几手
     this._paused = true;

@@ -255,6 +255,39 @@ console.log('\n[4] 餐厅组件：购物车与菜单编辑');
     check(r.data.activeCat === 0, 'activeCat 被夹紧到 0（实际 ' + r.data.activeCat + '）');
     check(!!r.data.menu[r.data.activeCat], 'activeCat 指向的分类存在（不会渲染空白）');
 
+    /* ===== [5] 屏幕尺寸变化：三款游戏都要重算并重建画布 ===== */
+    console.log('\n[5] 横竖屏切换：画布重算与重建');
+    {
+      const cases = [
+        ['象棋', 'subpackages/games/xiangqi/xiangqi.js'],
+        ['五子棋(人机)', 'subpackages/games/gomokuai/gomokuai.js'],
+        ['五子棋(联机)', 'subpackages/games/gomoku/gomoku.js']
+      ];
+      const realInfo = global.wx.getWindowInfo;
+      let width = 375;
+      global.wx.getWindowInfo = function () { return { windowWidth: width, windowHeight: 700, pixelRatio: 2 }; };
+      global.wx.getSystemInfoSync = global.wx.getWindowInfo;
+
+      for (const c of cases) {
+        const def = loadDef(c[1]);
+        const p = instantiate(def, false);
+        p._ensureCanvas = function () { p._rebuilt = true; };
+        p._resetCanvas = function () {};
+        p.data.stage = 'playing';
+        if (typeof p.onResize !== 'function') {
+          check(false, c[0] + ' 实现了 onResize（旋转屏幕不拉伸）');
+          continue;
+        }
+        width = 375; p.onResize();
+        const small = p.data.boardW;
+        width = 812; p.onResize();
+        const large = p.data.boardW;
+        check(large > small && p._rebuilt,
+          c[0] + ' 会随屏幕宽度重算棋盘并重建画布（' + small + '→' + large + 'px）');
+      }
+      global.wx.getWindowInfo = realInfo;
+    }
+
     console.log('\n========================================');
     console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
     if (fail > 0) {
