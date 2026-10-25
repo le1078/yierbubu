@@ -1136,7 +1136,11 @@ Page({
       let syncText = (isHost ? '发W' : '发I') + tx + ' ' + (isHost ? '收I' : '收W') + rx;
       if (this._relay && this._relay.isReady()) {
         const rtt = this._relay.rtt();
-        syncText = '⚡' + (rtt || '—') + 'ms';
+        // 只显示 ⚡ 但对方没连中继时，数据实际仍走云库 —— 会让人误以为
+        // 「加速已经生效了怎么还卡」。明确标出对方没开调试（体验版只有
+        // 开调试才允许 ws://，这是微信的硬规则）。
+        syncText = '⚡' + (rtt || '—') + 'ms' +
+          (this._peerOnRelay === false ? '（对方未加速）' : '');
       }
       // 兜底车道写失败计数（限流/配额）：直接暴露在 HUD 上，
       // 否则只能靠控制台日志定位（真机上看不到）

@@ -547,6 +547,19 @@ async function pageIntegration() {
     capturedPage._syncHud.call(p);
     check(/^🏁 我\d+% 对\d+%$/.test(p.data.raceText),
       '竞速模式显示双方进度（' + p.data.raceText + '）');
+
+    // 中继 HUD 必须如实反映「对方是否也在快车道」：只有本机连上中继时
+    // 数据其实仍走云库，不能只显示 ⚡ 让人以为加速已生效
+    p._peerOnRelay = true;
+    capturedPage._syncHud.call(p);
+    check(/^⚡\d+ms$/.test(p.data.syncText),
+      '双方都在中继：只显示 ⚡ 延迟（' + p.data.syncText + '）');
+    p._peerOnRelay = false;
+    capturedPage._syncHud.call(p);
+    check(p.data.syncText.indexOf('对方未加速') !== -1,
+      '只有本机在中继：标出对方未加速（' + p.data.syncText + '）');
+    p._peerOnRelay = true;
+
     p.data.coop = true;
     capturedPage._syncHud.call(p);
     check(p.data.raceText === '', '合作模式不显示竞速进度');
