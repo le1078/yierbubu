@@ -868,17 +868,38 @@ Page({
       const stateChanged = myW.st !== me.state;
       const respawn = stateChanged && myW.st === 'alive';
       const hardState = myW.st === 'dead' || myW.st === 'done';
+      // host 判死必须立刻跟着死。本地预测看不到这次碰撞（敌人位置有延迟，
+      // 本地觉得擦身而过，host 那边实际撞上了）；不跟的话本地会继续走，
+      // 而 host 已经把 P2 重生到检查点 —— 位置差慢慢拉开，几秒后才被
+      // 下面的 huge 阈值硬拉回去。玩家看到的就是「走了几秒突然退回几秒前」，
+      // 而且全程没看到死亡动画（真机上就是这个现象）。
+      // hurtT>0 时玩家本来就无敌（host 不可能判死），此时收到的 dying 只能是
+      // 本地刚重生后残留的旧死亡，忽略，避免同一死播两遍动画。
+      const hostDying = myW.st === 'dying' && me.state === 'alive' && !(me.hurtT > 0);
       const huge = dx > 10 || dy > 6;
-      if (initial || hardState || respawn || huge) {
+      if (initial || hardState || respawn || hostDying || huge) {
         me.x = myW.x; me.y = myW.y;
         me.vx = myW.vx; me.vy = myW.vy;
       }
       // 本地预测可能「幻觉死亡/复活」（敌我位置有延迟差），状态必须跟权威走：
       // 只同步 dead/done 的话，本地一旦误判死亡就永远起不来（host 看他还在玩）
-      if (hardState || respawn) {
+      if (hardState || respawn || hostDying) {
         me.state = myW.st;
         if (myW.st === 'alive') me.fellInPit = false;
         if (myW.st === 'done') me.finishT = myW.ft || 0;
+        if (respawn) {
+          // 和引擎重生一致的无敌闪烁：host 那边重生后本来就是无敌的，
+          // 本地不补的话角色回来不闪，玩家会误以为还能被立刻撞死
+          me.hurtT = Math.max(me.hurtT || 0, 1.2);
+        }
+        if (hostDying) {
+          // 从死亡动画第一帧开始播，和 host 侧表现一致（并给出声音/震动）
+          me.deathT = 0;
+          me.vy = -9;
+          me.fellInPit = false;
+          AU.play('die');
+          try { wx.vibrateShort({ type: 'light' }); } catch (e) {}
+        }
       }
       // 形态/生命/金币/星星/分数/状态始终同步（这些不是位置预测）
       me.starT = myW.sr || 0;

@@ -505,6 +505,51 @@ function setupWorld(page) {
     check(host._level.enemies.length === guest._level.enemies.length, '敌人数量一致');
   }
 
+  console.log('\n[11] host 判死必须跟着死（否则几秒后会莫名退回检查点）');
+  {
+    const g = loadPage();
+    setupWorld(g);
+    g.data.mySeat = 2;
+    g.data.mode = 'online';
+    g.data.stage = 'playing';
+    const me = g._players[1];
+    me.x = 20; me.y = 14; me.hurtT = 0; me.state = 'alive';
+    g._players[0].x = 10;
+    g._lastWorldT = 99;
+
+    const wDying = {
+      level: 0, t: 100, ep: 0,
+      p1: { x: 10, y: 14, vx: 0, vy: 0, st: 'alive', lv: 3, cn: 0, sc: 0, fm: 0 },
+      p2: { x: 20, y: 14, vx: 0, vy: -9, st: 'dying', lv: 2, cn: 0, sc: 0, fm: 0 },
+      es: [], cs: []
+    };
+    g._applyWorld(wDying, false);
+    check(me.state === 'dying', '本地预测没看到碰撞，也要立刻跟着 host 死亡');
+    check(me.deathT === 0, '死亡动画从第一帧开始（不是静默瞬移）');
+    check(me.lives === 2, '生命数以 host 为准');
+
+    const wRespawn = {
+      level: 0, t: 101, ep: 0,
+      p1: { x: 10, y: 14, vx: 0, vy: 0, st: 'alive', lv: 3, cn: 0, sc: 0, fm: 0 },
+      p2: { x: 5, y: 14, vx: 0, vy: 0, st: 'alive', lv: 2, cn: 0, sc: 0, fm: 0 },
+      es: [], cs: []
+    };
+    g._applyWorld(wRespawn, false);
+    check(me.state === 'alive' && Math.abs(me.x - 5) < 0.01,
+      'host 重生后跟到检查点（这一步玩家已经看过死亡，不会觉得是"凭空退回"）');
+
+    // 刚重生（无敌闪烁中）时收到残留的旧 dying 包，不能重复播死亡
+    me.hurtT = 1.0;
+    const wStaleDying = {
+      level: 0, t: 102, ep: 0,
+      p1: wRespawn.p1,
+      p2: { x: 5, y: 14, vx: 0, vy: -9, st: 'dying', lv: 2, cn: 0, sc: 0, fm: 0 },
+      es: [], cs: []
+    };
+    g._applyWorld(wStaleDying, false);
+    check(me.state === 'alive', '重生无敌期内忽略残留的旧死亡包（同一死不播两遍）');
+  }
+
   console.log('\n========================================');
   console.log('通过 ' + pass + ' 项，失败 ' + fail + ' 项');
   if (fail > 0) {
