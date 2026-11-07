@@ -10,6 +10,30 @@
 
 const PING_INTERVAL = 2000;
 const CONNECT_TIMEOUT = 6000;   // onOpen 6 秒不来按失败处理（真机存在升级成功但回调永不触发的挂死）
+const SEAT_TOKEN_KEY = 'yb_relay_seat_tokens';   // 房号 → 座位令牌（掉线重连的凭证）
+const C = require('./constants.js');
+
+// 座位令牌：首次入座时随机生成并按房号存本地，重连时带上。
+// 服务器只允许「持同令牌的连接」顶掉同座位的旧连接——
+// 否则任何知道 4 位房号的人都能把正在对局的玩家顶下线。
+function seatToken(room) {
+  try {
+    const map = wx.getStorageSync(SEAT_TOKEN_KEY) || {};
+    if (map[room]) return map[room];
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let t = '';
+    for (let i = 0; i < 24; i++) t += chars.charAt(Math.floor(Math.random() * chars.length));
+    map[room] = t;
+    const keys = Object.keys(map);
+    // 只留最近 20 个房间的令牌，防止无限膨胀
+    keys.sort();
+    while (keys.length > 20) { delete map[keys.shift()]; }
+    wx.setStorageSync(SEAT_TOKEN_KEY, map);
+    return t;
+  } catch (e) {
+    return '';    // 存储不可用：按老客户端处理（服务器对空令牌退回旧行为）
+  }
+}
 
 // opts（可选，测试用）：{ giveUpAfter: 连续失败N次放弃, baseDelay: 退避基数ms }
 function create(opts) {
@@ -115,7 +139,8 @@ function create(opts) {
       st.ready = true;
       st.everReady = true;
       st.fails = 0;
-      send({ t: 'hello', room: st.room, seat: st.seat });
+      send({ t: 'hello', room: st.room, seat: st.seat,
+        secret: C.MARIO_RELAY_SECRET, token: seatToken(st.room) });
       if (st.pingTimer) clearInterval(st.pingTimer);
       st.pingTimer = setInterval(function () {
         send({ t: 'ping', ts: Date.now() });
@@ -168,7 +193,12 @@ function create(opts) {
   function send(obj) {
     if (!st.task || !st.ready) return false;
     try {
-      st.task.send({ data: JSON.stringify(obj) });
+      st.task.send({
+        data: JSON.stringify(obj),
+        // 发送失败（切网/缓冲满）说明这条连接已经不可信：走掉线重连流程。
+        // 不处理的话调用方会误以为「已送达」而清掉待重发状态，数据就丢了。
+        fail: function () { drop(); }
+      });
       return true;
     } catch (e) {
       return false;

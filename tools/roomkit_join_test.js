@@ -104,11 +104,11 @@ console.log('\n[1] 房间号补零');
     check(toasts.some(function (t) { return t && t.indexOf('房间集合不存在') !== -1; }),
       '集合不存在提示去后台创建');
 
-    console.log('\n[5] 没有 createdAt 的旧房间');
+    console.log('\n[5] 没有 createdAt 的旧房间视为过期（不再兼容，避免孤儿房占死房号）');
     reset([{ _id: 'legacy', roomNo: '0500', status: 'waiting' }]);
     return roomkit.findJoinableRoom('rooms', '0500');
   }).then(function (r) {
-    check(r && r._id === 'legacy', '兼容没有 createdAt 的旧房间');
+    check(r === null, '没有 createdAt 的房间不可加入');
 
     console.log('\n[6] joinErrorText 翻译');
     check(roomkit.joinErrorText({ errMsg: 'permission denied' }).indexOf('所有用户可读写') !== -1,

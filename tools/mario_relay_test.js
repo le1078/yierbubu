@@ -58,13 +58,13 @@ async function serverE2E() {
 
   // 双人入座 + 互见上线
   const host = await open(1);
-  host.ws.send(JSON.stringify({ t: 'hello', room: '1234', seat: 1 }));
+  host.ws.send(JSON.stringify({ t: 'hello', room: '1234', seat: 1, secret: 'xb-relay-v1', token: 'tok-host' }));
   check(!!(await waitMsg(host.inbox, (m) => m.t === 'ready')), 'host 就座收到 ready');
   // 新加入者会被告知对端当前状态（host 先到，此刻 guest 不在 → offline）
   check(!!(await waitMsg(host.inbox, (m) => m.t === 'peer' && m.seat === 2 && !m.online)),
     '新加入者收到对端初始状态（offline）');
   const guest = await open(2);
-  guest.ws.send(JSON.stringify({ t: 'hello', room: '1234', seat: 2 }));
+  guest.ws.send(JSON.stringify({ t: 'hello', room: '1234', seat: 2, secret: 'xb-relay-v1', token: 'tok-guest' }));
   check(!!(await waitMsg(host.inbox, (m) => m.t === 'peer' && m.online)), 'host 收到 guest 上线');
   check(!!(await waitMsg(guest.inbox, (m) => m.t === 'ready')), 'guest 就座收到 ready');
   // guest 后加入：hello 时就该知道 host 在线（否则会误判对端不在中继）
@@ -85,7 +85,7 @@ async function serverE2E() {
 
   // 同座位顶号：旧的被踢
   const host2 = await open(1);
-  host2.ws.send(JSON.stringify({ t: 'hello', room: '1234', seat: 1 }));
+  host2.ws.send(JSON.stringify({ t: 'hello', room: '1234', seat: 1, secret: 'xb-relay-v1', token: 'tok-host' }));
   const replaced = await new Promise((resolve) => {
     host.ws.on('close', (code) => resolve(code));
     setTimeout(() => resolve(null), 1500);
@@ -102,7 +102,7 @@ async function serverE2E() {
 
   // 掉线（不 bye）：bye=false
   const host3 = await open(1);
-  host3.ws.send(JSON.stringify({ t: 'hello', room: '1234', seat: 1 }));
+  host3.ws.send(JSON.stringify({ t: 'hello', room: '1234', seat: 1, secret: 'xb-relay-v1', token: 'tok-host' }));
   await waitMsg(guest.inbox, (m) => m.t === 'peer' && m.online && m.seat === 1);
   host3.ws.terminate();
   const dropMsg = await waitMsg(guest.inbox, (m) => m.t === 'peer' && !m.online && m.bye === false);

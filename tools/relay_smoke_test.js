@@ -5,6 +5,8 @@ const path = require('path');
 const WS = require(path.join(__dirname, '..', 'server/mario-relay/node_modules/ws'));
 
 const URL = process.argv[2] || 'ws://81.70.22.49/e8f31a5c27/';
+// 与 utils/constants.js MARIO_RELAY_SECRET / server RELAY_SECRET 默认值一致
+const SECRET = 'xb-relay-v1';
 const start = Date.now();
 const log = [];
 
@@ -24,7 +26,7 @@ const failTimer = setTimeout(() => cleanup(a, b, 1), 10000);
 a.on('error', (e) => { log.push('A错误: ' + e.message); clearTimeout(failTimer); cleanup(a, b, 1); });
 a.on('open', () => {
   log.push('A 握手 ' + (Date.now() - start) + 'ms → hello seat1');
-  a.send(JSON.stringify({ t: 'hello', room: 'SMOKE' + Date.now() % 100000, seat: 1 }));
+  a.send(JSON.stringify({ t: 'hello', room: 'SMOKE' + Date.now() % 100000, seat: 1, secret: SECRET, token: 'smoke-a' }));
 });
 a.on('message', (d) => {
   const m = JSON.parse(String(d));
@@ -43,7 +45,7 @@ a.on('message', (d) => {
     });
     b.on('open', () => {
       log.push('B 握手 → hello seat2');
-      b.send(JSON.stringify({ t: 'hello', room: roomNo, seat: 2 }));
+      b.send(JSON.stringify({ t: 'hello', room: roomNo, seat: 2, secret: SECRET, token: 'smoke-b' }));
     });
   }
   if (m.t === 'peer' && m.online && b) {

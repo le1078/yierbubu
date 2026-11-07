@@ -73,6 +73,14 @@ Page({
     this._aiToken = (this._aiToken || 0) + 1;
     roomkit.sweepTimers(this);
     if (this._thinkTimer) { clearTimeout(this._thinkTimer); this._thinkTimer = null; }
+    // 通知对方离开：系统返回手势/小程序被回收不会走「离开」按钮，
+    // 不写的话对方永远停在「等待对方走棋」。fire-and-forget，失败不阻塞。
+    if (this._roomId && (this.data.stage === 'playing' || this.data.stage === 'waiting')) {
+      const db = wx.cloud.database();
+      db.collection(COLLECTION).doc(this._roomId).update({
+        data: { status: 'ended', leaver: this.data.mySide, updatedAt: db.serverDate() }
+      }).catch(function () {});
+    }
   },
 
   // 手机横竖屏切换 / 分屏：重算棋盘尺寸并重建 canvas。
@@ -274,11 +282,24 @@ Page({
       if (!room) return;
       this._roomId = room._id;
       const db = wx.cloud.database();
+      // 占位回读：两个人同时点「加入」会都把 status 改成 playing、都拿到黑棋。
+      // 写入随机占位符后回读确认，读到别人的占位符就退出（客户端 SDK 没有
+      // 原子条件写，回读把竞态窗口压到最小）。
+      const mark = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
       await db.collection(COLLECTION).doc(this._roomId).update({
-        data: { status: 'playing', turn: X.RED, updatedAt: db.serverDate() }
+        data: { status: 'playing', turn: X.RED, joinerMark: mark, updatedAt: db.serverDate() }
       });
+      await new Promise((r) => setTimeout(r, 350));
+      const verify = await db.collection(COLLECTION).doc(this._roomId).get();
+      const cur = (verify && verify.data) || {};
+      if (cur.joinerMark !== mark) {
+        this._roomId = null;
+        wx.showToast({ title: '手慢了，房间刚被别人加入', icon: 'none', duration: 2500 });
+        return;
+      }
       this._board = X.strToBoard(room.boardStr);
-      this._history = room.history || [];
+      // 云端脏数据兜底：history 必须是数组，否则第一手棋 push 就抛 TypeError
+      this._history = Array.isArray(room.history) ? room.history : [];
       this._over = false;
       this._noCapture = 0;
       this._positions = {};
@@ -698,13 +719,24 @@ Page({
 
   /* ========== 联机悔棋 / 重开（双方确认） ========== */
 
+  // 申请类操作统一超时：对方不响应时自动关闭弹层，避免永远卡在「等待对方同意」。
+  // 超时还必须把云端请求标志清掉：否则房间之后任何一次写入都会把
+  // undoState/rematchState 重新点亮，而定时器已经清了 —— 横幅永远挂着，
+  // 本局再也没法重新申请。
   _armRequestTimeout(stateKey) {
     this._clearRequestTimeout();
     this._requestTimeoutKey = stateKey;
     this._undoTimeoutTimer = setTimeout(() => {
       if (this._destroyed) return;
       this.setData({ [stateKey]: null });
+      this._requestTimeoutKey = null;
       wx.showToast({ title: '对方未响应', icon: 'none' });
+      const field = stateKey === 'undoState' ? 'undoRequest' : 'rematchRequest';
+      if (!this._roomId) return;
+      const db = wx.cloud.database();
+      db.collection(COLLECTION).doc(this._roomId).update({
+        data: { [field]: 0, updatedAt: db.serverDate() }
+      }).catch(function () {});
     }, C.XQ_MOVE_TIMEOUT_MS);
   },
 

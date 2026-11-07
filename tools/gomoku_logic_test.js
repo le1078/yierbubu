@@ -77,7 +77,7 @@ console.assert(pad4(0) === '0000');
 console.log('房间号:', pad4(426), pad4(9999), pad4(0));
 
 // 10 形象分配：双方必须不同
-const AVATARS = ['/assets/avatar_a.gif', '/assets/avatar_b.gif'];
+const AVATARS = ['/subpackages/games/gomoku/img/avatar_a.gif', '/subpackages/games/gomoku/img/avatar_b.gif'];
 for (let k = 0; k < 20; k++) {
   const i = Math.random() < 0.5 ? 0 : 1;
   console.assert(AVATARS[i] !== AVATARS[1 - i], '双方形象必须不同');

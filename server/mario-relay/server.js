@@ -10,12 +10,14 @@
 //
 // 协议（全部 JSON 文本帧）：
 //   客户端 → 服务器：
-//     {t:'hello', room:'1234', seat:1|2}   入座（同座位旧连接会被顶下线）
+//     {t:'hello', room:'1234', seat:1|2, secret:'…', token:'…'}
+//                                         入座（secret 校验 + 座位令牌顶号保护）
 //     {t:'d', v:{...}}                      游戏数据，转发给对面座位
 //     {t:'ping', ts:...}                    应用层心跳
 //     {t:'bye'}                             主动离开（区别于掉线）
 //   服务器 → 客户端：
 //     {t:'ready', room, seat}               就座成功
+//     {t:'error', msg}                      被拒绝（口令不符/座位被占等）
 //     {t:'d', v:{...}}                      对面发来的游戏数据
 //     {t:'peer', seat, online, bye}         对面上线/掉线/离开
 //     {t:'pong', ts}                        心跳回显
@@ -33,11 +35,29 @@ const MAX_ROOMS = 5000;            // 防滥用：同时存在的房间数上限
 // 不设这个限制的话，只连不进房的连接不属于任何房间，永远不会被清理。
 const HELLO_TIMEOUT_MS = Number(process.env.HELLO_TIMEOUT_MS) || 10 * 1000;
 
+/* ========== 入座鉴权 ========== */
+// 机房每天都有端口扫描，之前 hello 只看「房间号 + 座位」，
+// 任何人都能按 4 位房号顶掉正在对局的玩家。两层防线：
+//   1. 握手口令：客户端 hello 必须带 secret（utils/constants.js MARIO_RELAY_SECRET，
+//      服务器默认同值，可用 RELAY_SECRET 覆盖；设为 off/空串关闭校验）。
+//      它挡不住解包小程序的定向攻击，但足够拦住盲扫。
+//   2. 座位令牌：客户端为每个房号随机生成 token 并本地持久化（utils/relay.js）。
+//      顶掉同座位旧连接、或回收「掉线后还绑着令牌的空座位」都必须持同令牌；
+//      超过 SEAT_TOKEN_TTL 没人认领才放开（设备重装丢令牌时也能重新入座）。
+const RELAY_SECRET = process.env.RELAY_SECRET !== undefined ? process.env.RELAY_SECRET : 'xb-relay-v1';
+const SECRET_REQUIRED = RELAY_SECRET !== '' && RELAY_SECRET !== 'off';
+// nginx 反代路径校验：机房 nginx 用随机前缀 /e8f31a5c27/ 反代到本服务。
+// nginx 若配置成「去掉前缀转发」，服务器收到的 url 是 /，此时把 RELAY_PATH 设为 /
+// 或 * （不校验）。默认 *：不影响现有部署，启用校验由 systemd 环境变量控制。
+const RELAY_PATH = process.env.RELAY_PATH || '*';
+const SEAT_TOKEN_TTL = 5 * 60 * 1000;   // 空座位的令牌保留时长
+
+
 // 所有连接（含还没入座的）：限流/僵尸/handshake 超时都要覆盖到
 const conns = new Set();
 
 /* ========== 房间表 ========== */
-// roomNo -> { seats: { 1: conn|null, 2: conn|null } }
+// roomNo -> { seats: {1: conn|null, 2: conn|null}, seatTokens: {1,2}, seatTokenAt: {1,2} }
 const rooms = new Map();
 
 function getRoom(no) {
@@ -50,7 +70,7 @@ function getRoom(no) {
       }
       if (rooms.size >= MAX_ROOMS) return null;
     }
-    r = { seats: { 1: null, 2: null } };
+    r = { seats: { 1: null, 2: null }, seatTokens: { 1: '', 2: '' }, seatTokenAt: { 1: 0, 2: 0 } };
     rooms.set(no, r);
   }
   return r;
@@ -76,7 +96,12 @@ function broadcastPeer(room, no, seat, online, bye) {
 
 const wss = new WebSocketServer({ port: PORT, maxPayload: MAX_MSG_BYTES * 2 });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // 反代路径校验（RELAY_PATH=* 或未设置时不校验，见顶部说明）
+  if (RELAY_PATH !== '*' && String(req && req.url || '').indexOf(RELAY_PATH) !== 0) {
+    try { ws.close(1008, 'bad path'); } catch (e) {}
+    return;
+  }
   const conn = {
     ws,
     room: null,       // 房间号
@@ -101,16 +126,37 @@ wss.on('connection', (ws) => {
     if (!m || typeof m.t !== 'string') return;
 
     if (m.t === 'hello') {
+      // 握手口令：客户端必须带上与服务器一致的 secret
+      if (SECRET_REQUIRED && m.secret !== RELAY_SECRET) {
+        sendTo(conn, { t: 'error', msg: 'auth failed' });
+        ws.close(1008);
+        return;
+      }
       const no = String(m.room || '').slice(0, 16);
       const seat = m.seat === 2 ? 2 : 1;
       if (!no) { sendTo(conn, { t: 'error', msg: 'room required' }); ws.close(1008); return; }
       const room = getRoom(no);
       if (!room) { sendTo(conn, { t: 'error', msg: 'server busy' }); ws.close(1013); return; }
-      // 同座位顶号：旧连接直接断开（它会触发 peer offline）
+      const token = typeof m.token === 'string' ? m.token.slice(0, 64) : '';
+      const bound = room.seatTokens[seat];
+      const boundFresh = bound && room.seatTokenAt[seat] &&
+        (Date.now() - room.seatTokenAt[seat] < SEAT_TOKEN_TTL);
+      // 同座位已有活连接：只有持同令牌的（掉线重连）才能顶号，
+      // 否则拒绝 —— 4 位房号太容易猜，不能让人把正在对局的玩家踢下线
       const old = room.seats[seat];
       if (old && old !== conn && old.alive) {
+        if (!token || !bound || token !== bound) {
+          sendTo(conn, { t: 'error', msg: 'seat busy' });
+          ws.close(1008);
+          return;
+        }
         room.seats[seat] = null;
         try { old.ws.close(4000, 'replaced'); } catch (e) {}
+      } else if (!old && boundFresh && (!token || token !== bound)) {
+        // 座位空着但刚有令牌（前一位玩家掉线）：令牌不符不许顶，超时才放开
+        sendTo(conn, { t: 'error', msg: 'seat token mismatch' });
+        ws.close(1008);
+        return;
       }
       // 换房：从旧房间摘除
       if (conn.room && conn.room !== no && conn.seat) {
@@ -124,6 +170,10 @@ wss.on('connection', (ws) => {
       conn.room = no;
       conn.seat = seat;
       room.seats[seat] = conn;
+      if (token) {
+        room.seatTokens[seat] = token;
+        room.seatTokenAt[seat] = Date.now();
+      }
       sendTo(conn, { t: 'ready', room: no, seat });
       // 告诉新加入者对端的当前状态（对端早就坐在房间里时，
       // 新加入者收不到任何 peer 事件，会误以为对端不在线）

@@ -104,9 +104,11 @@ async function findJoinableRoom(collection, roomNo) {
     for (let i = 0; i < list.length; i++) {
       const r = list[i];
       if (!r) continue;
-      // 兼容没有 createdAt 的旧房间；有 createdAt 的必须没过期
+      // 房间必须带 createdAt 且在 24h 内：没有 createdAt 的老房间无法判断
+      // 新旧（往往是当年留下的孤儿房），一律视为过期 —— 否则输入一个老房号
+      // 加入后永远等不到人，房号空间也会被这些僵尸房占死。
       const t = r.createdAt ? new Date(r.createdAt).getTime() : 0;
-      if (r.createdAt && t < since) continue;
+      if (!t || t < since) continue;
       if (r.status !== 'waiting') { sawStarted = true; continue; }
       if (!best || t > best.t) best = { room: r, t: t };
     }
@@ -348,8 +350,12 @@ async function pushChat(page, collection, msg) {
 function mergeChat(existing, cloud, me) {
   // 云端 chat 是数组；旧文档/脏数据可能不是（字符串会让下面的循环按字符
   // 迭代，生成一堆 from=undefined 的假消息）。统一兜底成空数组。
+  // 数组里混进 null/非对象元素也会在读字段时抛 TypeError，一并过滤 ——
+  // 否则 _onRoomUpdate 每次快照都在同一个地方中断，联机同步整个失效。
   if (!Array.isArray(cloud)) cloud = [];
+  cloud = cloud.filter(function (m) { return m && typeof m === 'object'; });
   if (!Array.isArray(existing)) existing = [];
+  existing = existing.filter(function (m) { return m && typeof m === 'object'; });
   const cloudKeys = {};
   for (let i = 0; i < cloud.length; i++) cloudKeys[cloud[i].from + '_' + cloud[i].ts] = true;
   const seen = {};

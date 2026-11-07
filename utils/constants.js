@@ -70,6 +70,10 @@ module.exports = {
   // 已部署（2026-10-24）：腾讯云 root@81.70.22.49，systemd 服务名 mario-relay，
   // nginx 按机房惯例把随机前缀反代到 127.0.0.1:9000（配置在 litellm.conf）。
   MARIO_RELAY_URL: 'ws://81.70.22.49/e8f31a5c27/',
+  // 握手口令：服务器（RELAY_SECRET）与客户端（这里）必须一致，不一致拒绝入座。
+  // 防的是端口扫描器盲连/按 4 位房号爆破入座；它挡不住解包小程序的定向攻击，
+  // 真正的强鉴权需要 wss + 备案域名 + 账号体系，属于后续工作。
+  MARIO_RELAY_SECRET: 'xb-relay-v1',
   MARIO_RELAY_WORLD_MS: 150,          // 中继模式：host 世界快照 ~6.7Hz
   MARIO_RELAY_INPUT_MS: 100,          // 中继模式：guest 输入上报 10Hz
   MARIO_RELAY_DB_HEARTBEAT_MS: 2000,  // 对端也在中继上时，云数据库兜底降为 0.5Hz 心跳

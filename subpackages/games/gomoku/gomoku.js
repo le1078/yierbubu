@@ -9,7 +9,15 @@ const C = require('../../../utils/constants.js');
 const log = require('../../../utils/log.js');
 const roomkit = require('../../../utils/roomkit.js');
 
-const AVATARS = ['/assets/avatar_a.gif', '/assets/avatar_b.gif'];
+const AVATARS = ['/subpackages/games/gomoku/img/avatar_a.gif', '/subpackages/games/gomoku/img/avatar_b.gif'];
+
+// 头像已从主包 assets/ 挪进分包（主包瘦身）。24 小时内创建的老房间文档里
+// 存的还是旧路径，读出来要换回新路径，否则头像会裂图。
+function fixAvatar(p) {
+  if (p === '/assets/avatar_a.gif') return AVATARS[0];
+  if (p === '/assets/avatar_b.gif') return AVATARS[1];
+  return p;
+}
 
 function emptyBoard() {
   const b = [];
@@ -150,6 +158,14 @@ Page({
       if (this[k]) { clearTimeout(this[k]); this[k] = null; }
     });
     if (this._waitPollInterval) { clearInterval(this._waitPollInterval); this._waitPollInterval = null; }
+    // 通知对方离开：系统返回手势/小程序被回收不会走「离开」按钮，
+    // 不写的话对方会永远停在「等待对方落子」。fire-and-forget，失败不阻塞。
+    if (this._roomId && (this.data.stage === 'playing' || this.data.stage === 'waiting')) {
+      const db = wx.cloud.database();
+      db.collection(COLLECTION).doc(this._roomId).update({
+        data: { status: 'ended', leaver: this.data.myColor, updatedAt: db.serverDate() }
+      }).catch(() => {});
+    }
   },
 
   // 横竖屏切换：重算棋盘宽度并重建 canvas（背景缓存与棋子渐变同时作废）
@@ -183,13 +199,16 @@ Page({
     wx.showLoading({ title: '创建中…', mask: true });
     try {
       const db = wx.cloud.database();
-      // 房间号查重：撞号时重试，避免加入者进错房间
+      // 房间号查重：撞号时重试，避免加入者进错房间。
+      // 5 次都撞号必须报错 —— 悄悄用重复号建房，加入方会按「最新 waiting」
+      // 进错别人的房间（roomkit.genRoomNo 就是这么处理的）。
       let roomNo = '', tries = 0;
       while (tries++ < 5) {
         roomNo = String(Math.floor(Math.random() * (C.ROOM_NO_MAX + 1))).padStart(4, '0');
         const dup = await db.collection(COLLECTION).where({ roomNo }).limit(1).get();
         if (!dup.data || !dup.data.length) break;
       }
+      if (tries > 5) throw new Error('房间号生成失败，请重试');
       // 随机双方形象：房主拿一个，对方拿另一个
       const myAvatarIdx = Math.random() < 0.5 ? 0 : 1;
       const doc = {
@@ -255,21 +274,35 @@ Page({
       if (!room) return;
       this._roomId = room._id;
       this._isJoiner = true;
+      // 占位回读：两个人同时点「加入」会都把 status 改成 playing、都拿到白棋。
+      // 写入随机占位符后回读确认，读到别人的占位符就退出 —— 客户端 SDK 没有
+      // 原子条件写，只能靠回读把竞态窗口压到最小。
+      const mark = 'j' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
       await db.collection(COLLECTION).doc(this._roomId).update({
         data: {
           status: 'playing',
           turn: 1,
+          joinerMark: mark,
           updatedAt: db.serverDate()
         }
       });
+      await new Promise((r) => setTimeout(r, 350));
+      const verify = await db.collection(COLLECTION).doc(this._roomId).get();
+      const cur = (verify && verify.data) || {};
+      if (cur.joinerMark !== mark) {
+        this._roomId = null;
+        this._isJoiner = false;
+        wx.showToast({ title: '手慢了，房间刚被别人加入', icon: 'none', duration: 2500 });
+        return;
+      }
       this._resetCanvas();
       this.setData({
         stage: 'playing',
         roomNo: room.roomNo || roomNo,
         myColor: 2,
         myColorText: '⚪ 白棋（后手）',
-        myAvatar: room.avatars.white,
-        oppAvatar: room.avatars.black,
+        myAvatar: fixAvatar(room.avatars.white),
+        oppAvatar: fixAvatar(room.avatars.black),
         turn: 1,
         isMyTurn: false,
         statusText: '等待对方落子…',
@@ -294,6 +327,21 @@ Page({
 
   /* ========== Watch 同步 ========== */
 
+  // 快照单调序：watch 与轮询双通道并存，慢车道（轮询 get）先发后至的旧快照
+  // 会把 boardStr/turn 拉回过去，表现为「棋子突然消失」。按 updatedAt 单调判据
+  // 丢弃旧快照（与 roomkit 的 docOrder 同一思路）。
+  _docTs(room) {
+    if (!room || !room.updatedAt) return 0;
+    const t = new Date(room.updatedAt).getTime();
+    return isNaN(t) ? 0 : t;
+  },
+  _acceptDoc(room) {
+    const ts = this._docTs(room);
+    if (ts && this._lastDocTs && ts < this._lastDocTs) return false;   // 迟到的旧快照
+    if (ts > (this._lastDocTs || 0)) this._lastDocTs = ts;
+    return true;
+  },
+
   _startWatch(isRetry) {
     this._closeWatcher();
     // 轮询链代际：closeWatch 后上一轮可能还卡在 await get 上，恢复后会
@@ -316,6 +364,7 @@ Page({
           if (!docs || !docs.length) return;
           const key = JSON.stringify(docs[0]);
           if (key === this._pollKey) return;
+          if (!this._acceptDoc(docs[0])) return;   // 慢车道迟到的旧快照
           this._pollKey = key;
           this._onRoomUpdate(docs[0]);
         },
@@ -399,6 +448,7 @@ Page({
       if (!room) return;
       const key = JSON.stringify(room);
       if (key === this._pollKey) return;
+      if (!this._acceptDoc(room)) return;   // watch 已推过更新的快照，这份是旧的
       this._pollKey = key;
       if (room.status === 'playing' && this.data.stage === 'waiting') {
         this._onRoomUpdate(room);
@@ -418,11 +468,11 @@ Page({
     // 检测先后手互换（仅在对局中且非初始 join 时检测）
     if (this.data.stage !== 'waiting' && !this._isJoiner &&
         room.avatars && this.data.myAvatar && room.avatars.black && room.avatars.white) {
-      const myCurrentAvatar = me === 1 ? room.avatars.black : room.avatars.white;
+      const myCurrentAvatar = fixAvatar(me === 1 ? room.avatars.black : room.avatars.white);
       if (myCurrentAvatar !== this.data.myAvatar) {
         me = me === 1 ? 2 : 1;
-        const newMyAvatar = me === 1 ? room.avatars.black : room.avatars.white;
-        const newOppAvatar = me === 1 ? room.avatars.white : room.avatars.black;
+        const newMyAvatar = fixAvatar(me === 1 ? room.avatars.black : room.avatars.white);
+        const newOppAvatar = fixAvatar(me === 1 ? room.avatars.white : room.avatars.black);
         this.setData({
           myColor: me,
           myColorText: me === 1 ? '⚫ 黑棋（先手）' : '⚪ 白棋（后手）',
@@ -505,8 +555,9 @@ Page({
 
     // 聊天 & 表情
     // 本地可能有 pending 乐观消息，不能简单用长度比较；按 from+ts 去重
-    // chat 必须是数组：脏数据（字符串/对象）会让 .map 直接抛，整个同步回调中断
-    const chat = Array.isArray(room.chat) ? room.chat : [];
+    // chat 必须是数组：脏数据（字符串/对象）会让 .map 直接抛，整个同步回调中断；
+    // 数组里混进 null 元素同样会在读字段时抛 —— 一并过滤
+    const chat = (Array.isArray(room.chat) ? room.chat : []).filter(m => m && typeof m === 'object');
     const existing = Array.isArray(this.data.chatList) ? this.data.chatList : [];
     const seen = new Set(existing.map(m => m.from + '_' + m.ts));
     const cloudKeys = new Set(chat.map(m => m.from + '_' + m.ts));
@@ -885,14 +936,25 @@ Page({
     }
   },
 
-  // 申请类操作统一超时：对方不响应时自动关闭弹层，避免永远卡在「等待对方同意」
+  // 申请类操作统一超时：对方不响应时自动关闭弹层，避免永远卡在「等待对方同意」。
+  // 超时还必须把云端请求标志清掉：否则房间之后任何一次写入（落子/聊天/戳一戳）
+  // 都会把 undoState/firstState/rematchState 重新点亮，而定时器已经清了 ——
+  // 横幅永远挂着，本局再也没法重新申请。
   _armRequestTimeout(stateKey) {
     this._clearRequestTimeout();
     this._requestTimeoutKey = stateKey;
     this._undoTimeoutTimer = setTimeout(() => {
       if (this._destroyed) return;
       this.setData({ [stateKey]: null });
+      this._requestTimeoutKey = null;
       wx.showToast({ title: '对方未响应', icon: 'none' });
+      const field = stateKey === 'undoState' ? 'undoRequest'
+        : stateKey === 'firstState' ? 'firstRequest' : 'rematchRequest';
+      const db = wx.cloud.database();
+      // 尽力清云端标志；失败只影响对面还能看到横幅，不阻塞本地
+      db.collection(COLLECTION).doc(this._roomId).update({
+        data: { [field]: 0, updatedAt: db.serverDate() }
+      }).catch(() => {});
     }, C.UNDO_TIMEOUT_MS);
   },
 

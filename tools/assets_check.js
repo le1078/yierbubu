@@ -73,7 +73,16 @@ for (const f of jss) {
   // 只认 '/assets/...' '/subpackages/...' 这样的图片扩展名路径
   const re = /'(\/(?:assets|subpackages|pages|components)\/[^']+\.(?:png|jpg|jpeg|gif|webp|svg))'/g;
   let m;
-  while ((m = re.exec(src))) checkAsset(m[1], rel);
+  while ((m = re.exec(src))) {
+    // 旧路径兼容常量：形如 if (p === '/assets/avatar_a.gif') return AVATARS[0];
+    // 这种字符串只做相等比较（把旧云端数据里的路径映射到新位置），不会加载资源，
+    // 缺文件也不会裂图，不应算作缺失引用。
+    const lineStart = src.lastIndexOf('\n', m.index) + 1;
+    const lineEnd = src.indexOf('\n', m.index);
+    const line = src.slice(lineStart, lineEnd === -1 ? src.length : lineEnd);
+    if (/(?:===|!==)\s*['"]\//.test(line) || /['"]\/[^'"]*['"]\s*(?:===|!==)/.test(line)) continue;
+    checkAsset(m[1], rel);
+  }
 }
 
 console.log('  检查了 ' + refCount + ' 处静态图片引用');

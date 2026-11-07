@@ -982,9 +982,11 @@ Page({
 
   // 把 guest 的输入套到本地（host 侧）
   _applyInput2(inp) {
-    if (!inp || !this._inputs) return;
+    if (!inp || typeof inp !== 'object' || !this._inputs) return;
     const i2 = this._inputs[2];
     if (!i2) return;
+    // 对端/中继可能送来缺 keys 字段的坏帧（旧版本/伪造），读 inp.keys.l 会直接抛
+    if (!inp.keys || typeof inp.keys !== 'object') return;
     // 双车道去重：同一条输入会从中继（快）和云数据库（慢）各到一次，
     // 慢车道的旧包也可能晚于快车道的新包到达 —— 只应用更新的快照。
     // 关卡代际变化时时间戳会归零，必须先重置基线再比较。

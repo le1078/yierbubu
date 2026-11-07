@@ -45,6 +45,26 @@
       {
         "type": "suffix",
         "value": ".md"
+      },
+      {
+        "type": "folder",
+        "value": ".zcode"
+      },
+      {
+        "type": "folder",
+        "value": ".git"
+      },
+      {
+        "type": "folder",
+        "value": "node_modules"
+      },
+      {
+        "type": "folder",
+        "value": "zodiac-web"
+      },
+      {
+        "type": "file",
+        "value": "project.private.config.json"
       }
     ],
     "include": []

@@ -3,9 +3,9 @@
   <!-- ===== 大厅：创建 / 加入 ===== -->
   <view wx:if="{{stage === 'lobby'}}" class="lobby">
     <view class="lobby-hero">
-      <image class="lobby-masc" src="/assets/avatar_a.gif" mode="aspectFit"/>
+      <image class="lobby-masc" src="/subpackages/games/gomoku/img/avatar_a.gif" mode="aspectFit"/>
       <view class="lobby-title">⚫⚪ 小笨五子棋</view>
-      <image class="lobby-masc" src="/assets/avatar_b.gif" mode="aspectFit"/>
+      <image class="lobby-masc" src="/subpackages/games/gomoku/img/avatar_b.gif" mode="aspectFit"/>
     </view>
     <view class="lobby-sub">双人联机 · 房间对战</view>
 

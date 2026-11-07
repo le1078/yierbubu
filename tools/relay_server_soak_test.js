@@ -20,6 +20,8 @@ try {
 }
 const PORT = 19091;
 const HELLO_TIMEOUT = 600;
+// 与 server.js 默认值（= utils/constants.js MARIO_RELAY_SECRET）保持一致
+const SECRET = 'xb-relay-v1';
 
 let pass = 0, fail = 0;
 function check(cond, name) {
@@ -44,8 +46,8 @@ function waitFor(cond, timeoutMs, label) {
 
 const URL = 'ws://127.0.0.1:' + PORT + '/soak';
 
-function client() {
-  const ws = new WebSocket(URL);
+function client(url) {
+  const ws = new WebSocket(url || URL);
   const c = { ws, msgs: [], closed: false, closeCode: 0 };
   ws.on('message', function (raw) {
     let m = null;
@@ -59,9 +61,9 @@ function client() {
     ws.on('error', reject);
   });
   c.send = function (obj) { try { ws.send(JSON.stringify(obj)); } catch (e) {} };
-  c.hello = async function (room, seat) {
+  c.hello = async function (room, seat, token) {
     await c.open;
-    c.send({ t: 'hello', room, seat });
+    c.send({ t: 'hello', room, seat, secret: SECRET, token: token || '' });
     await waitFor(function () { return c.msgs.some(function (m) { return m.t === 'ready'; }); },
       2000, 'ready');
     return c;
@@ -74,7 +76,11 @@ function client() {
   let out = '';
   const srv = spawn(process.execPath, ['server.js'], {
     cwd: SERVER_DIR,
-    env: Object.assign({}, process.env, { PORT: String(PORT), HELLO_TIMEOUT_MS: String(HELLO_TIMEOUT) }),
+    env: Object.assign({}, process.env, {
+      PORT: String(PORT),
+      HELLO_TIMEOUT_MS: String(HELLO_TIMEOUT),
+      RELAY_PATH: '/soak'   // 客户端 URL 就是 /soak，顺带校验路径过滤
+    }),
     stdio: ['ignore', 'pipe', 'pipe']
   });
   srv.stdout.on('data', function (d) { out += String(d); });
@@ -136,23 +142,69 @@ function client() {
       await wait(100);
     }
 
-    console.log('\n[3] 同座位顶号');
+    console.log('\n[3] 座位鉴权：持令牌可重连顶号，无令牌/错令牌被拒');
     {
       const oldGuy = client();
-      await oldGuy.hello('TAKE', 1);
-      const newGuy = client();
-      await newGuy.hello('TAKE', 1);
-      await wait(150);
-      check(oldGuy.closed === true, '旧连接被服务器断开');
-      check(oldGuy.closeCode === 4000, '断开码 4000（replaced）');
+      await oldGuy.hello('TAKE', 1, 'tok-A');
+
+      // 无令牌的陌生连接：拒绝且不能踢掉合法玩家
+      const stranger = client();
+      let rejected = false;
+      try { await stranger.hello('TAKE', 1); } catch (e) { rejected = true; }
+      check(rejected, '无令牌顶号被拒绝（等不到 ready）');
+      check(stranger.find(function (m) { return m.t === 'error' && m.msg === 'seat busy'; }).length === 1,
+        '陌生连接收到 seat busy');
+      check(oldGuy.closed === false, '合法连接不会被无令牌者踢掉');
+      stranger.ws.close();
+
+      // 错令牌同样被拒
+      const wrong = client();
+      let rejected2 = false;
+      try { await wrong.hello('TAKE', 1, 'tok-EVIL'); } catch (e) { rejected2 = true; }
+      check(rejected2 && wrong.find(function (m) { return m.t === 'error' && m.msg === 'seat busy'; }).length === 1,
+        '错令牌顶号被拒');
+      check(oldGuy.closed === false, '错令牌也踢不掉合法玩家');
+      wrong.ws.close();
+
+      // 掉线重连：持同令牌顶掉旧连接（4000 replaced）
+      const again = client();
+      await again.hello('TAKE', 1, 'tok-A');
+      check(oldGuy.closed === true && oldGuy.closeCode === 4000, '持同令牌重连顶掉旧连接（4000 replaced）');
 
       const peer = client();
-      await peer.hello('TAKE', 2);
-      newGuy.send({ t: 'd', v: { k: 'x' } });
+      await peer.hello('TAKE', 2, 'tok-B');
+      again.send({ t: 'd', v: { k: 'x' } });
       await wait(100);
       check(peer.find(function (m) { return m.t === 'd'; }).length === 1, '顶号后的新连接收发正常');
-      newGuy.ws.close(); peer.ws.close();
+      again.ws.close(); peer.ws.close();
       await wait(100);
+    }
+
+    console.log('\n[3b] 握手口令与路径过滤');
+    {
+      // secret 不符：拒绝入座
+      const bad = client();
+      await bad.open;
+      bad.send({ t: 'hello', room: 'SEC1', seat: 1, secret: 'wrong-secret', token: 't' });
+      await wait(150);
+      check(bad.closed === true && bad.find(function (m) { return m.t === 'error' && m.msg === 'auth failed'; }).length === 1,
+        '口令不符被拒（auth failed）');
+
+      // 路径不符：连接即使先收到 open（握手已完成）也会被立即关闭
+      const wrongPath = client('ws://127.0.0.1:' + PORT + '/other-path');
+      const outcome = await new Promise(function (resolve) {
+        let done = false;
+        const fin = function (kind) { if (!done) { done = true; resolve(kind); } };
+        wrongPath.ws.on('open', function () {
+          // 服务器随后会关掉它：等到 close 再下结论
+          setTimeout(function () { fin('open-no-close'); }, 500);
+        });
+        wrongPath.ws.on('close', function () { fin('closed'); });
+        wrongPath.ws.on('error', function () { fin('error'); });
+        setTimeout(function () { fin('timeout'); }, 2000);
+      });
+      check(outcome === 'closed' || outcome === 'error',
+        '非 RELAY_PATH 的连接会被服务器断开（' + outcome + '）');
     }
 
     console.log('\n[4] 异常输入不能打垮服务器');
