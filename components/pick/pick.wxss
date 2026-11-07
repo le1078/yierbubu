@@ -1,0 +1,350 @@
+/* 六合取码 · 配色与来财页一致（奶油底 / 珊瑚红 / 粉色虚线圆角）
+   换算基准：网页 1px = 2rpx */
+
+.pk, .pk view, .pk text, .pk image {
+  box-sizing: border-box;
+}
+
+.pk {
+  padding: 8rpx 0 24rpx;
+  color: #4A3F3A;
+  font-size: 26rpx;
+  line-height: 1.55;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+/* ---------- 顶部说明 ---------- */
+.pk-hint {
+  background: #FFF9FA;
+  border: 3rpx dashed #FFE3D3;
+  border-radius: 24rpx;
+  padding: 16rpx 20rpx;
+  font-size: 23rpx;
+  line-height: 1.7;
+  color: #A9743F;
+  margin-bottom: 16rpx;
+}
+.pk-b { color: #FF5A5F; font-weight: 800; }
+
+/* ---------- 卡片 ---------- */
+.pk-card {
+  background: #fff;
+  border: 3rpx solid #FFD9E3;
+  border-radius: 28rpx;
+  padding: 22rpx;
+  box-shadow: 0 12rpx 28rpx rgba(255, 138, 171, 0.14);
+  margin-bottom: 16rpx;
+}
+.pk-ct {
+  display: flex;
+  align-items: center;
+  font-size: 25rpx;
+  font-weight: 900;
+  color: #A9743F;
+  letter-spacing: 0.5rpx;
+  margin-bottom: 18rpx;
+}
+.pk-dot {
+  width: 12rpx; height: 12rpx; border-radius: 50%;
+  background: #FF5A5F; margin-right: 12rpx; flex: none;
+  box-shadow: 0 0 0 5rpx rgba(255, 90, 95, 0.12);
+}
+.pk-mini {
+  width: 36rpx; height: 36rpx; border-radius: 50%;
+  margin-right: 10rpx; background: #fff; flex: none;
+}
+
+/* ---------- 个数选项 ---------- */
+.pk-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+.pk-opt {
+  min-width: 76rpx;
+  padding: 16rpx 4rpx;
+  text-align: center;
+  border-radius: 22rpx;
+  background: #FFF9FA;
+  border: 3rpx solid #FFE3D3;
+  font-size: 27rpx;
+  font-weight: 900;
+  color: #4A3F3A;
+  transition: transform 0.14s;
+}
+.pk-opt-hover { transform: translateY(-2rpx); }
+.pk-opt.on {
+  background: linear-gradient(135deg, #FF5A5F, #FF7A5C);
+  border-color: #FF5A5F;
+  color: #fff;
+  box-shadow: 0 8rpx 18rpx rgba(255, 90, 95, 0.3);
+}
+.pk-optline {
+  font-size: 22rpx;
+  color: #BCA89C;
+  margin-top: 14rpx;
+}
+
+.pk-acts {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 22rpx;
+}
+.pk-gen {
+  flex: 1;
+  padding: 24rpx 0;
+  text-align: center;
+  border-radius: 999rpx;
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: 900;
+  letter-spacing: 1rpx;
+  background: linear-gradient(135deg, #FF5A5F, #FF7A5C);
+  box-shadow: 0 10rpx 24rpx rgba(255, 90, 95, 0.3);
+}
+.pk-gen.is-rolling { animation: pkbtn 0.5s ease-in-out infinite; }
+@keyframes pkbtn {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.97); }
+}
+.pk-copy {
+  padding: 24rpx 32rpx;
+  border-radius: 999rpx;
+  font-size: 26rpx;
+  font-weight: 900;
+  color: #A9743F;
+  background: #fff;
+  border: 3rpx solid #FFE3D3;
+}
+
+/* ---------- 结果 ---------- */
+.pk-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10rpx;
+  padding: 30rpx 0;
+  border: 3rpx dashed #FFD9E3;
+  border-radius: 24rpx;
+  background: #FFF9FA;
+  color: #BCA89C;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+.pk-empty-img { width: 150rpx; height: 150rpx; }
+.pk-empty-img.small { width: 110rpx; height: 110rpx; }
+
+.pk-stage {
+  background: linear-gradient(135deg, #FFFDF8, #FFF4F7);
+  border: 3rpx dashed #FFD9E3;
+  border-radius: 24rpx;
+  padding: 26rpx 12rpx;
+}
+.pk-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+}
+.pk-item {
+  position: relative;
+  width: 72rpx;
+  padding: 10rpx 0 8rpx;
+  border-radius: 20rpx;
+  background: #fff;
+  border: 3rpx solid #FFE3D3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 6rpx 16rpx rgba(255, 138, 171, 0.14);
+}
+/* 只有真正有号的卡片才播放入场动画，空白位保持静止 */
+.pk-item.filled {
+  animation: pkpop 0.4s cubic-bezier(0.2, 1.5, 0.45, 1) both;
+}
+@keyframes pkpop {
+  0% { transform: translateY(10rpx) scale(0.8); }
+  100% { transform: none; }
+}
+.pk-item.special {
+  border-color: #FF5A5F;
+  background: linear-gradient(160deg, #FFF7F8, #FFE9EE);
+}
+/* 空白位：占位置但不抢眼，号码位显示「—」 */
+.pk-item.blank {
+  background: #FFFDF9;
+  border-style: dashed;
+  border-color: #F0E2D8;
+  box-shadow: none;
+}
+.pk-item.blank.special {
+  border-color: #F0E2D8;
+  background: #FFFDF9;
+}
+.pk-item.blank .pk-num { color: #D8C7BB; text-shadow: none; }
+.pk-item.blank .pk-emoji { color: #E4D6CB; }
+.pk-item.blank .pk-name { color: #D8C7BB; }
+.pk-item.blank .pk-tag { background: #E7DACF; }
+
+/* 摇号过程：整张卡片轻微缩放 + 号码上下抖动，和「摇一摇」一个手感 */
+.pk-item.rolling { animation: pkpulse 0.28s ease-in-out infinite; }
+.pk-item.rolling .pk-num { animation: pknum 0.16s linear infinite; }
+@keyframes pkpulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.96); }
+}
+@keyframes pknum {
+  0% { transform: translateY(-2rpx); }
+  50% { transform: translateY(2rpx); }
+  100% { transform: translateY(-2rpx); }
+}
+.pk-num {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 23rpx;
+  font-weight: 900;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-shadow: 0 2rpx 4rpx rgba(0, 0, 0, 0.2);
+}
+/* 固定行高：空白位与有号位高度一致，摇号前后不会跳高度 */
+.pk-emoji { font-size: 26rpx; line-height: 34rpx; height: 34rpx; margin-top: 5rpx; }
+.pk-name { font-size: 20rpx; line-height: 28rpx; height: 28rpx; font-weight: 900; color: #A9743F; }
+.pk-tag {
+  position: absolute;
+  top: -14rpx;
+  right: -12rpx;
+  font-size: 16rpx;
+  font-weight: 900;
+  color: #fff;
+  background: #FF5A5F;
+  border-radius: 99rpx;
+  padding: 2rpx 8rpx;
+  border: 3rpx solid #fff;
+  white-space: nowrap;
+}
+.pk-plus {
+  font-size: 30rpx;
+  color: #D9C9BE;
+  font-weight: 300;
+}
+
+/* ---------- 萌物说话 ---------- */
+.pk-sayer {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  margin-top: 18rpx;
+}
+.pk-face {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
+  background: #fff;
+  border: 3rpx solid #FFE3D3;
+  flex: none;
+}
+.pk-bubble {
+  position: relative;
+  flex: 1;
+  background: #fff;
+  border: 3rpx solid #FFE3D3;
+  border-radius: 20rpx;
+  padding: 14rpx 18rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+  color: #4A3F3A;
+}
+.pk-bubble::before {
+  content: "";
+  position: absolute;
+  left: -10rpx;
+  top: 24rpx;
+  width: 14rpx;
+  height: 14rpx;
+  background: #fff;
+  border-left: 3rpx solid #FFE3D3;
+  border-bottom: 3rpx solid #FFE3D3;
+  transform: rotate(45deg);
+}
+
+/* ---------- 历史 ---------- */
+.pk-hempty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8rpx;
+  padding: 20rpx 0;
+  color: #BCA89C;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+.pk-hlist { display: flex; flex-direction: column; gap: 12rpx; }
+.pk-hrow {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex-wrap: wrap;
+  background: #FFF9FA;
+  border-radius: 20rpx;
+  padding: 12rpx 16rpx;
+}
+.pk-htime {
+  width: 64rpx;
+  flex: none;
+  font-size: 20rpx;
+  font-weight: 800;
+  color: #BCA89C;
+}
+.pk-hballs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  flex: 1;
+}
+.pk-hchip {
+  display: flex;
+  align-items: baseline;
+  gap: 4rpx;
+  background: #fff;
+  border: 2rpx solid #FFE3D3;
+  border-radius: 16rpx;
+  padding: 4rpx 10rpx;
+}
+.pk-hchip.sp { border-color: #FF5A5F; background: #FFF4F6; }
+.pk-hn { font-size: 22rpx; font-weight: 900; }
+.pk-hz { font-size: 18rpx; font-weight: 800; color: #A9743F; }
+.pk-hplus { color: #D9C9BE; font-size: 22rpx; font-weight: 800; }
+
+/* ---------- 记录操作 ---------- */
+.pk-count {
+  margin-left: 10rpx;
+  font-size: 20rpx;
+  font-weight: 800;
+  color: #BCA89C;
+}
+.pk-clear {
+  margin-left: auto;
+  font-size: 21rpx;
+  font-weight: 800;
+  color: #FF5A5F;
+  background: #FFF4F6;
+  border: 2rpx solid #FFD9E3;
+  border-radius: 99rpx;
+  padding: 4rpx 14rpx;
+}
+.pk-hdel {
+  flex: none;
+  width: 44rpx;
+  text-align: center;
+  color: #C9B8AB;
+  font-size: 30rpx;
+  line-height: 1;
+}
+.pk-hdel:active { color: #FF5A5F; }

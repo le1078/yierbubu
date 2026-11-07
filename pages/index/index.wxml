@@ -19,10 +19,22 @@
     <view class="tab {{tab === 'shake' ? 'on' : ''}}" data-t="shake" bindtap="switchTab">🎲 摇一摇来财啦</view>
     <view class="tab {{tab === 'scratch' ? 'on' : ''}}" data-t="scratch" bindtap="switchTab">🪙 刮一刮来财啦</view>
     <view class="tab {{tab === 'shengxiao' ? 'on' : ''}}" data-t="shengxiao" bindtap="switchTab">🌸 小笨生肖</view>
+    <view class="tab {{tab === 'bet' ? 'on' : ''}}" data-t="bet" bindtap="switchTab">🎰 号码下注</view>
+    <view class="tab wide {{tab === 'pick' ? 'on' : ''}}" data-t="pick" bindtap="switchTab">🎱 六合取码</view>
   </view>
 
   <!-- 栏目：小笨生肖（同页切换，与摇一摇 / 刮一刮一致） -->
   <shengxiao wx:if="{{tab === 'shengxiao'}}"/>
+
+  <!-- 号码下注：用 display 控制显示（保活不销毁），切走只暂停计时，回来接着这一局 -->
+  <view style="display:{{tab === 'bet' ? 'block' : 'none'}}">
+    <bet active="{{tab === 'bet'}}"/>
+  </view>
+
+  <!-- 六合取码：同样保活，切回来还是上次那组号；切走时停掉摇号 -->
+  <view style="display:{{tab === 'pick' ? 'block' : 'none'}}">
+    <pick active="{{tab === 'pick'}}"/>
+  </view>
 
   <!-- 摇一摇 -->
   <view wx:if="{{tab === 'shake'}}" class="g-card">

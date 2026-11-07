@@ -48,9 +48,9 @@ Page({
   onLoad(options) {
     const year = new Date().getFullYear();
     this.buildYear(year);
-    // 支持分享 / 深链直达某个栏目：?tab=shengxiao
+    // 支持分享 / 深链直达某个栏目：?tab=shengxiao / ?tab=bet
     const t = options && options.tab;
-    if (t === 'shake' || t === 'scratch' || t === 'shengxiao') {
+    if (t === 'shake' || t === 'scratch' || t === 'shengxiao' || t === 'bet' || t === 'pick') {
       this.setData({ tab: t });
     }
   },
@@ -68,13 +68,16 @@ Page({
     this.setData({ count: e.currentTarget.dataset.n });
   },
 
-  // 分享：当前在「小笨生肖」栏目时，分享链接直达该栏目
+  // 分享：当前在「小笨生肖」/「号码下注」栏目时，分享链接直达该栏目
   onShareAppMessage() {
-    const isSx = this.data.tab === 'shengxiao';
-    return {
-      title: isSx ? '一二布布小笨肖 · 看看谁跟你最合拍' : '一二布布来财啦',
-      path: '/pages/index/index' + (isSx ? '?tab=shengxiao' : '')
-    };
+    const t = this.data.tab;
+    if (t === 'shengxiao') {
+      return { title: '一二布布小笨肖 · 看看谁跟你最合拍', path: '/pages/index/index?tab=shengxiao' };
+    }
+    if (t === 'bet') {
+      return { title: '一二布布 · 押号码小游戏（戒赌演示）', path: '/pages/index/index?tab=bet' };
+    }
+    return { title: '一二布布来财啦', path: '/pages/index/index' };
   },
 
   onDraw() {

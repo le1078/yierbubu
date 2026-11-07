@@ -1,0 +1,98 @@
+<view class="pk">
+
+  <view class="pk-hint">
+    号码一共 <text class="pk-b">49</text> 个，生肖只是<text class="pk-b">分组</text>（当年生肖有 <text class="pk-b">5</text> 个号，其余各 <text class="pk-b">4</text> 个）。摇出来的号完全随机，<text class="pk-b">没有必出号</text>。
+  </view>
+
+  <!-- ============ 取几个号 ============ -->
+  <view class="pk-card">
+    <view class="pk-ct"><view class="pk-dot"></view>要取几个号</view>
+
+    <view class="pk-opts">
+      <view
+        wx:for="{{options}}"
+        wx:key="label"
+        class="pk-opt {{optIdx === index ? 'on' : ''}}"
+        data-i="{{index}}"
+        hover-class="pk-opt-hover"
+        bindtap="setOpt">{{item.label}}</view>
+    </view>
+
+    <view class="pk-optline">{{optHint}}</view>
+
+    <view class="pk-acts">
+      <view class="pk-gen {{rolling ? 'is-rolling' : ''}}" bindtap="onGenerate">{{rolling ? '摇一摇…' : '摇一摇取码'}}</view>
+      <view class="pk-copy" bindtap="onCopy">复制</view>
+    </view>
+  </view>
+
+  <!-- ============ 取到的号码：固定 6 + 1 个位置 ============ -->
+  <view class="pk-card">
+    <view class="pk-ct">
+      <image class="pk-mini" src="/assets/bottom_right.gif" mode="aspectFit"/>
+      取到的号码
+    </view>
+
+    <view class="pk-stage">
+      <view class="pk-row">
+        <view
+          wx:for="{{slots}}"
+          wx:key="i"
+          class="pk-item {{item.filled ? 'filled' : 'blank'}} {{rolling ? 'rolling' : ''}}">
+          <view class="pk-num" style="background:{{item.filled ? item.color : '#F3E9E2'}}">{{item.num}}</view>
+          <text class="pk-emoji">{{item.emoji}}</text>
+          <text class="pk-name">{{item.name}}</text>
+        </view>
+
+        <text class="pk-plus">＋</text>
+
+        <view class="pk-item special {{special.filled ? 'filled' : 'blank'}} {{rolling ? 'rolling' : ''}}">
+          <view class="pk-num" style="background:{{special.filled ? special.color : '#F3E9E2'}}">{{special.num}}</view>
+          <text class="pk-emoji">{{special.emoji}}</text>
+          <text class="pk-name">{{special.name}}</text>
+          <view class="pk-tag">特别号</view>
+        </view>
+      </view>
+    </view>
+
+    <view class="pk-sayer">
+      <image class="pk-face" src="{{mood}}" mode="aspectFit"/>
+      <view class="pk-bubble">{{speech}}</view>
+    </view>
+  </view>
+
+  <!-- ============ 最近取的码 ============ -->
+  <view class="pk-card">
+    <view class="pk-ct">
+      <view class="pk-dot"></view>最近取的码
+      <text class="pk-count" wx:if="{{history.length}}">{{history.length}} 条</text>
+      <text class="pk-clear" wx:if="{{history.length}}" bindtap="onClearHistory">一键清空</text>
+    </view>
+
+    <view wx:if="{{!history.length}}" class="pk-hempty">
+      <image class="pk-empty-img small" src="/assets/bottom_left.gif" mode="aspectFit"/>
+      <text>还没有取过码</text>
+    </view>
+
+    <view wx:else class="pk-hlist">
+      <view wx:for="{{history}}" wx:key="key" class="pk-hrow">
+        <text class="pk-htime">{{item.time}}</text>
+        <view class="pk-hballs">
+          <view wx:for="{{item.chips}}" wx:for-item="c" wx:key="num" class="pk-hchip">
+            <text class="pk-hn" style="color:{{c.color}}">{{c.num}}</text>
+            <text class="pk-hz">{{c.name}}</text>
+          </view>
+          <block wx:if="{{item.special}}">
+            <text class="pk-hplus">＋</text>
+            <view class="pk-hchip sp">
+              <text class="pk-hn" style="color:{{item.special.color}}">{{item.special.num}}</text>
+              <text class="pk-hz">{{item.special.name}}</text>
+            </view>
+          </block>
+        </view>
+        <view class="pk-hdel" data-key="{{item.key}}" catchtap="onDeleteEntry">×</view>
+      </view>
+    </view>
+  </view>
+
+</view>

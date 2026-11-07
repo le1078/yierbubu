@@ -1,0 +1,277 @@
+<view class="bt">
+
+  <view class="bt-hint">
+    号码一共 <text class="bt-b">49</text> 个，生肖只是<text class="bt-b">分组</text>：当年生肖有 <text class="bt-b">5</text> 个号，其余各 <text class="bt-b">4</text> 个。开奖只开 <text class="bt-b">1 个号码</text>，你押的号码一模一样才算中。
+  </view>
+
+  <!-- ============ 钱包（与网页版一致，放在最上面） ============ -->
+  <view class="bt-wallet">
+    <view class="bt-wcard">
+      <text class="bt-wk">累计投入</text>
+      <text class="bt-wv">{{totalInText}}</text>
+    </view>
+    <view class="bt-wcard">
+      <text class="bt-wk">我的筹码</text>
+      <text class="bt-wv coral">{{bankrollText}}</text>
+    </view>
+    <view class="bt-wcard">
+      <text class="bt-wk">净盈亏</text>
+      <text class="bt-wv {{netClass}}">{{netText}}</text>
+    </view>
+  </view>
+  <view class="bt-walletacts">
+    <view class="bt-wbtn" bindtap="onTopupOpen">补充筹码</view>
+    <view class="bt-wbtn dim" bindtap="onReset">重置</view>
+  </view>
+
+  <!-- ============ 回合 ============ -->
+  <view class="bt-card">
+    <view class="bt-roundtop">
+      <text class="bt-roundno">第 {{round}} 期</text>
+      <view class="bt-cdwrap">
+        <text class="bt-cd {{cdUrgent ? 'urgent' : ''}}">{{cdText}}</text>
+        <text class="bt-phase">{{phaseLabel}}</text>
+      </view>
+    </view>
+    <view class="bt-bar {{barClosed ? 'closed' : ''}}">
+      <view class="bt-barfill" style="width:{{barPct}}%"></view>
+    </view>
+
+    <view class="bt-interval">
+      <text class="bt-ilabel">开奖间隔</text>
+      <view wx:for="{{intervals}}" wx:key="sec"
+            class="bt-ichip {{interval === item.sec ? 'on' : ''}}"
+            data-sec="{{item.sec}}" bindtap="onPickInterval">{{item.label}}</view>
+    </view>
+
+    <view class="bt-stage">
+      <view class="bt-ball {{ballClass}}">{{ballText}}</view>
+      <view class="bt-sayer">
+        <image class="bt-face" src="{{mood}}" mode="aspectFit"/>
+        <view class="bt-bubble">{{speech}}</view>
+      </view>
+    </view>
+    <view wx:if="{{resultText}}" class="bt-result {{resultClass}}">{{resultText}}</view>
+  </view>
+
+  <!-- ============ 选号 ============ -->
+  <view class="bt-card">
+    <view class="bt-ct"><view class="bt-dot"></view>选生肖 → 挑号码</view>
+    <view class="bt-zgrid">
+      <view wx:for="{{zlist}}" wx:key="i"
+            class="bt-zbtn {{item.on ? 'on' : ''}}"
+            data-i="{{item.i}}" bindtap="onPickZodiac">
+        <text class="bt-zcnt">{{item.cnt}}</text>
+        <text class="bt-ze">{{item.emoji}}</text>
+        <text class="bt-zn">{{item.name}}</text>
+      </view>
+    </view>
+
+    <view class="bt-ct sub"><view class="bt-dot"></view>挑号码（可押多注）</view>
+    <view class="bt-ngrid">
+      <text wx:if="{{!nums.length}}" class="bt-hint2">先选一个生肖</text>
+      <view wx:for="{{nums}}" wx:key="n"
+            class="bt-nbtn {{item.on ? 'on' : ''}} {{item.picked ? 'picked' : ''}}"
+            data-n="{{item.n}}" bindtap="onPickNumber">{{item.nText}}</view>
+    </view>
+
+    <view class="bt-amountrow">
+      <input class="bt-amt" type="number" value="{{amtText}}" placeholder="押多少"
+             bindinput="onAmtInput" confirm-type="done" />
+      <view wx:for="{{quick}}" wx:key="*this" class="bt-q" data-q="{{item}}" bindtap="onQuick">{{item}}</view>
+      <view class="bt-addbtn" bindtap="onStageAdd">加入备码</view>
+    </view>
+  </view>
+
+  <!-- ============ 备码区 ============ -->
+  <view class="bt-card">
+    <view class="bt-ct">
+      <view class="bt-dot"></view>备码区
+      <text class="bt-cnt">{{staging.length ? '（' + staging.length + ' 注）' : ''}}</text>
+    </view>
+
+    <view wx:if="{{!staging.length}}" class="bt-empty">
+      <image class="bt-emptyimg" src="/assets/bubu.gif" mode="aspectFit"/>
+      <text>选好号码和金额，先放进备码区</text>
+    </view>
+
+    <view wx:for="{{staging}}" wx:key="key" class="bt-row">
+      <view class="bt-rowball">{{item.nText}}</view>
+      <view class="bt-rowinfo">
+        <text class="bt-rowt1">备号码 {{item.nText}}</text>
+        <text class="bt-rowt2">{{item.emoji}} {{item.zName}}组 · 中奖返 {{item.backText}}</text>
+      </view>
+      <text class="bt-rowamt">{{item.amountText}}</text>
+      <view class="bt-x" data-i="{{index}}" bindtap="onStageDel">×</view>
+    </view>
+
+    <view class="bt-total">
+      <view>
+        <text class="bt-tk">备码合计</text>
+        <text class="bt-tv">{{stagingTotalText}}</text>
+      </view>
+      <text class="bt-thint">{{stageHint}}</text>
+    </view>
+
+    <view class="bt-acts">
+      <view class="bt-act" bindtap="onStageClear">清空备码</view>
+      <view class="bt-act primary" bindtap="onSubmitStage">一起下注</view>
+    </view>
+  </view>
+
+  <!-- ============ 本局押注 ============ -->
+  <view class="bt-card">
+    <view class="bt-ct">
+      <view class="bt-dot"></view>本局押注
+      <text class="bt-cnt">{{bets.length ? '（' + bets.length + ' 注）' : ''}}</text>
+    </view>
+
+    <view wx:if="{{!bets.length}}" class="bt-empty small">
+      <text>还没押呢，先把号码放进备码区～</text>
+    </view>
+
+    <view wx:for="{{bets}}" wx:key="key" class="bt-row">
+      <view class="bt-rowball solid">{{item.nText}}</view>
+      <view class="bt-rowinfo">
+        <text class="bt-rowt1">押号码 {{item.nText}}</text>
+        <text class="bt-rowt2">{{item.emoji}} {{item.zName}}组 · 中奖返 {{item.backText}}</text>
+      </view>
+      <text class="bt-rowamt">{{item.amountText}}</text>
+      <view class="bt-x" data-i="{{index}}" bindtap="onBetsDel">×</view>
+    </view>
+
+    <view class="bt-total">
+      <view>
+        <text class="bt-tk">本局合计</text>
+        <text class="bt-tv">{{betsTotalText}}</text>
+      </view>
+      <view class="bt-tright">
+        <text class="bt-tk">单注最高返还</text>
+        <text class="bt-tv2">{{betsMaxWinText}}</text>
+      </view>
+    </view>
+    <view class="bt-avail">{{betsAvailText}}</view>
+
+    <view class="bt-acts">
+      <view class="bt-act" bindtap="onRepeatLast">重复上局</view>
+      <view class="bt-act" bindtap="onClearBets">清空本局</view>
+    </view>
+  </view>
+
+  <!-- ============ 记录 ============ -->
+  <view class="bt-card">
+    <view class="bt-ct"><view class="bt-dot"></view>开奖记录<text class="bt-cnt">（最近 100 期）</text></view>
+    <view wx:if="{{!history.length}}" class="bt-empty small">
+      <text>还没有开奖记录</text>
+    </view>
+    <scroll-view wx:else scroll-y class="bt-hist">
+      <view wx:for="{{history}}" wx:key="key" class="bt-hrow {{item.rowClass}}">
+        <text class="bt-hr">第{{item.r}}期</text>
+        <view class="bt-hball">{{item.nText}}</view>
+        <view class="bt-hinfo">
+          <text class="bt-hz">{{item.emoji}} {{item.zName}}组</text>
+          <text class="bt-hs">{{item.stakeText}}</text>
+        </view>
+        <text class="bt-hres {{item.resClass}}">{{item.resText}}</text>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- ============ 账本 ============ -->
+  <view class="bt-card">
+    <view class="bt-ct"><view class="bt-dot"></view>我的小账本</view>
+    <view class="bt-statgrid">
+      <view class="bt-st"><text class="bt-sk">已玩局数</text><text class="bt-sv">{{stRounds}}</text></view>
+      <view class="bt-st"><text class="bt-sk">累计下注</text><text class="bt-sv">{{stStake}}</text></view>
+      <view class="bt-st"><text class="bt-sk">累计返还</text><text class="bt-sv green">{{stRet}}</text></view>
+      <view class="bt-st"><text class="bt-sk">实际回报率</text><text class="bt-sv {{stRtpClass}}">{{stRtp}}</text><text class="bt-ss">理论 95.92%</text></view>
+      <view class="bt-st"><text class="bt-sk">命中次数</text><text class="bt-sv">{{stHits}}</text><text class="bt-ss">{{stHitText}}</text></view>
+      <view class="bt-st"><text class="bt-sk">最长连不中</text><text class="bt-sv">{{stMiss}}</text><text class="bt-ss">{{stMissNow}}</text></view>
+    </view>
+    <view class="bt-bars">
+      <view wx:for="{{bars}}" wx:key="index" class="bt-baritem"
+            style="height:{{item.h}}rpx;background:{{item.color}}"></view>
+    </view>
+    <view class="bt-chartcap"><text>净盈亏小柱图</text><text>最近 20 局</text></view>
+  </view>
+
+  <!-- ============ 数学真相 ============ -->
+  <view class="bt-card">
+    <view class="bt-mathbtn" bindtap="onToggleMath">
+      偷偷告诉你：这个游戏的数学真相 {{mathOpen ? '▴' : '▾'}}
+    </view>
+    <view wx:if="{{mathOpen}}" class="bt-math">
+      <text>你押的是<text class="bt-b">一个号码</text>，从 1–49 里随机开，押中一个号的机会是 1/49 ≈ 2.04%。中了返 47 倍，长期平均能拿回：</text>
+      <text class="bt-code">2.04% × 47 = 95.92%</text>
+      <text>每押 100 块，平均只回来 95.92 块。剩下那 4.08 块，不管今天手气多好，都会慢慢流到庄家口袋里。</text>
+      <text>筹码见底的期望局数大约是：本金 ÷ (4.08% × 每局押注)。1000 筹码、每局押 100，大概 245 局，而一局最短只要 10 秒。</text>
+      <text>再说运气：连续 49 局一次不中，概率是 (48/49)⁴⁹ ≈ 36.4%。五十局里一次都没中，是很普通的事。</text>
+      <text class="bt-last">这一页每次开奖都是真随机，没有任何「按你押的方向改结果」的代码。筹码是假的，钱是真的不能玩。</text>
+    </view>
+  </view>
+
+  <!-- ============ 开局弹窗 ============ -->
+  <view wx:if="{{showStart}}" class="bt-mask">
+    <view class="bt-modal">
+      <image class="bt-mtop" src="/assets/bubu.gif" mode="aspectFit"/>
+      <text class="bt-mtitle">先领一叠小筹码</text>
+      <text class="bt-mdesc">这是戒赌小游戏，筹码不能换任何东西。选一叠，看看它在数学上能陪你玩多久。</text>
+      <view class="bt-chips">
+        <view class="bt-chip {{startPick === 1000 ? 'on' : ''}}" data-c="1000" bindtap="onStartPick">
+          <text class="bt-chipv">1,000</text><text class="bt-chip-sub">小试一下</text>
+        </view>
+        <view class="bt-chip {{startPick === 5000 ? 'on' : ''}}" data-c="5000" bindtap="onStartPick">
+          <text class="bt-chipv">5,000</text><text class="bt-chip-sub">随便玩玩</text>
+        </view>
+        <view class="bt-chip {{startPick === 20000 ? 'on' : ''}}" data-c="20000" bindtap="onStartPick">
+          <text class="bt-chipv">20,000</text><text class="bt-chip-sub">有点上头</text>
+        </view>
+        <view class="bt-chip {{startPick === 100000 ? 'on' : ''}}" data-c="100000" bindtap="onStartPick">
+          <text class="bt-chipv">100,000</text><text class="bt-chip-sub">"这把梭哈"</text>
+        </view>
+      </view>
+      <input class="bt-minput" type="number" value="{{startCustom}}" placeholder="或自己填一个数" bindinput="onStartCustom"/>
+      <view class="bt-primary" bindtap="onStartGame">开始玩</view>
+      <text class="bt-fine">开奖是真随机，页面不做任何手脚。筹码只是演示，不涉及真实金钱。</text>
+    </view>
+  </view>
+
+  <!-- ============ 补充弹窗 ============ -->
+  <view wx:if="{{showTopup}}" class="bt-mask">
+    <view class="bt-modal">
+      <image class="bt-mtop" src="/assets/bottom_right.gif" mode="aspectFit"/>
+      <text class="bt-mtitle">再补一点筹码</text>
+      <text class="bt-mdesc">补进来的会算进「累计投入」。这就是现实里的「再充一点就能回本」——看看净盈亏怎么变。</text>
+      <view class="bt-chips">
+        <view class="bt-chip {{topupPick === 500 ? 'on' : ''}}" data-c="500" bindtap="onTopupPick"><text class="bt-chipv">500</text></view>
+        <view class="bt-chip {{topupPick === 2000 ? 'on' : ''}}" data-c="2000" bindtap="onTopupPick"><text class="bt-chipv">2,000</text></view>
+        <view class="bt-chip {{topupPick === 10000 ? 'on' : ''}}" data-c="10000" bindtap="onTopupPick"><text class="bt-chipv">10,000</text></view>
+        <view class="bt-chip {{topupPick === 50000 ? 'on' : ''}}" data-c="50000" bindtap="onTopupPick"><text class="bt-chipv">50,000</text></view>
+      </view>
+      <input class="bt-minput" type="number" value="{{topupCustom}}" placeholder="或自己填" bindinput="onTopupCustom"/>
+      <view class="bt-primary" bindtap="onTopupOk">确认补充</view>
+      <view class="bt-secondary" bindtap="onTopupClose">算了，不补了</view>
+    </view>
+  </view>
+
+  <!-- ============ 破产弹窗 ============ -->
+  <view wx:if="{{showRuin}}" class="bt-mask">
+    <view class="bt-modal">
+      <image class="bt-mtop" src="/assets/mascot_right.gif" mode="aspectFit"/>
+      <text class="bt-mtitle">筹码见底啦</text>
+      <text class="bt-mdesc">不是运气不好，是数学。</text>
+      <view class="bt-statgrid ruin">
+        <view class="bt-st"><text class="bt-sk">玩了多久</text><text class="bt-sv">{{ruin.rounds}}</text><text class="bt-ss">局</text></view>
+        <view class="bt-st"><text class="bt-sk">累计投入</text><text class="bt-sv coral">{{ruin.inText}}</text></view>
+        <view class="bt-st"><text class="bt-sk">累计下注</text><text class="bt-sv">{{ruin.stakeText}}</text></view>
+        <view class="bt-st"><text class="bt-sk">实际回报率</text><text class="bt-sv red">{{ruin.rtp}}</text></view>
+        <view class="bt-st"><text class="bt-sk">命中次数</text><text class="bt-sv">{{ruin.hits}}</text></view>
+        <view class="bt-st"><text class="bt-sk">一共亏了</text><text class="bt-sv red">{{ruin.lossText}}</text></view>
+      </view>
+      <text class="bt-ruinnote">{{ruinNote}}</text>
+      <view class="bt-primary" bindtap="onRuinReset">换个筹码，重新来</view>
+      <view class="bt-secondary" bindtap="onRuinTopup">还是补充筹码</view>
+    </view>
+  </view>
+
+</view>
