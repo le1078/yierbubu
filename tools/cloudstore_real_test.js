@@ -96,8 +96,7 @@ global.wx = {
                   }
                   return { stats: { updated: 1 } };
                 },
-                // cloudstore 首次写入走 update（依赖 SDK 的 create-on-update 行为），
-                // 这里补充 set 以兼容
+                // cloudstore 首次写入在 update 报「文档不存在」后用 set 创建，mock 同语义
                 set: async function (o) {
                   DOCS[id] = clone(o.data || {});
                   return { stats: { updated: 1 } };
@@ -111,10 +110,9 @@ global.wx = {
   }
 };
 
-// cloudstore 的首次写入：getDoc 返回 null（不存在）→ mutateDoc 用
-// doc.update({data, condition:{_rev:lte(0)}})。真实云 SDK 不会自动建文档，
-// 这里让 update 在文档不存在时自动创建（模拟项目线上已有的行为），
-// 以便测试其余逻辑；这一步的实际云端语义见交付报告中的已知限制。
+// cloudstore 的首次写入：getDoc 返回 null（不存在）→ mutateDoc 先 update
+//（真实云 SDK 对不存在的文档会报 -502005）→ 捕获后用 set() 显式创建文档。
+// 这里不再 mock「update 自动建文档」，就是要测 cloudstore 自己的创建兜底。
 const origConsoleError = console.error;
 console.error = function () {};
 
@@ -122,40 +120,31 @@ const cloud = require(path.join(__dirname, '..', 'utils/cloudstore.js'));
 
 /* ========== 用例 ========== */
 (async () => {
-  // 让 update 在文档不存在时自动创建（仅测试环境）
-  const realDbFactory = global.wx.cloud.database;
-  global.wx.cloud.database = function () {
-    const db = realDbFactory();
-    const origCollection = db.collection;
-    db.collection = function () {
-      const c = origCollection();
-      const origDoc = c.doc;
-      c.doc = function (id) {
-        const d = origDoc(id);
-        const origUpdate = d.update;
-        d.update = async function (o) {
-          if (!DOCS[id]) {
-            DOCS[id] = clone(o.data || {});
-            return { stats: { updated: 1 } };
-          }
-          return origUpdate(o);
-        };
-        return d;
-      };
-      return c;
-    };
-    return db;
-  };
-
-  console.log('[1] 基本读写往返');
+  console.log('[0] 首次写入：update 报文档不存在 → 自动 set 建文档');
   {
+    // shared_shopping 不存在时，第一次 saveShopping 也要真正落盘
+    await cloud.saveShopping([{ id: 'cold', title: '冷启动' }]);
+    const ok = !!DOCS.shared_shopping;
+    const list = await cloud.loadShopping();
+    check(ok && list.length === 1 && list[0].id === 'cold', '文档不存在时首次保存能创建文档');
+    check((DOCS.shared_shopping._rev || 0) === 1, '创建后 _rev = 1（实际 ' + (DOCS.shared_shopping._rev || 0) + '）');
+  }
+
+  console.log('[1] 基本读写往返 + 按 id 合并');
+  {
+    DOCS.shared_shopping = undefined;   // 从 [0] 的冷启动文档重新开始
     await cloud.saveShopping([{ id: 'a', title: 'A', price: 10 }]);
     const list = await cloud.loadShopping();
     check(list.length === 1 && list[0].title === 'A', '保存后能读回');
     await cloud.saveShopping([{ id: 'a', title: 'A', price: 10 }, { id: 'b', title: 'B', price: 20 }]);
     const list2 = await cloud.loadShopping();
     check(list2.length === 2, '再次保存覆盖（列表长度 2）');
-    check((DOCS.shared_shopping._rev || 0) >= 2, '_rev 版本号递增（' + DOCS.shared_shopping._rev + '）');
+    // 跨设备保护：本地快照不含 a（比如另一台设备刚加的），整份写回时不能把 a 抹掉
+    await cloud.saveShopping([{ id: 'b', title: 'B', price: 20 }]);
+    const list3 = await cloud.loadShopping();
+    check(list3.length === 2, '云端有、本地没有的记录不会被旧快照覆盖掉（实际 ' + list3.length + '）');
+    check(list3.some((it) => it.id === 'a') && list3.some((it) => it.id === 'b'), 'a/b 都在');
+    check((DOCS.shared_shopping._rev || 0) >= 3, '_rev 版本号递增（' + DOCS.shared_shopping._rev + '）');
   }
 
   console.log('\n[2] 删除进回收站 → 恢复');
@@ -259,14 +248,22 @@ const cloud = require(path.join(__dirname, '..', 'utils/cloudstore.js'));
       '批量入回收站保持输入顺序');
   }
 
-  console.log('\n[6] 回收站容量上限 100（超出丢最旧）');
+  console.log('\n[6] 回收站不设上限（全部保留，不截断）');
   {
     DOCS.shared_trash = undefined;
+    // 源列表里先放 130 条：batchSoftRemove 只会把真实存在的记录入回收站
+    DOCS.shared_records = { _rev: 1, list: [] };
     const items = [];
-    for (let i = 0; i < 130; i++) items.push({ id: 't' + i, type: 'record', data: { id: 't' + i } });
-    await cloud.batchSoftRemove('shared_records', items.map((x) => ({ id: x.id, type: 'record', data: x.data })));
+    for (let i = 0; i < 130; i++) {
+      const rec = { id: 't' + i };
+      DOCS.shared_records.list.push(rec);
+      items.push({ id: rec.id, type: 'record', data: rec });
+    }
+    await cloud.batchSoftRemove('shared_records', items);
     const trash = await cloud.loadTrash();
-    check(trash.length === 100, '回收站被截断到 100 条（实际 ' + trash.length + '）');
+    check(trash.length === 130, '回收站保留全部 130 条（实际 ' + trash.length + '）');
+    const left = await cloud.loadRecords();
+    check(left.length === 0, '源列表已清空');
   }
 
   console.log('\n[7] 写入失败重试与错误上抛');

@@ -58,7 +58,8 @@ Page({
     loading: false,
     showTrash: false,       // 回收站弹层
     trashList: [],          // 回收站列表
-    trashCount: 0           // 回收站数量（角标）
+    trashCount: 0,          // 回收站数量（角标）
+    trashBodyH: 0           // 回收站滚动区高度（px，0 = 按内容自适应）
   },
 
   onShow() {
@@ -299,7 +300,7 @@ Page({
   },
 
   closeTrash() {
-    this.setData({ showTrash: false });
+    this.setData({ showTrash: false, trashBodyH: 0 });
   },
 
   // 阻止点击弹层内容时冒泡关闭
@@ -309,11 +310,44 @@ Page({
     if (!this.data.showTrash) return;
     try {
       const list = await cloud.loadTrash();
-      this.setData({ trashList: this._mapTrashList(list), trashCount: list.length });
+      this.setData({
+        trashList: this._mapTrashList(list),
+        trashCount: list.length
+      }, () => this._fitTrashBody());
     } catch (e) {
       console.error('回收站加载失败', e);
-      this.setData({ trashList: [] });
+      this.setData({ trashList: [] }, () => this._fitTrashBody());
     }
+  },
+
+  // 回收站滚动区高度：scroll-view 必须自身有确定高度才会滚动，
+  // 但短列表 / 空回收站不该撑出大片空白。内容超过面板可用高度时才给固定 px 高度，
+  // 否则置 0 交给内容自适应（CSS 里还有 max-height 兜底）。
+  _fitTrashBody() {
+    if (this._destroyed || !this.data.showTrash) return;
+    if (!wx.createSelectorQuery) return;                 // 旧基础库 / 测试桩兜底
+    const q = wx.createSelectorQuery();
+    if (!q || !q.select || !q.exec) return;
+    q.select('.tp-head').boundingClientRect();
+    q.select('.tp-tip').boundingClientRect();
+    q.select('.tp-inner').boundingClientRect();
+    q.exec((res) => {
+      if (this._destroyed || !this.data.showTrash) return;
+      const head = res && res[0], tip = res && res[1], inner = res && res[2];
+      if (!head || !tip || !inner) return;
+      const win = (wx.getWindowInfo && wx.getWindowInfo()) ||
+        (wx.getSystemInfoSync && wx.getSystemInfoSync()) || {};
+      const winH = win.windowHeight || 0;
+      if (!winH) return;
+      // 面板最高 80vh；滚动区自身再按 64vh 封顶（与 wxss 的 max-height 一致），
+      // 给底部安全区留出余量。
+      const maxBody = Math.max(160, Math.min(
+        Math.floor(winH * 0.64),
+        Math.floor(winH * 0.8 - head.height - tip.height)
+      ));
+      const h = inner.height > maxBody ? maxBody : 0;
+      if (h !== this.data.trashBodyH) this.setData({ trashBodyH: h });
+    });
   },
 
   // 回收站 → 恢复：回填原列表并移出回收站
@@ -365,7 +399,7 @@ Page({
         if (!res.confirm) return;
         wx.showLoading({ title: '清空中', mask: true });
         try {
-          await cloud.saveTrash([]);
+          await cloud.clearTrash();
           wx.hideLoading();
           wx.showToast({ title: '回收站已清空', icon: 'success' });
           this._loadTrash();

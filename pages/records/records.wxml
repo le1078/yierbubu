@@ -138,24 +138,28 @@
       </view>
       <view class="tp-tip">删除的记录会先到这里，可恢复；再删除则彻底清除。</view>
 
-      <scroll-view scroll-y class="tp-body">
-        <view wx:if="{{trashList.length === 0}}" class="tp-empty">
-          <image class="tp-empty-img" src="/assets/records.gif" mode="aspectFit"/>
-          <view class="tp-empty-tip">回收站是空的～</view>
-        </view>
-
-        <view wx:for="{{trashList}}" wx:key="tid" class="tp-item">
-          <view class="tp-item-main">
-            <view class="tp-item-title">
-              <text>{{item.title}}</text>
-              <text class="tp-item-amt">{{item.amount}}</text>
-            </view>
-            <view class="tp-item-desc">{{item.desc}}</view>
-            <view class="tp-item-time">删除于 {{item.time}}</view>
+      <!-- scroll-view 必须自身有高度上限才会滚动（项目里 bet/gomoku 的列表同写法）；
+           内边距放在内层 view，避免 padding 加在 scroll-view 上导致底部滚不到 -->
+      <scroll-view scroll-y class="tp-body" style="{{trashBodyH ? 'height:' + trashBodyH + 'px' : ''}}">
+        <view class="tp-inner">
+          <view wx:if="{{trashList.length === 0}}" class="tp-empty">
+            <image class="tp-empty-img" src="/assets/records.gif" mode="aspectFit"/>
+            <view class="tp-empty-tip">回收站是空的～</view>
           </view>
-          <view class="tp-item-acts">
-            <view class="tp-restore" catchtap="restoreOne" data-tid="{{item.tid}}">恢复</view>
-            <view class="tp-purge" catchtap="purgeOne" data-tid="{{item.tid}}">彻底删</view>
+
+          <view wx:for="{{trashList}}" wx:key="tid" class="tp-item">
+            <view class="tp-item-main">
+              <view class="tp-item-title">
+                <text>{{item.title}}</text>
+                <text class="tp-item-amt">{{item.amount}}</text>
+              </view>
+              <view class="tp-item-desc">{{item.desc}}</view>
+              <view class="tp-item-time">删除于 {{item.time}}</view>
+            </view>
+            <view class="tp-item-acts">
+              <view class="tp-restore" catchtap="restoreOne" data-tid="{{item.tid}}">恢复</view>
+              <view class="tp-purge" catchtap="purgeOne" data-tid="{{item.tid}}">彻底删</view>
+            </view>
           </view>
         </view>
       </scroll-view>

@@ -86,10 +86,16 @@ async function mutateDoc(docId, mergeFn) {
         : { _rev: rev };                     // 后续更新：版本必须匹配
 
       try {
-        await db().collection(COLLECTION).doc(docId).update({
+        const res = await db().collection(COLLECTION).doc(docId).update({
           data: doc,
           condition: cond
         });
+        // 云数据库的 doc().update() 不会创建文档：文档不存在时 updated 为 0
+        // （或抛 notExist）。首次写入必须用 set() 显式创建，否则会「提示保存成功
+        // 但云端没有数据」——早期版本有 add 兜底，重构时丢了，这里补回来。
+        if (rev === 0 && res && res.stats && res.stats.updated === 0) {
+          await db().collection(COLLECTION).doc(docId).set({ data: doc });
+        }
         return doc;
       } catch (e) {
         // errCode 与 message 拼在一起判：有的错误只带其中一个，
@@ -99,6 +105,11 @@ async function mutateDoc(docId, mergeFn) {
                         String((e && e.errMsg) || '');
         const conflict = /condition|version|conflict|冲突/i.test(errText);
         const notExist = /-502005|DATABASE_NULL_DATA|not exist|不存在/i.test(errText);
+        // 首次创建遇到「文档不存在」：直接 set 建文档（update 永远建不出来）
+        if (rev === 0 && notExist) {
+          await db().collection(COLLECTION).doc(docId).set({ data: doc });
+          return doc;
+        }
         // 版本/条件冲突（他人已写入），或创建竞争（文档被抢先建）→ 重读重试；
         // 权限/配额等其它错误直接抛出，别白烧 4 次往返
         if (attempt < MAX_RETRY && (conflict || notExist)) {
@@ -180,6 +191,11 @@ async function removeTrashItem(trashId) {
   });
 }
 
+// 清空回收站：只动回收站这一份文档，避免调用方拿旧快照整份覆盖。
+async function clearTrash() {
+  return mutateDoc(DOC_TRASH, (doc) => { doc.list = []; });
+}
+
 // 从回收站取回一条：回填到原始列表头部，并从回收站移除。
 //
 // 顺序很关键：先「原子地」从回收站移除（同一个 mutateDoc 里查找+删除），
@@ -212,7 +228,7 @@ async function restoreTrashItem(trashId) {
     // 插回失败：把条目放回回收站，保证「要么恢复成功、要么还在回收站」
     try {
       await mutateDoc(DOC_TRASH, (doc) => {
-        doc.list = [removed].concat(doc.list || []).slice(0, 100);
+        doc.list = [removed].concat(doc.list || []);
       });
     } catch (e2) { /* 兜底也失败：只能上抛原始错误 */ }
     throw e;
@@ -307,69 +323,113 @@ async function loadShopping() {
 }
 
 async function saveShopping(list) {
-  return mutateDoc(DOC_SHOPPING, (doc) => { doc.list = list; });
+  // 按 id 合并而不是整份替换：另一台设备刚新增的记录不会被这份旧快照覆盖掉。
+  // 删除不靠「列表里少了某条」表达，而是走 trashShoppingById / softRemove。
+  const local = Array.isArray(list) ? list : [];
+  return mutateDoc(DOC_SHOPPING, (doc) => {
+    const localIds = new Set(local.map(it => String(it && it.id)));
+    const remoteOnly = (Array.isArray(doc.list) ? doc.list : [])
+      .filter(it => it && !localIds.has(String(it.id)));
+    doc.list = local.concat(remoteOnly);
+  });
 }
 
 // 软删除单条购物记录 → 进回收站（type: 'shopping'）
 // 支持传入整条记录：本地已删时云端查不到也能入回收站
+// 顺序：先写回收站，再从清单移除 —— 任一步失败都不会出现「清单删了、回收站没有」。
 async function trashShoppingById(id, record) {
   const list = await loadShopping();
   const idx = list.findIndex(r => String(r.id) === String(id));
   const rec = idx !== -1 ? list[idx] : record;
   if (!rec) return;
 
-  if (idx !== -1) {
-    // 过滤必须在 mutateDoc 内做：外读 → 内写之间他人的写入
-    // 会被这份旧快照整份覆盖（和 softRemove 之前的丢更新竞态一样）
+  const entry = Object.assign({ id: newTrashId(), deletedAt: Date.now() },
+    { type: 'shopping', data: rec });
+  await mutateDoc(DOC_TRASH, (doc) => {
+    doc.list = [entry].concat(doc.list || []);
+  });
+  if (idx === -1) return;
+
+  try {
     await mutateDoc(DOC_SHOPPING, (doc) => {
       doc.list = (doc.list || []).filter(it => String(it.id) !== String(id));
     });
+  } catch (e) {
+    // 清单没删掉 → 把刚写进回收站的条目摘掉，避免同一条记录两处都有
+    try {
+      await mutateDoc(DOC_TRASH, (doc) => {
+        doc.list = (doc.list || []).filter(it => String(it.id) !== String(entry.id));
+      });
+    } catch (e2) { /* 兜底也失败：宁可在回收站多一条，也不能丢数据 */ }
+    throw e;
   }
-  await mutateDoc(DOC_TRASH, (doc) => {
-    doc.list = [Object.assign({ id: newTrashId(), deletedAt: Date.now() },
-      { type: 'shopping', data: rec })].concat(doc.list || []).slice(0, 100);
-  });
 }
 
 /* ===== 批量操作 ===== */
 
 // 软删除：从 list 里取出该条，连同来源类型一起压入回收站
+// 同样是「先入回收站，再删源列表」，失败会摘掉刚写的回收站条目。
 async function softRemove(docId, id, trashItem) {
-  await mutateDoc(docId, (doc) => {
-    doc.list = (doc.list || []).filter(it => String(it.id) !== String(id));
-  });
-  // 回收站同样在 mutateDoc 内改：外读 → unshift → 整写会把
-  // 期间其它端的删除/恢复覆盖掉
+  const entry = Object.assign({ id: newTrashId(), deletedAt: Date.now() }, trashItem);
   await mutateDoc(DOC_TRASH, (doc) => {
-    doc.list = [Object.assign({ id: newTrashId(), deletedAt: Date.now() }, trashItem)]
-      .concat(doc.list || []).slice(0, 100);
+    doc.list = [entry].concat(doc.list || []);
   });
+  try {
+    await mutateDoc(docId, (doc) => {
+      doc.list = (doc.list || []).filter(it => String(it.id) !== String(id));
+    });
+  } catch (e) {
+    try {
+      await mutateDoc(DOC_TRASH, (doc) => {
+        doc.list = (doc.list || []).filter(it => String(it.id) !== String(entry.id));
+      });
+    } catch (e2) { /* 兜底失败：多一条回收站记录，不丢数据 */ }
+    throw e;
+  }
 }
 
-// 批量软删除：一次操作完成「过滤列表 + 批量入回收站」
+// 批量软删除：一次操作完成「批量入回收站 + 从源列表移除」
 // items: [{ id, type, data }] —— type 为 'record' | 'order' | 'shopping'
 // 返回实际删除的条数
 async function batchSoftRemove(docId, items) {
   if (!items || !items.length) return 0;
-  const ids = new Set(items.map(it => String(it.id)));
 
-  // 1) 从源列表移除
-  await mutateDoc(docId, (doc) => {
-    doc.list = (doc.list || []).filter(it => !ids.has(String(it.id)));
-  });
+  // 先确认哪些记录还在源列表里：过期快照里的 id 不能重复入回收站
+  const r = await getDoc(docId);
+  if (!r.ok) throw r.error;
+  const srcList = Array.isArray(r.data && r.data.list) ? r.data.list : [];
+  const ids = new Set(srcList.map(it => String(it && it.id)));
+  const actual = items.filter(it => it && ids.has(String(it.id)));
+  if (!actual.length) return 0;
 
-  // 2) 批量压入回收站（保留原顺序，最新在前）
+  const now = Date.now();
+  const entries = actual.map((it, i) => Object.assign({
+    id: newTrashId(),
+    deletedAt: now + i
+  }, { type: it.type, data: it.data }));
+
+  // 1) 先入回收站：失败的话源列表还没动，用户重试即可
   await mutateDoc(DOC_TRASH, (doc) => {
-    const list = (doc.list || []).slice();
-    const now = Date.now();
-    const entries = items.map((it, i) => Object.assign({
-      id: newTrashId(),
-      deletedAt: now + i
-    }, { type: it.type, data: it.data }));
-    doc.list = entries.concat(list).slice(0, 100);
+    doc.list = entries.concat(doc.list || []);
   });
 
-  return items.length;
+  // 2) 再从源列表移除：失败就把刚写的条目摘掉，宁可留在列表里也不丢
+  const removeIds = new Set(actual.map(it => String(it.id)));
+  try {
+    await mutateDoc(docId, (doc) => {
+      doc.list = (doc.list || []).filter(it => !removeIds.has(String(it.id)));
+    });
+  } catch (e) {
+    const entryIds = new Set(entries.map(it => String(it.id)));
+    try {
+      await mutateDoc(DOC_TRASH, (doc) => {
+        doc.list = (doc.list || []).filter(it => !entryIds.has(String(it.id)));
+      });
+    } catch (e2) { /* 兜底失败：多一条回收站记录，不丢数据 */ }
+    throw e;
+  }
+
+  return actual.length;
 }
 
 module.exports = {
@@ -390,6 +450,7 @@ module.exports = {
   loadTrash,
   saveTrash,
   removeTrashItem,
+  clearTrash,
   restoreTrashItem,
   loadMenu,
   saveMenu,

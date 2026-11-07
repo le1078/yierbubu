@@ -679,15 +679,22 @@ Page({
     if (!id) return;
     wx.showModal({
       title: '删除记录',
-      content: '这条购物记录会被移入「记录 · 回收站」，最近 100 条内可随时找回。',
+      content: '这条购物记录会被移入「记录 · 回收站」，可在回收站随时找回。',
       confirmColor: '#FF5A5F',
       success: async (res) => {
         if (!res.confirm) return;
         const gone = (this._items || []).find(it => String(it.id) === String(id));
+        // 先写回收站并从云端清单移除，成功后才动本地列表；
+        // 反过来的话，回收站写入失败会变成「本地没了、云端也没了」。
+        try {
+          if (gone) await cloud.trashShoppingById(gone.id, gone);
+        } catch (e) {
+          console.error('购物记录入回收站失败', e);
+          wx.showToast({ title: '删除失败，请重试', icon: 'none' });
+          return;
+        }
         this._items = (this._items || []).filter(it => String(it.id) !== String(id));
         await this._persist(this._items);
-        // 与全站一致：同时压入云端回收站，可在「记录」页恢复
-        if (gone) this._archiveToTrash(gone);
         this._render();
         this.setData({ showEdit: false });
         wx.showToast({ title: '已删除', icon: 'none' });
@@ -697,28 +704,8 @@ Page({
 
   /* ================= 回收站 ================= */
 
-  // 购物记录删除后同时进云回收站（与记录/订单同一套机制），失败不影响本地删除。
-  // 这里把整条记录传过去：本地已经从清单里摘掉，云端也同步删过了，
-  // 单靠 id 是查不到原记录的。
-  async _archiveToTrash(item) {
-    try {
-      if (cloud.trashShoppingById) {
-        await cloud.trashShoppingById(item.id, item);
-        return;
-      }
-      // 兜底：老版本 cloudstore 没有该方法时，手动写一条
-      const trash = await cloud.loadTrash();
-      trash.unshift({
-        id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
-        deletedAt: Date.now(),
-        type: 'shopping',
-        data: item
-      });
-      await cloud.saveTrash(trash.slice(0, 100));
-    } catch (e) {
-      console.error('购物记录入回收站失败', e);
-    }
-  },
+  // 购物记录入回收站统一走 cloudstore.trashShoppingById（先入回收站再删清单，
+  // 失败会回滚），这里不再维护第二套「手动 loadTrash → unshift → saveTrash」逻辑。
 
   /* ================= 分享 ================= */
 

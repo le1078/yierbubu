@@ -26,6 +26,16 @@ global.wx = {
 const cloudStub = {
   loadShopping: async () => calls.remote || [],
   saveShopping: async (list) => { calls.saved = JSON.parse(JSON.stringify(list)); },
+  // 与 utils/cloudstore.js 同语义：先入回收站，再从清单移除（成功后返回）
+  trashShoppingById: async (id, record) => {
+    const cur = Array.isArray(calls.remote) ? calls.remote : [];
+    const idx = cur.findIndex((r) => String(r.id) === String(id));
+    const rec = idx !== -1 ? cur[idx] : record;
+    if (!rec) return;
+    calls.trash = [rec].concat(calls.trash || []);
+    calls.remote = cur.filter((r) => String(r.id) !== String(id));
+    calls.saved = JSON.parse(JSON.stringify(calls.remote));
+  },
   loadMenu: async () => null,
   loadOrders: async () => [],
   saveOrders: async () => {}

@@ -52,7 +52,8 @@ const ORDER = [
   'wxml_structure_check.js', 'wxml_key_check.js', 'wxml_event_audit.js', 'wxml_data_audit.js', 'wx_page_check.js',
   'js_method_check.js', 'wx_require_check.js', 'wx_compat_check.js', 'wx_canvas_check.js', 'wx_draw_check.js', 'package_size_check.js', 'wxss_class_check.js', 'assets_check.js',
   // 主包
-  'life_check.js', 'life_logic_test.js', 'trash_flow_test.js', 'cloudstore_load_test.js',
+  'life_check.js', 'life_logic_test.js', 'trash_flow_test.js', 'records_trash_scroll_test.js',
+  'cloudstore_load_test.js',
   'cloudstore_real_test.js', 'cloudstore_chaos_test.js', 'pages_logic_test.js',
   'page_smoke_test.js',
   'shengxiao_logic_test.js',

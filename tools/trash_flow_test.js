@@ -23,20 +23,30 @@ const fakeCloud = {
   async saveShopping(list) { this._shopping = clone(list); },
   async loadTrash() { return clone(this._trash); },
   async saveTrash(list) { this._trash = clone(list); },
-  // 被测试的同名逻辑（跟 utils/cloudstore.js 里保持一致）
+  // 被测试的同名逻辑（跟 utils/cloudstore.js 里保持一致：先入回收站再删清单，失败回滚）
   async trashShoppingById(id, record) {
     const list = await this.loadShopping();
     const idx = list.findIndex((r) => String(r.id) === String(id));
     const rec = idx !== -1 ? list[idx] : record;
     if (!rec) return;
-    if (idx !== -1) await this.saveShopping(list.filter((_, i) => i !== idx));
-    const trash = await this.loadTrash();
-    trash.unshift(Object.assign({
+    const entry = Object.assign({
       id: Date.now() + '_' + Math.random().toString(36).slice(2, 8),
       deletedAt: Date.now()
-    }, { type: 'shopping', data: rec }));
-    await this.saveTrash(trash.slice(0, 100));
+    }, { type: 'shopping', data: rec });
+    await this.saveTrash([entry].concat(await this.loadTrash()));
+    if (idx !== -1) {
+      try {
+        await this.saveShopping(list.filter((_, i) => i !== idx));
+      } catch (e) {
+        await this.saveTrash((await this.loadTrash()).filter((it) => it.id !== entry.id));
+        throw e;
+      }
+    }
   },
+  async removeTrashItem(trashId) {
+    await this.saveTrash((await this.loadTrash()).filter((it) => String(it.id) !== String(trashId)));
+  },
+  async clearTrash() { this._trash = []; },
   async restoreTrashItem(trashId) {
     const trash = await this.loadTrash();
     const item = trash.find((it) => String(it.id) === String(trashId));

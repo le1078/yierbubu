@@ -1,7 +1,6 @@
 // cloudstore 混沌测试：随机顺序地做「删除 / 恢复 / 彻底删除 / 批量删除」，
 // 验证数据不变量始终成立：
 //   1) 每条记录要么在源列表、要么在回收站，不能两边都有，也不能凭空消失
-//   2) 回收站不超过 100 条
 //   3) 同一 id 不出现重复条目
 //   4) 任何一步都不能抛异常
 //
@@ -100,12 +99,11 @@ function makeRng(seed) {
   DOCS.shared_trash = { _rev: 1, list: [] };
 
   const everExisted = new Set(seedItems.map((x) => x.id));
-  let ops = 0, ghostLoss = 0, duplicates = 0, bothPlaces = 0, trashOverflow = 0, threw = 0;
+  let ops = 0, ghostLoss = 0, duplicates = 0, bothPlaces = 0, threw = 0;
 
   function audit(tag) {
     const shop = (DOCS.shared_shopping || {}).list || [];
     const trash = (DOCS.shared_trash || {}).list || [];
-    if (trash.length > 100) trashOverflow++;
     const seen = {};
     for (const it of shop) {
       if (seen[it.id]) duplicates++;
@@ -183,7 +181,6 @@ function makeRng(seed) {
   console.log('  执行 ' + ops + ' 次操作后：购物 ' + finalShop.length + ' 条，回收站 ' + finalTrash.length + ' 条');
 
   check(threw === 0, '随机操作全程无异常（异常 ' + threw + ' 次）');
-  check(trashOverflow === 0, '回收站始终不超过 100 条');
   check(duplicates === 0, '没有重复 id 条目');
   check(bothPlaces === 0, '同一条记录不会同时存在于两处（' + bothPlaces + ' 次）');
   check(ghostLoss === 0, '没有凭空丢失的记录（' + ghostLoss + ' 次）');
